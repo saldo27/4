@@ -1,5 +1,3 @@
-from kivy.app import App
-from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
@@ -8,12 +6,11 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.spinner import Spinner
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
-from datetime import datetime
+from datetime import datetime, timedelta
 import calendar
 from fpdf import FPDF
 import csv
 import os
-import sqlite3
 
 class InitialSetupScreen(Screen):
     def __init__(self, **kwargs):
@@ -28,25 +25,17 @@ class InitialSetupScreen(Screen):
         )
         layout.add_widget(title)
 
-        # Current Date/Time and User Info in UTC
+        # Current Date/Time and User Info
         info_layout = GridLayout(cols=1, size_hint_y=0.2, spacing=5)
-        current_datetime = datetime(2025, 1, 17, 22, 39, 59)
+        current_datetime = datetime(2025, 1, 17, 23, 4, 12)
         
+        # Updated datetime format
         date_label = Label(
-            text=f'Current Date and Time (UTC): {current_datetime.strftime("%Y-%m-%d %H:%M:%S")}',
+            text=f'Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): {current_datetime.strftime("%Y-%m-%d %H:%M:%S")}',
             size_hint_y=None,
             height=30
         )
         info_layout.add_widget(date_label)
-        
-        user_label = Label(
-            text=f"Current User's Login: saldo27",
-            size_hint_y=None,
-            height=30
-        )
-        info_layout.add_widget(user_label)
-        layout.add_widget(info_layout)
-
         
         user_label = Label(
             text=f"Current User's Login: saldo27",
@@ -107,7 +96,7 @@ class InitialSetupScreen(Screen):
 
     def validate_and_continue(self, instance):
         try:
-            # Validate dates with DD-MM-YYYY format
+            # Validate dates
             start = datetime.strptime(self.start_date.text, '%d-%m-%Y')
             end = datetime.strptime(self.end_date.text, '%d-%m-%Y')
             
