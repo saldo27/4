@@ -245,22 +245,6 @@ class WorkerDetailsScreen(Screen):
         self.prev_button.disabled = (current_index == 0)
         self.next_button.text = 'Finish' if current_index == total_workers - 1 else 'Next Worker'
 
-    def validate_dates(self, date_str):
-        if not date_str:
-            return True
-        try:
-            for period in date_str.split(';'):
-                period = period.strip()
-                if ' - ' in period:
-                    start, end = period.split(' - ')
-                    datetime.strptime(start.strip(), '%d-%m-%Y')
-                    datetime.strptime(end.strip(), '%d-%m-%Y')
-                else:
-                    datetime.strptime(period, '%d-%m-%Y')
-            return True
-        except ValueError:
-            return False
-
     def save_and_continue(self, instance):
         try:
             # Validate worker ID
@@ -297,17 +281,16 @@ class WorkerDetailsScreen(Screen):
                 app.schedule_config['workers_data'] = []
             app.schedule_config['workers_data'].append(worker_data)
 
-            # Move to next worker or finish
             current_index = app.schedule_config['current_worker_index']
             if current_index < app.schedule_config['num_workers'] - 1:
                 app.schedule_config['current_worker_index'] = current_index + 1
                 self.clear_inputs()
                 self.on_enter()
             else:
+                # Show success message and proceed to calendar view
                 success_popup = SuccessPopup("All worker details saved successfully!")
                 success_popup.open()
-                # Here you would typically move to the next screen
-                # self.manager.current = 'next_screen'
+                self.manager.current = 'calendar_view'
 
         except ValueError as e:
             error_popup = ErrorPopup(str(e))
@@ -338,6 +321,22 @@ class WorkerDetailsScreen(Screen):
             self.mandatory_days.text = data['mandatory_days']
             self.days_off.text = data['days_off']
 
+    def validate_dates(self, date_str):
+        if not date_str:
+            return True
+        try:
+            for period in date_str.split(';'):
+                period = period.strip()
+                if ' - ' in period:
+                    start, end = period.split(' - ')
+                    datetime.strptime(start.strip(), '%d-%m-%Y')
+                    datetime.strptime(end.strip(), '%d-%m-%Y')
+                else:
+                    datetime.strptime(period, '%d-%m-%Y')
+            return True
+        except ValueError:
+            return False
+
 class ErrorPopup(Popup):
     def __init__(self, message, **kwargs):
         super().__init__(**kwargs)
@@ -353,6 +352,19 @@ class SuccessPopup(Popup):
         self.size_hint = (0.8, 0.4)
         self.content = Label(text=message)
         self.auto_dismiss = True
+
+class ShiftManagerApp(App):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.schedule_config = {}
+        self.current_user = 'saldo27'
+        self.current_datetime = datetime(2025, 1, 17, 23, 12, 7)
+
+    def build(self):
+        sm = ScreenManager()
+        sm.add_widget(InitialSetupScreen(name='initial_setup'))
+        sm.add_widget(WorkerDetailsScreen(name='worker_details'))  # Add WorkerDetailsScreen
+        return sm
 
 class MainScreen(Screen):
     def __init__(self, **kwargs):
@@ -582,20 +594,6 @@ class CSVHandler:
                 guards = row['Guards'].split(';')
                 schedule[date] = guards
         return schedule
-
-class ShiftManagerApp(App):
-    def build(self):
-        self.schedule = {}
-        self.title = 'Shift Manager'
-        
-        sm = ScreenManager()
-        sm.add_widget(MainScreen(name='main'))
-        sm.add_widget(InitialSetupScreen(name='setup'))
-        sm.add_widget(CalendarView(name='calendar'))
-        return sm
-
-if __name__ == '__main__':
-    ShiftManagerApp().run()
     
 def generate_schedule(self):
     from scheduler import GuardScheduler
