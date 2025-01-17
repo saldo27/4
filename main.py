@@ -250,33 +250,36 @@ class WorkerDetailsScreen(Screen):
         self.next_button.text = 'Finish' if current_index == total_workers - 1 else 'Next Worker'
 
     def save_and_continue(self, instance):
-        try:
-            # Validate worker ID
-            if not self.worker_id.text.strip():
-                raise ValueError("Worker ID is required")
+    try:
+        # Validate inputs
+        if not self.worker_id.text.strip():
+            raise ValueError("Worker ID is required")
 
-            # Validate dates
+        # Validate work percentage
+        try:
+            work_percentage = float(self.work_percentage.text or '100')
+            if not (0 < work_percentage <= 100):
+                raise ValueError()
+        except ValueError:
+            raise ValueError("Invalid work percentage")
+
+        # Validate dates
+        if self.work_periods.text:
             if not self.validate_dates(self.work_periods.text):
                 raise ValueError("Invalid work period format")
+        if self.mandatory_days.text:
             if not self.validate_dates(self.mandatory_days.text):
                 raise ValueError("Invalid mandatory days format")
+        if self.days_off.text:
             if not self.validate_dates(self.days_off.text):
                 raise ValueError("Invalid days off format")
 
-            # Validate percentage
-            try:
-                percentage = float(self.work_percentage.text or '100')
-                if not (0 < percentage <= 100):
-                    raise ValueError()
-            except ValueError:
-                raise ValueError("Invalid work percentage")
-
-            # Save worker data
-            app = App.get_running_app()
+        # Save worker data
+        app = App.get_running_app()
         worker_data = {
             'id': self.worker_id.text.strip(),
             'work_periods': self.work_periods.text.strip(),
-            'work_percentage': float(self.work_percentage.text or '100'),
+            'work_percentage': work_percentage,
             'mandatory_days': self.mandatory_days.text.strip(),
             'days_off': self.days_off.text.strip()
         }
@@ -292,9 +295,18 @@ class WorkerDetailsScreen(Screen):
             self.on_enter()
         else:
             # Generate schedule
-            generator = ScheduleGenerator(app.schedule_config)
-            app.schedule_config['schedule'] = generator.generate_schedule()
+            from scheduler import Scheduler
+            scheduler = Scheduler(app.schedule_config)
+            app.schedule_config['schedule'] = scheduler.generate_schedule()
             
+            # Validate the schedule
+            errors, warnings = scheduler.validate_schedule()
+            if errors:
+                raise ValueError("\n".join(errors))
+            if warnings:
+                warning_popup = WarningPopup("\n".join(warnings))
+                warning_popup.open()
+
             success_popup = SuccessPopup("Schedule generated successfully!")
             success_popup.open()
             self.manager.current = 'calendar_view'
@@ -303,19 +315,28 @@ class WorkerDetailsScreen(Screen):
         error_popup = ErrorPopup(str(e))
         error_popup.open()
 
-    def previous_worker(self, instance):
-        app = App.get_running_app()
-        if app.schedule_config['current_worker_index'] > 0:
-            app.schedule_config['current_worker_index'] -= 1
-            self.load_worker_data()
-            self.on_enter()
+def validate_dates(self, date_str):
+    """Validate date string format"""
+    try:
+        for period in date_str.split(';'):
+            period = period.strip()
+            if ' - ' in period:
+                start, end = period.split(' - ')
+                datetime.strptime(start.strip(), '%d-%m-%Y')
+                datetime.strptime(end.strip(), '%d-%m-%Y')
+            else:
+                datetime.strptime(period, '%d-%m-%Y')
+        return True
+    except ValueError:
+        return False
 
-    def clear_inputs(self):
-        self.worker_id.text = ''
-        self.work_periods.text = ''
-        self.work_percentage.text = '100'
-        self.mandatory_days.text = ''
-        self.days_off.text = ''
+def clear_inputs(self):
+    """Clear all input fields"""
+    self.worker_id.text = ''
+    self.work_periods.text = ''
+    self.work_percentage.text = '100'
+    self.mandatory_days.text = ''
+    self.days_off.text = ''
 
     def load_worker_data(self):
         app = App.get_running_app()
@@ -343,6 +364,25 @@ class WorkerDetailsScreen(Screen):
             return True
         except ValueError:
             return False
+
+# Add WarningPopup class
+class WarningPopup(Popup):
+    def __init__(self, message, **kwargs):
+        super().__init__(**kwargs)
+        self.title = 'Warning'
+        self.size_hint = (0.8, 0.4)
+        
+        content = BoxLayout(orientation='vertical')
+        content.add_widget(Label(text=message))
+        
+        button = Button(
+            text='OK',
+            size_hint_y=0.2
+        )
+        button.bind(on_press=self.dismiss)
+        content.add_widget(button)
+        
+        self.content = content
 
 class ScheduleGenerator:
     def __init__(self, config):
