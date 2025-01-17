@@ -250,10 +250,10 @@ class WorkerDetailsScreen(Screen):
         self.next_button.text = 'Finish' if current_index == total_workers - 1 else 'Next Worker'
 
     def save_and_continue(self, instance):
-    try:
+        try:
         # Validate inputs
-        if not self.worker_id.text.strip():
-            raise ValueError("Worker ID is required")
+            if not self.worker_id.text.strip():
+                raise ValueError("Worker ID is required")
 
         # Validate work percentage
         try:
