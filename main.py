@@ -346,10 +346,20 @@ class CalendarView(Screen):
         super().__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
-        # Header
-        header = BoxLayout(orientation='horizontal', size_hint_y=0.1)
+        # Header with current date/time and user info
+        header_info = BoxLayout(orientation='vertical', size_hint_y=0.1)
+        header_info.add_widget(Label(
+            text=f'Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-01-17 23:30:42',
+            size_hint_y=0.5
+        ))
+        header_info.add_widget(Label(
+            text="Current User's Login: saldo27",
+            size_hint_y=0.5
+        ))
+        self.layout.add_widget(header_info)
         
-        # Navigation buttons
+        # Calendar navigation
+        nav_bar = BoxLayout(orientation='horizontal', size_hint_y=0.1)
         self.prev_month_btn = Button(
             text='Previous Month',
             size_hint_x=0.2,
@@ -360,29 +370,26 @@ class CalendarView(Screen):
             size_hint_x=0.2,
             on_press=self.next_month
         )
-        
-        # Month/Year label
         self.month_label = Label(
             text='',
             size_hint_x=0.6
         )
         
-        header.add_widget(self.prev_month_btn)
-        header.add_widget(self.month_label)
-        header.add_widget(self.next_month_btn)
-        
-        self.layout.add_widget(header)
+        nav_bar.add_widget(self.prev_month_btn)
+        nav_bar.add_widget(self.month_label)
+        nav_bar.add_widget(self.next_month_btn)
+        self.layout.add_widget(nav_bar)
         
         # Calendar grid
         self.calendar_grid = GridLayout(
             cols=7,
             spacing=2,
-            size_hint_y=0.8
+            size_hint_y=0.7
         )
         self.layout.add_widget(self.calendar_grid)
         
         # Export buttons
-        export_layout = BoxLayout(
+        button_bar = BoxLayout(
             orientation='horizontal',
             size_hint_y=0.1,
             spacing=10
@@ -401,15 +408,14 @@ class CalendarView(Screen):
             on_press=self.go_back
         )
         
-        export_layout.add_widget(export_pdf_btn)
-        export_layout.add_widget(export_csv_btn)
-        export_layout.add_widget(back_btn)
+        button_bar.add_widget(export_pdf_btn)
+        button_bar.add_widget(export_csv_btn)
+        button_bar.add_widget(back_btn)
         
-        self.layout.add_widget(export_layout)
-        
+        self.layout.add_widget(button_bar)
         self.add_widget(self.layout)
         
-        # Initialize current date
+        # Initialize calendar
         self.current_date = datetime.now()
         self.update_calendar()
 
@@ -440,19 +446,12 @@ class CalendarView(Screen):
         for week in cal:
             for day in week:
                 if day == 0:
-                    # Empty cell for days not in month
                     self.calendar_grid.add_widget(Label(text=''))
                 else:
-                    # Create day cell
                     day_layout = BoxLayout(orientation='vertical')
+                    day_layout.add_widget(Label(text=str(day)))
                     
-                    # Day number
-                    day_layout.add_widget(Label(
-                        text=str(day),
-                        size_hint_y=0.3
-                    ))
-                    
-                    # Get schedule for this day
+                    # Add schedule if exists
                     date = datetime(year, month, day)
                     app = App.get_running_app()
                     if hasattr(app, 'schedule_config') and 'schedule' in app.schedule_config:
@@ -461,7 +460,6 @@ class CalendarView(Screen):
                             schedule_text = '\n'.join(schedule)
                             day_layout.add_widget(Label(
                                 text=schedule_text,
-                                size_hint_y=0.7,
                                 font_size='10sp'
                             ))
                     
@@ -489,25 +487,18 @@ class CalendarView(Screen):
             
             filename = f'schedule_{self.current_date.strftime("%Y-%m")}.pdf'
             
-            # Create PDF
             pdf = FPDF()
             pdf.add_page(orientation='L')
             pdf.set_font('Arial', 'B', 16)
             
-            # Add title
             pdf.cell(0, 10, f'Schedule - {calendar.month_name[self.current_date.month]} {self.current_date.year}', 0, 1, 'C')
             
-            # Add calendar
             pdf.set_font('Arial', 'B', 12)
-            
-            # Add weekday headers
             cell_width = 40
-            cell_height = 10
             for day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']:
-                pdf.cell(cell_width, cell_height, day, 1)
+                pdf.cell(cell_width, 10, day, 1)
             pdf.ln()
             
-            # Add calendar days
             pdf.set_font('Arial', '', 10)
             cal = calendar.monthcalendar(self.current_date.year, self.current_date.month)
             
@@ -526,7 +517,6 @@ class CalendarView(Screen):
                 pdf.ln(max_height)
             
             pdf.output(filename)
-            
             success_popup = SuccessPopup(f"Schedule exported to {filename}")
             success_popup.open()
             
@@ -560,7 +550,7 @@ class CalendarView(Screen):
             error_popup.open()
 
     def go_back(self, instance):
-        self.manager.current = 'worker_details
+        self.manager.current = 'worker_details'  # Fixed the syntax error here
 
 class ErrorPopup(Popup):
     def __init__(self, message, **kwargs):
