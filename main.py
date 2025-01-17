@@ -273,32 +273,35 @@ class WorkerDetailsScreen(Screen):
 
             # Save worker data
             app = App.get_running_app()
-            worker_data = {
-                'id': self.worker_id.text.strip(),
-                'work_periods': self.work_periods.text.strip(),
-                'work_percentage': percentage,
-                'mandatory_days': self.mandatory_days.text.strip(),
-                'days_off': self.days_off.text.strip()
-            }
+        worker_data = {
+            'id': self.worker_id.text.strip(),
+            'work_periods': self.work_periods.text.strip(),
+            'work_percentage': float(self.work_percentage.text or '100'),
+            'mandatory_days': self.mandatory_days.text.strip(),
+            'days_off': self.days_off.text.strip()
+        }
+        
+        if 'workers_data' not in app.schedule_config:
+            app.schedule_config['workers_data'] = []
+        app.schedule_config['workers_data'].append(worker_data)
+
+        current_index = app.schedule_config['current_worker_index']
+        if current_index < app.schedule_config['num_workers'] - 1:
+            app.schedule_config['current_worker_index'] = current_index + 1
+            self.clear_inputs()
+            self.on_enter()
+        else:
+            # Generate schedule
+            generator = ScheduleGenerator(app.schedule_config)
+            app.schedule_config['schedule'] = generator.generate_schedule()
             
-            if 'workers_data' not in app.schedule_config:
-                app.schedule_config['workers_data'] = []
-            app.schedule_config['workers_data'].append(worker_data)
+            success_popup = SuccessPopup("Schedule generated successfully!")
+            success_popup.open()
+            self.manager.current = 'calendar_view'
 
-            current_index = app.schedule_config['current_worker_index']
-            if current_index < app.schedule_config['num_workers'] - 1:
-                app.schedule_config['current_worker_index'] = current_index + 1
-                self.clear_inputs()
-                self.on_enter()
-            else:
-                # Show success message and proceed to calendar view
-                success_popup = SuccessPopup("All worker details saved successfully!")
-                success_popup.open()
-                self.manager.current = 'calendar_view'
-
-        except ValueError as e:
-            error_popup = ErrorPopup(str(e))
-            error_popup.open()
+    except ValueError as e:
+        error_popup = ErrorPopup(str(e))
+        error_popup.open()
 
     def previous_worker(self, instance):
         app = App.get_running_app()
@@ -340,6 +343,187 @@ class WorkerDetailsScreen(Screen):
             return True
         except ValueError:
             return False
+
+class ScheduleGenerator:
+    def __init__(self, config):
+        self.config = config
+        self.start_date = config['start_date']
+        self.end_date = config['end_date']
+        self.num_shifts = config['num_shifts']
+        self.workers_data = config['workers_data']
+        self.schedule = {}
+        self.worker_assignments = {w['id']: [] for w in self.workers_data}
+
+    def generate_schedule(self):
+        """Main method to generate the schedule following all conditions"""
+        print("Starting schedule generation...")
+        
+        # 1. First assign mandatory coverage days
+        self.assign_mandatory_coverage()
+        
+        # 2. Calculate target shifts per worker based on their percentage
+        total_days = (self.end_date - self.start_date).days + 1
+        total_shifts = total_days * self.num_shifts
+        self.calculate_target_shifts(total_shifts)
+        
+        # 3. Fill remaining shifts
+        current_date = self.start_date
+        while current_date <= self.end_date:
+            self.fill_day_shifts(current_date)
+            current_date += timedelta(days=1)
+
+        return self.schedule
+
+    def assign_mandatory_coverage(self):
+        """Assign mandatory coverage days first"""
+        print("Assigning mandatory coverage days...")
+        
+        for worker in self.workers_data:
+            if worker.get('mandatory_days'):
+                mandatory_days = self.parse_dates(worker['mandatory_days'])
+                for date in mandatory_days:
+                    if self.start_date <= date <= self.end_date:
+                        if date not in self.schedule:
+                            self.schedule[date] = []
+                        if len(self.schedule[date]) < self.num_shifts:
+                            if self.can_assign_worker(worker['id'], date):
+                                self.schedule[date].append(worker['id'])
+                                self.worker_assignments[worker['id']].append(date)
+                                print(f"Assigned mandatory shift: {worker['id']} on {date.strftime('%Y-%m-%d')}")
+
+    def calculate_target_shifts(self, total_shifts):
+        """Calculate target number of shifts for each worker based on their percentage"""
+        total_percentage = sum(float(w.get('work_percentage', 100)) for w in self.workers_data)
+        
+        for worker in self.workers_data:
+            percentage = float(worker.get('work_percentage', 100))
+            worker['target_shifts'] = int((percentage / total_percentage) * total_shifts)
+            print(f"Worker {worker['id']} target shifts: {worker['target_shifts']}")
+
+    def fill_day_shifts(self, date):
+        """Fill shifts for a specific day"""
+        if date not in self.schedule:
+            self.schedule[date] = []
+            
+        while len(self.schedule[date]) < self.num_shifts:
+            best_worker = self.find_best_worker_for_date(date)
+            if best_worker:
+                self.schedule[date].append(best_worker['id'])
+                self.worker_assignments[best_worker['id']].append(date)
+                print(f"Assigned shift: {best_worker['id']} on {date.strftime('%Y-%m-%d')}")
+            else:
+                print(f"Warning: Could not find worker for {date.strftime('%Y-%m-%d')}")
+                break
+
+    def find_best_worker_for_date(self, date):
+        """Find the best worker for a specific date based on all conditions"""
+        candidates = []
+        
+        for worker in self.workers_data:
+            if self.can_assign_worker(worker['id'], date):
+                score = self.calculate_worker_score(worker, date)
+                candidates.append((worker, score))
+        
+        if not candidates:
+            return None
+            
+        return max(candidates, key=lambda x: x[1])[0]
+
+    def can_assign_worker(self, worker_id, date):
+        """Check if a worker can be assigned to a specific date"""
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+        
+        # Check if worker is already assigned that day
+        if date in self.worker_assignments[worker_id]:
+            return False
+            
+        # Check work periods
+        if worker.get('work_periods'):
+            work_periods = self.parse_date_ranges(worker['work_periods'])
+            if not any(start <= date <= end for start, end in work_periods):
+                return False
+                
+        # Check days off
+        if worker.get('days_off'):
+            off_days = self.parse_dates(worker['days_off'])
+            if date in off_days:
+                return False
+                
+        # Check minimum distance between guards
+        min_distance = int(4 / (float(worker.get('work_percentage', 100)) / 100))
+        assignments = sorted(self.worker_assignments[worker_id])
+        
+        if assignments:
+            # Check previous assignments
+            for prev_date in reversed(assignments):
+                days_between = (date - prev_date).days
+                if days_between < min_distance:
+                    return False
+                if days_between in [7, 14, 21]:
+                    return False
+                    
+            # Check future assignments (already scheduled)
+            for next_date in assignments:
+                if next_date > date:
+                    days_between = (next_date - date).days
+                    if days_between < min_distance:
+                        return False
+                    if days_between in [7, 14, 21]:
+                        return False
+        
+        return True
+
+    def calculate_worker_score(self, worker, date):
+        """Calculate a score for a worker based on various factors"""
+        score = 0
+        
+        # Factor 1: Distance from target shifts
+        current_shifts = len(self.worker_assignments[worker['id']])
+        shift_difference = worker['target_shifts'] - current_shifts
+        score += shift_difference * 10
+        
+        # Factor 2: Monthly distribution
+        month_shifts = sum(1 for d in self.worker_assignments[worker['id']] 
+                         if d.year == date.year and d.month == date.month)
+        score -= month_shifts * 5
+        
+        # Factor 3: Distance from last assignment
+        if self.worker_assignments[worker['id']]:
+            last_assignment = max(self.worker_assignments[worker['id']])
+            days_since_last = (date - last_assignment).days
+            score += min(days_since_last, 30)
+        
+        return score
+
+    def parse_dates(self, date_str):
+        """Parse semicolon-separated dates"""
+        if not date_str:
+            return []
+            
+        dates = []
+        for date_text in date_str.split(';'):
+            date_text = date_text.strip()
+            if date_text:
+                dates.append(datetime.strptime(date_text, '%d-%m-%Y'))
+        return dates
+
+    def parse_date_ranges(self, date_ranges_str):
+        """Parse semicolon-separated date ranges"""
+        if not date_ranges_str:
+            return []
+            
+        ranges = []
+        for date_range in date_ranges_str.split(';'):
+            date_range = date_range.strip()
+            if ' - ' in date_range:
+                start_str, end_str = date_range.split(' - ')
+                start = datetime.strptime(start_str.strip(), '%d-%m-%Y')
+                end = datetime.strptime(end_str.strip(), '%d-%m-%Y')
+                ranges.append((start, end))
+            else:
+                date = datetime.strptime(date_range, '%d-%m-%Y')
+                ranges.append((date, date))
+        return ranges
 
 class CalendarView(Screen):
     def __init__(self, **kwargs):
