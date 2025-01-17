@@ -341,6 +341,227 @@ class WorkerDetailsScreen(Screen):
         except ValueError:
             return False
 
+class CalendarView(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        
+        # Header
+        header = BoxLayout(orientation='horizontal', size_hint_y=0.1)
+        
+        # Navigation buttons
+        self.prev_month_btn = Button(
+            text='Previous Month',
+            size_hint_x=0.2,
+            on_press=self.previous_month
+        )
+        self.next_month_btn = Button(
+            text='Next Month',
+            size_hint_x=0.2,
+            on_press=self.next_month
+        )
+        
+        # Month/Year label
+        self.month_label = Label(
+            text='',
+            size_hint_x=0.6
+        )
+        
+        header.add_widget(self.prev_month_btn)
+        header.add_widget(self.month_label)
+        header.add_widget(self.next_month_btn)
+        
+        self.layout.add_widget(header)
+        
+        # Calendar grid
+        self.calendar_grid = GridLayout(
+            cols=7,
+            spacing=2,
+            size_hint_y=0.8
+        )
+        self.layout.add_widget(self.calendar_grid)
+        
+        # Export buttons
+        export_layout = BoxLayout(
+            orientation='horizontal',
+            size_hint_y=0.1,
+            spacing=10
+        )
+        
+        export_pdf_btn = Button(
+            text='Export to PDF',
+            on_press=self.export_pdf
+        )
+        export_csv_btn = Button(
+            text='Export to CSV',
+            on_press=self.export_csv
+        )
+        back_btn = Button(
+            text='Back',
+            on_press=self.go_back
+        )
+        
+        export_layout.add_widget(export_pdf_btn)
+        export_layout.add_widget(export_csv_btn)
+        export_layout.add_widget(back_btn)
+        
+        self.layout.add_widget(export_layout)
+        
+        self.add_widget(self.layout)
+        
+        # Initialize current date
+        self.current_date = datetime.now()
+        self.update_calendar()
+
+    def update_calendar(self, year=None, month=None):
+        if year is None:
+            year = self.current_date.year
+        if month is None:
+            month = self.current_date.month
+            
+        self.calendar_grid.clear_widgets()
+        
+        # Update month label
+        self.month_label.text = f'{calendar.month_name[month]} {year}'
+        
+        # Add weekday headers
+        for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']:
+            self.calendar_grid.add_widget(
+                Label(
+                    text=day,
+                    bold=True
+                )
+            )
+        
+        # Get calendar for month
+        cal = calendar.monthcalendar(year, month)
+        
+        # Add days to grid
+        for week in cal:
+            for day in week:
+                if day == 0:
+                    # Empty cell for days not in month
+                    self.calendar_grid.add_widget(Label(text=''))
+                else:
+                    # Create day cell
+                    day_layout = BoxLayout(orientation='vertical')
+                    
+                    # Day number
+                    day_layout.add_widget(Label(
+                        text=str(day),
+                        size_hint_y=0.3
+                    ))
+                    
+                    # Get schedule for this day
+                    date = datetime(year, month, day)
+                    app = App.get_running_app()
+                    if hasattr(app, 'schedule_config') and 'schedule' in app.schedule_config:
+                        schedule = app.schedule_config['schedule'].get(date, [])
+                        if schedule:
+                            schedule_text = '\n'.join(schedule)
+                            day_layout.add_widget(Label(
+                                text=schedule_text,
+                                size_hint_y=0.7,
+                                font_size='10sp'
+                            ))
+                    
+                    self.calendar_grid.add_widget(day_layout)
+
+    def previous_month(self, instance):
+        if self.current_date.month == 1:
+            self.current_date = self.current_date.replace(year=self.current_date.year - 1, month=12)
+        else:
+            self.current_date = self.current_date.replace(month=self.current_date.month - 1)
+        self.update_calendar()
+
+    def next_month(self, instance):
+        if self.current_date.month == 12:
+            self.current_date = self.current_date.replace(year=self.current_date.year + 1, month=1)
+        else:
+            self.current_date = self.current_date.replace(month=self.current_date.month + 1)
+        self.update_calendar()
+
+    def export_pdf(self, instance):
+        try:
+            app = App.get_running_app()
+            if not hasattr(app, 'schedule_config') or 'schedule' not in app.schedule_config:
+                raise ValueError("No schedule data available")
+            
+            filename = f'schedule_{self.current_date.strftime("%Y-%m")}.pdf'
+            
+            # Create PDF
+            pdf = FPDF()
+            pdf.add_page(orientation='L')
+            pdf.set_font('Arial', 'B', 16)
+            
+            # Add title
+            pdf.cell(0, 10, f'Schedule - {calendar.month_name[self.current_date.month]} {self.current_date.year}', 0, 1, 'C')
+            
+            # Add calendar
+            pdf.set_font('Arial', 'B', 12)
+            
+            # Add weekday headers
+            cell_width = 40
+            cell_height = 10
+            for day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']:
+                pdf.cell(cell_width, cell_height, day, 1)
+            pdf.ln()
+            
+            # Add calendar days
+            pdf.set_font('Arial', '', 10)
+            cal = calendar.monthcalendar(self.current_date.year, self.current_date.month)
+            
+            for week in cal:
+                max_height = 30
+                for day in week:
+                    if day == 0:
+                        pdf.cell(cell_width, max_height, '', 1)
+                    else:
+                        date = datetime(self.current_date.year, self.current_date.month, day)
+                        content = f"{day}\n"
+                        if date in app.schedule_config['schedule']:
+                            content += "\n".join(app.schedule_config['schedule'][date])
+                        pdf.multi_cell(cell_width, 5, content, 1)
+                        pdf.set_xy(pdf.get_x() + cell_width, pdf.get_y() - max_height)
+                pdf.ln(max_height)
+            
+            pdf.output(filename)
+            
+            success_popup = SuccessPopup(f"Schedule exported to {filename}")
+            success_popup.open()
+            
+        except Exception as e:
+            error_popup = ErrorPopup(str(e))
+            error_popup.open()
+
+    def export_csv(self, instance):
+        try:
+            app = App.get_running_app()
+            if not hasattr(app, 'schedule_config') or 'schedule' not in app.schedule_config:
+                raise ValueError("No schedule data available")
+            
+            filename = f'schedule_{self.current_date.strftime("%Y-%m")}.csv'
+            
+            with open(filename, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['Date', 'Guards'])
+                
+                for date in sorted(app.schedule_config['schedule'].keys()):
+                    writer.writerow([
+                        date.strftime('%Y-%m-%d'),
+                        ';'.join(app.schedule_config['schedule'][date])
+                    ])
+            
+            success_popup = SuccessPopup(f"Schedule exported to {filename}")
+            success_popup.open()
+            
+        except Exception as e:
+            error_popup = ErrorPopup(str(e))
+            error_popup.open()
+
+    def go_back(self, instance):
+        self.manager.current = 'worker_details
+
 class ErrorPopup(Popup):
     def __init__(self, message, **kwargs):
         super().__init__(**kwargs)
@@ -362,12 +583,13 @@ class ShiftManagerApp(App):
         super().__init__(**kwargs)
         self.schedule_config = {}
         self.current_user = 'saldo27'
-        self.current_datetime = datetime(2025, 1, 17, 23, 12, 7)
+        self.current_datetime = datetime(2025, 1, 17, 23, 24, 47)  # Updated datetime
 
     def build(self):
         sm = ScreenManager()
         sm.add_widget(InitialSetupScreen(name='initial_setup'))
-        sm.add_widget(WorkerDetailsScreen(name='worker_details'))  # Add WorkerDetailsScreen
+        sm.add_widget(WorkerDetailsScreen(name='worker_details'))
+        sm.add_widget(CalendarView(name='calendar_view'))  # Add CalendarView
         return sm
 
 class MainScreen(Screen):
@@ -481,99 +703,6 @@ class MainScreen(Screen):
             size_hint=(0.8, 0.4)
         )
         popup.open()
-
-class CalendarView(Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.layout = BoxLayout(orientation='vertical', padding=10)
-        
-        # Navigation bar
-        nav_bar = BoxLayout(size_hint_y=0.1, spacing=10)
-        self.prev_month_btn = Button(text='Previous Month')
-        self.next_month_btn = Button(text='Next Month')
-        self.month_label = Label(text='')
-        
-        nav_bar.add_widget(self.prev_month_btn)
-        nav_bar.add_widget(self.month_label)
-        nav_bar.add_widget(self.next_month_btn)
-        
-        self.layout.add_widget(nav_bar)
-        
-        # Calendar grid
-        self.calendar_grid = GridLayout(cols=7, spacing=2)
-        self.layout.add_widget(self.calendar_grid)
-        
-        self.add_widget(self.layout)
-        
-    def update_calendar(self, year, month):
-        self.calendar_grid.clear_widgets()
-        
-        # Add day headers
-        days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-        for day in days:
-            self.calendar_grid.add_widget(Label(text=day))
-        
-        # Get calendar for specified month
-        cal = calendar.monthcalendar(year, month)
-        
-        # Update month label
-        self.month_label.text = f'{calendar.month_name[month]} {year}'
-        
-        # Fill calendar with days
-        for week in cal:
-            for day in week:
-                if day == 0:
-                    self.calendar_grid.add_widget(Label(text=''))
-                else:
-                    cell = BoxLayout(orientation='vertical')
-                    cell.add_widget(Label(text=str(day)))
-                    
-                    # Add guard assignments if any
-                    date = datetime(year, month, day)
-                    if date in App.get_running_app().schedule:
-                        guards = App.get_running_app().schedule[date]
-                        guard_text = '\n'.join(guards)
-                        cell.add_widget(Label(text=guard_text, font_size='10sp'))
-                    
-                    self.calendar_grid.add_widget(cell)
-
-class PDFExporter:
-    def export_monthly_calendar(self, schedule, year, month):
-        pdf = FPDF()
-        pdf.add_page(orientation='L')
-        pdf.set_font('Arial', 'B', 16)
-        
-        # Title
-        month_name = calendar.month_name[month]
-        pdf.cell(0, 10, f'{month_name} {year}', 0, 1, 'C')
-        
-        # Calendar header
-        pdf.set_font('Arial', 'B', 12)
-        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        cell_width = 40
-        for day in days:
-            pdf.cell(cell_width, 10, day, 1)
-        pdf.ln()
-        
-        # Calendar content
-        cal = calendar.monthcalendar(year, month)
-        pdf.set_font('Arial', '', 10)
-        
-        for week in cal:
-            max_height = 30
-            for day in week:
-                if day == 0:
-                    pdf.cell(cell_width, max_height, '', 1)
-                else:
-                    content = str(day) + '\n'
-                    date = datetime(year, month, day)
-                    if date in schedule:
-                        content += '\n'.join(schedule[date])
-                    pdf.multi_cell(cell_width, 5, content, 1)
-                    pdf.set_xy(pdf.get_x() + cell_width, pdf.get_y() - max_height)
-            pdf.ln(max_height)
-        
-        return pdf
 
 class CSVHandler:
     @staticmethod
