@@ -261,71 +261,64 @@ class WorkerDetailsScreen(Screen):
 
     def save_and_continue(self, instance):
         try:
-            # Validate inputs
+            # Validate worker ID
             if not self.worker_id.text.strip():
                 raise ValueError("Worker ID is required")
 
             # Validate work percentage
-            try:
-                work_percentage = float(self.work_percentage.text or '100')
-                if not (0 < work_percentage <= 100):
-                    raise ValueError("Work percentage must be between 0 and 100")
-                   raise ValueError("Invalid work percentage")
+            work_percentage = float(self.work_percentage.text or '100')
+            if not (0 < work_percentage <= 100):
+                raise ValueError("Work percentage must be between 0 and 100")
 
-        # Validate dates
-        try:
-            if self.work_periods.text:
-                if not self.validate_dates(self.work_periods.text):
-                    raise ValueError("Invalid work period format")
-            if self.mandatory_days.text:
-                if not self.validate_dates(self.mandatory_days.text):
-                    raise ValueError("Invalid mandatory days format")
-            if self.days_off.text:
-                if not self.validate_dates(self.days_off.text):
-                    raise ValueError("Invalid days off format")
-        except ValueError as date_error:
-            raise ValueError(str(date_error))
+            # Validate all dates
+            for field, name in [
+                (self.work_periods.text, "work period"),
+                (self.mandatory_days.text, "mandatory days"),
+                (self.days_off.text, "days off")
+            ]:
+                if field and not self.validate_dates(field):
+                    raise ValueError(f"Invalid {name} format")
 
-        # Save worker data
-        app = App.get_running_app()
-        worker_data = {
-            'id': self.worker_id.text.strip(),
-            'work_periods': self.work_periods.text.strip(),
-            'work_percentage': work_percentage,
-            'mandatory_days': self.mandatory_days.text.strip(),
-            'days_off': self.days_off.text.strip()
-        }
-        
-        if 'workers_data' not in app.schedule_config:
-            app.schedule_config['workers_data'] = []
-        app.schedule_config['workers_data'].append(worker_data)
+            # Save worker data
+            app = App.get_running_app()
+            worker_data = {
+                'id': self.worker_id.text.strip(),
+                'work_periods': self.work_periods.text.strip(),
+                'work_percentage': work_percentage,
+                'mandatory_days': self.mandatory_days.text.strip(),
+                'days_off': self.days_off.text.strip()
+            }
 
-        current_index = app.schedule_config['current_worker_index']
-        if current_index < app.schedule_config['num_workers'] - 1:
-            app.schedule_config['current_worker_index'] = current_index + 1
-            self.clear_inputs()
-            self.on_enter()
-        else:
-            # Generate schedule
-            from scheduler import Scheduler
-            scheduler = Scheduler(app.schedule_config)
-            app.schedule_config['schedule'] = scheduler.generate_schedule()
+            if 'workers_data' not in app.schedule_config:
+                app.schedule_config['workers_data'] = []
+            app.schedule_config['workers_data'].append(worker_data)
+
+            current_index = app.schedule_config['current_worker_index']
+            if current_index < app.schedule_config['num_workers'] - 1:
+                app.schedule_config['current_worker_index'] = current_index + 1
+                self.clear_inputs()
+                self.on_enter()
+            else:
+                # Generate schedule
+                from scheduler import Scheduler
+                scheduler = Scheduler(app.schedule_config)
+                app.schedule_config['schedule'] = scheduler.generate_schedule()
             
-            # Validate the schedule
-            errors, warnings = scheduler.validate_schedule()
-            if errors:
-                raise ValueError("\n".join(errors))
-            if warnings:
-                warning_popup = WarningPopup("\n".join(warnings))
-                warning_popup.open()
+                # Validate schedule
+                errors, warnings = scheduler.validate_schedule()
+                if errors:
+                    raise ValueError("\n".join(errors))
+                if warnings:
+                    warning_popup = WarningPopup("\n".join(warnings))
+                    warning_popup.open()
 
-            success_popup = SuccessPopup("Schedule generated successfully!")
-            success_popup.open()
-            self.manager.current = 'calendar_view'
+                success_popup = SuccessPopup("Schedule generated successfully!")
+                success_popup.open()
+                self.manager.current = 'calendar_view'
 
-    except ValueError as e:
-        error_popup = ErrorPopup(str(e))
-        error_popup.open()
+        except ValueError as e:
+            error_popup = ErrorPopup(str(e))
+            error_popup.open())
 
 def validate_dates(self, date_str):
     """Validate date string format"""
