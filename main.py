@@ -163,7 +163,7 @@ class WorkerDetailsScreen(Screen):
             work_percentage = float(self.work_percentage.text or '100')
             if not (0 < work_percentage <= 100):
                 raise ValueError("Work percentage must be between 0 and 100")
-
+            
             # Validate all dates
             for field, name in [
                 (self.work_periods.text, "work period"),
@@ -172,6 +172,16 @@ class WorkerDetailsScreen(Screen):
             ]:
                 if field and not self.validate_dates(field):
                     raise ValueError(f"Invalid {name} format")
+            # Incompatible Workers
+            self.form_layout.add_widget(Label(
+                text='Incompatible Workers\n(Worker IDs separated by ;):'
+            ))
+            self.incompatible_workers = TextInput(
+                multiline=True,
+                size_hint_y=None,
+                height=60
+            )
+            self.form_layout.add_widget(self.incompatible_workers)
 
             # Save worker data
             app = App.get_running_app()
@@ -180,8 +190,9 @@ class WorkerDetailsScreen(Screen):
                 'work_periods': self.work_periods.text.strip(),
                 'work_percentage': work_percentage,
                 'mandatory_days': self.mandatory_days.text.strip(),
-                'days_off': self.days_off.text.strip()
-            }
+                'days_off': self.days_off.text.strip(),
+                'incompatible_workers': [w.strip() for w in self.incompatible_workers.text.split(';') if w.strip()]
+            }  
 
             if 'workers_data' not in app.schedule_config:
                 app.schedule_config['workers_data'] = []
@@ -354,6 +365,7 @@ class WorkerDetailsScreen(Screen):
         self.work_percentage.text = '100'
         self.mandatory_days.text = ''
         self.days_off.text = ''
+        self.incompatible_workers.text = ''
 
     def validate_dates(self, date_str):
         """Validate date string format"""
