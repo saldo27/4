@@ -15,12 +15,12 @@ from fpdf import FPDF
 import csv
 import os
 
-# Update this in your header section
 date_label = Label(
-    text='Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-01-18 00:37:20',
+    text='Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-01-18 01:18:21',
     size_hint_y=None,
     height=30
 )
+
 user_label = Label(
     text="Current User's Login: saldo27",
     size_hint_y=None,
@@ -342,77 +342,25 @@ class WorkerDetailsScreen(Screen):
                 self.on_enter()
             else:
                 # Generate schedule
-                from scheduler import Scheduler  # Make sure to use Scheduler, not GuardScheduler
-                app.schedule_config['schedule'] = {}  # Initialize schedule
+                from scheduler import Scheduler
                 scheduler = Scheduler(app.schedule_config)
-                try:
-                    app.schedule_config['schedule'] = scheduler.generate_schedule()
-                
-                    # Validate schedule
-                    errors, warnings = scheduler.validate_schedule()
-                    if errors:
-                        raise ValueError("\n".join(errors))
-                    if warnings:
-                        warning_popup = WarningPopup("\n".join(warnings))
-                        warning_popup.open()
+                app.schedule_config['schedule'] = scheduler.generate_schedule()
+            
+                # Validate schedule
+                errors, warnings = scheduler.validate_schedule()
+                if errors:
+                    raise ValueError("\n".join(errors))
+                if warnings:
+                    warning_popup = WarningPopup("\n".join(warnings))
+                    warning_popup.open()
 
-                    success_popup = SuccessPopup("Schedule generated successfully!")
-                    success_popup.open()
-                    self.manager.current = 'calendar_view'
+                success_popup = SuccessPopup("Schedule generated successfully!")
+                success_popup.open()
+                self.manager.current = 'calendar_view'
 
         except ValueError as e:
             error_popup = ErrorPopup(str(e))
             error_popup.open()
-
-def validate_dates(self, date_str):
-    """Validate date string format"""
-    try:
-        for period in date_str.split(';'):
-            period = period.strip()
-            if ' - ' in period:
-                start, end = period.split(' - ')
-                datetime.strptime(start.strip(), '%d-%m-%Y')
-                datetime.strptime(end.strip(), '%d-%m-%Y')
-            else:
-                datetime.strptime(period, '%d-%m-%Y')
-        return True
-    except ValueError:
-        return False
-
-def clear_inputs(self):
-    """Clear all input fields"""
-    self.worker_id.text = ''
-    self.work_periods.text = ''
-    self.work_percentage.text = '100'
-    self.mandatory_days.text = ''
-    self.days_off.text = ''
-
-    def load_worker_data(self):
-        app = App.get_running_app()
-        current_index = app.schedule_config['current_worker_index']
-        if 'workers_data' in app.schedule_config and current_index < len(app.schedule_config['workers_data']):
-            data = app.schedule_config['workers_data'][current_index]
-            self.worker_id.text = data['id']
-            self.work_periods.text = data['work_periods']
-            self.work_percentage.text = str(data['work_percentage'])
-            self.mandatory_days.text = data['mandatory_days']
-            self.days_off.text = data['days_off']
-
-    def validate_dates(self, date_str):
-        if not date_str:
-            return True
-        try:
-            for period in date_str.split(';'):
-                period = period.strip()
-                if ' - ' in period:
-                    start, end = period.split(' - ')
-                    datetime.strptime(start.strip(), '%d-%m-%Y')
-                    datetime.strptime(end.strip(), '%d-%m-%Y')
-                else:
-                    datetime.strptime(period, '%d-%m-%Y')
-            return True
-        except ValueError:
-            return False
 
 # Add WarningPopup class
 class WarningPopup(Popup):
