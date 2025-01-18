@@ -98,12 +98,13 @@ class InitialSetupScreen(Screen):
         workers_layout.add_widget(self.workers_input)
         layout.add_widget(workers_layout)
 
+
         # Continue Button
         self.continue_btn = Button(
             text='Continue to Worker Details',
             size_hint_y=0.2
         )
-        self.continue_btn.bind(on_press=self.validate_and_continue)
+        self.continue_btn.bind(on_press=self.validate_and_continue)  # Changed from save_and_continue
         layout.add_widget(self.continue_btn)
 
         self.add_widget(layout)
@@ -175,13 +176,22 @@ class WorkerDetailsScreen(Screen):
 
             # Save worker data
             app = App.get_running_app()
+            
+            # Process incompatible workers
+            incompatible_workers = [w.strip() for w in self.incompatible_workers.text.split(';') if w.strip()]
+            
+            # Validate incompatible workers
+            current_worker_id = self.worker_id.text.strip()
+            if current_worker_id in incompatible_workers:
+                raise ValueError(f"Worker cannot be incompatible with themselves")
+
             worker_data = {
-                'id': self.worker_id.text.strip(),
+                'id': current_worker_id,
                 'work_periods': self.work_periods.text.strip(),
                 'work_percentage': work_percentage,
                 'mandatory_days': self.mandatory_days.text.strip(),
                 'days_off': self.days_off.text.strip(),
-                'incompatible_workers': [w.strip() for w in self.incompatible_workers.text.split(';') if w.strip()]
+                'incompatible_workers': incompatible_workers  # Store as list
             }
 
             if 'workers_data' not in app.schedule_config:
@@ -197,19 +207,33 @@ class WorkerDetailsScreen(Screen):
                 # Generate schedule
                 from scheduler import Scheduler
                 scheduler = Scheduler(app.schedule_config)
-                app.schedule_config['schedule'] = scheduler.generate_schedule()
-            
-                # Validate schedule
-                errors, warnings = scheduler.validate_schedule()
-                if errors:
-                    raise ValueError("\n".join(errors))
-                if warnings:
-                    warning_popup = WarningPopup("\n".join(warnings))
-                    warning_popup.open()
+                
+                try:
+                    # Initialize schedule
+                    app.schedule_config['schedule'] = {}
+                    
+                    # Generate and validate schedule
+                    app.schedule_config['schedule'] = scheduler.generate_schedule()
+                    errors, warnings = scheduler.validate_schedule()
+                    
+                    if errors:
+                        # Convert the schedule back to empty if there are errors
+                        app.schedule_config['schedule'] = {}
+                        error_message = "Schedule generation failed:\n" + "\n".join(errors)
+                        raise ValueError(error_message)
+                    
+                    if warnings:
+                        warning_popup = WarningPopup("\n".join(warnings))
+                        warning_popup.open()
 
-                success_popup = SuccessPopup("Schedule generated successfully!")
-                success_popup.open()
-                self.manager.current = 'calendar_view'
+                    success_popup = SuccessPopup("Schedule generated successfully!")
+                    success_popup.open()
+                    self.manager.current = 'calendar_view'
+                    
+                except Exception as e:
+                    # Clear the schedule if there was an error
+                    app.schedule_config['schedule'] = {}
+                    raise ValueError(f"Schedule generation failed: {str(e)}")
 
         except ValueError as e:
             error_popup = ErrorPopup(str(e))
