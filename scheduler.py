@@ -131,21 +131,34 @@ class Scheduler:
 
             # Check 2: Days off (highest priority)
             if worker.get('days_off'):
-                # First try to parse as ranges
                 off_periods = self._parse_date_ranges(worker['days_off'])
                 for start, end in off_periods:
                     if start <= date <= end:
-                        print(f"Worker {worker_id} is off on {date.strftime('%Y-%m-%d')} (range: {start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')})")
+                        print(f"Worker {worker_id} is off on {date.strftime('%Y-%m-%d')}")
                         return False
 
-            # Check 3: Within work periods
+            # Check 3: Worker incompatibility
+            if date in self.schedule:
+                current_workers = self.schedule[date]
+                incompatible_workers = worker.get('incompatible_workers', [])
+                for assigned_worker in current_workers:
+                    if assigned_worker in incompatible_workers:
+                        print(f"Worker {worker_id} is incompatible with {assigned_worker} who is already assigned on {date.strftime('%Y-%m-%d')}")
+                        return False
+                    # Check reverse incompatibility
+                    assigned_worker_data = next(w for w in self.workers_data if w['id'] == assigned_worker)
+                    if assigned_worker_data.get('incompatible_workers') and worker_id in assigned_worker_data['incompatible_workers']:
+                        print(f"Worker {worker_id} is incompatible with {assigned_worker} (reverse check) on {date.strftime('%Y-%m-%d')}")
+                        return False
+
+            # Check 4: Within work periods
             if worker.get('work_periods'):
                 work_periods = self._parse_date_ranges(worker['work_periods'])
                 if not any(start <= date <= end for start, end in work_periods):
                     print(f"Worker {worker_id} not available on {date.strftime('%Y-%m-%d')} (outside work periods)")
                     return False
 
-            # Check 4: Minimum distance between guards
+            # Check 5: Minimum distance between guards
             work_percentage = float(worker.get('work_percentage', 100))
             min_distance = max(2, int(4 / (work_percentage / 100)))
             assignments = sorted(self.worker_assignments[worker_id])
@@ -249,7 +262,16 @@ class Scheduler:
                 if days_between in [7, 14, 21]:
                     errors.append(f"Invalid spacing ({days_between} days) for worker {worker_id}")
 
-        # Check 3: Days off violations
+        # Check 3: Worker incompatibilities
+        for date, workers in self.schedule.items():
+            for i, worker_id in enumerate(workers):
+                worker = next(w for w in self.workers_data if w['id'] == worker_id)
+                incompatible_workers = worker.get('incompatible_workers', [])
+                for other_worker in workers[i+1:]:
+                    if other_worker in incompatible_workers:
+                        errors.append(f"Incompatible workers {worker_id} and {other_worker} assigned on {date.strftime('%Y-%m-%d')}")
+
+        # Check 4: Days off violations
         for worker in self.workers_data:
             worker_id = worker['id']
             if worker.get('days_off'):
@@ -258,20 +280,6 @@ class Scheduler:
                     for start, end in off_periods:
                         if start <= date <= end:
                             errors.append(f"Worker {worker_id} assigned on day off: {date.strftime('%Y-%m-%d')}")
-
-        # Check 4: Monthly distribution
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            monthly_counts = {}
-            for date in self.worker_assignments[worker_id]:
-                key = f"{date.year}-{date.month}"
-                monthly_counts[key] = monthly_counts.get(key, 0) + 1
-
-            if monthly_counts:
-                avg = sum(monthly_counts.values()) / len(monthly_counts)
-                max_deviation = max(abs(count - avg) for count in monthly_counts.values())
-                if max_deviation > avg * 0.2:  # 20% deviation threshold
-                    warnings.append(f"Uneven monthly distribution for worker {worker_id}")
 
         return errors, warnings
 
