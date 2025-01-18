@@ -154,6 +154,29 @@ class WorkerDetailsScreen(Screen):
 
         # Worker Details screen initialization...
 
+    def validate_dates(self, date_str):
+        """Validate date string format"""
+        if not date_str:
+            return True
+        try:
+            for period in date_str.split(';'):
+                period = period.strip()
+                if ' - ' in period:
+                    start, end = period.split(' - ')
+                    # Explicitly check the format
+                    if len(start.strip()) != 10 or len(end.strip()) != 10:
+                        return False
+                    datetime.strptime(start.strip(), '%d-%m-%Y')
+                    datetime.strptime(end.strip(), '%d-%m-%Y')
+                else:
+                    # Explicitly check the format
+                    if len(period) != 10:
+                        return False
+                    datetime.strptime(period, '%d-%m-%Y')
+            return True
+        except ValueError:
+            return False
+
     def save_and_continue(self, instance):
         try:
             # Validate worker ID
@@ -172,7 +195,7 @@ class WorkerDetailsScreen(Screen):
                 (self.days_off.text, "days off")
             ]:
                 if field and not self.validate_dates(field):
-                    raise ValueError(f"Invalid {name} format")
+                    raise ValueError(f"Invalid {name} format. Use DD-MM-YYYY format, separate multiple dates with semicolon (;)")
 
             # Save worker data
             app = App.get_running_app()
@@ -191,7 +214,7 @@ class WorkerDetailsScreen(Screen):
                 'work_percentage': work_percentage,
                 'mandatory_days': self.mandatory_days.text.strip(),
                 'days_off': self.days_off.text.strip(),
-                'incompatible_workers': incompatible_workers  # Store as list
+                'incompatible_workers': incompatible_workers
             }
 
             if 'workers_data' not in app.schedule_config:
@@ -207,6 +230,7 @@ class WorkerDetailsScreen(Screen):
                 # Generate schedule
                 from scheduler import Scheduler
                 scheduler = Scheduler(app.schedule_config)
+                scheduler.current_datetime = datetime(2025, 1, 18, 8, 34, 32)  # Updated datetime
                 
                 try:
                     # Initialize schedule
