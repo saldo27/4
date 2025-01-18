@@ -19,6 +19,10 @@ class Scheduler:
         print(f"Generator: {self.current_user}")
 
         try:
+            # Reset schedule
+            self.schedule = {}
+            self.worker_assignments = {w['id']: [] for w in self.workers_data}
+
             # Step 1: Process mandatory guards first
             self._assign_mandatory_guards()
 
@@ -26,13 +30,22 @@ class Scheduler:
             self._calculate_target_shifts()
 
             # Step 3: Fill remaining shifts
-            self._fill_remaining_shifts()
+            current_date = self.start_date
+            while current_date <= self.end_date:
+                self._assign_day_shifts(current_date)
+                current_date += timedelta(days=1)
+
+            # Validate the schedule before returning
+            errors, warnings = self.validate_schedule()
+            if errors:
+                raise ValueError("\n".join(errors))
 
             return self.schedule
 
         except Exception as e:
             print(f"Error generating schedule: {str(e)}")
-            raise
+            self.schedule = {}  # Reset schedule on error
+            raise ValueError(f"Schedule generation failed: {str(e)}")
 
     def _assign_mandatory_guards(self):
         """Assign all mandatory guards first"""
@@ -108,37 +121,50 @@ class Scheduler:
 
     def _can_assign_worker(self, worker_id, date):
         """Check if a worker can be assigned to a specific date"""
-        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+        try:
+            worker = next(w for w in self.workers_data if w['id'] == worker_id)
 
-        # Check if worker is already assigned that day
-        if date in self.worker_assignments[worker_id]:
+            # Check 1: Already assigned that day
+            if date in self.worker_assignments[worker_id]:
+                print(f"Worker {worker_id} already assigned on {date.strftime('%Y-%m-%d')}")
+                return False
+
+            # Check 2: Days off (highest priority)
+            if worker.get('days_off'):
+                # First try to parse as ranges
+                off_periods = self._parse_date_ranges(worker['days_off'])
+                for start, end in off_periods:
+                    if start <= date <= end:
+                        print(f"Worker {worker_id} is off on {date.strftime('%Y-%m-%d')} (range: {start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')})")
+                        return False
+
+            # Check 3: Within work periods
+            if worker.get('work_periods'):
+                work_periods = self._parse_date_ranges(worker['work_periods'])
+                if not any(start <= date <= end for start, end in work_periods):
+                    print(f"Worker {worker_id} not available on {date.strftime('%Y-%m-%d')} (outside work periods)")
+                    return False
+
+            # Check 4: Minimum distance between guards
+            work_percentage = float(worker.get('work_percentage', 100))
+            min_distance = max(2, int(4 / (work_percentage / 100)))
+            assignments = sorted(self.worker_assignments[worker_id])
+
+            if assignments:
+                for prev_date in reversed(assignments):
+                    days_between = abs((date - prev_date).days)
+                    if days_between < min_distance:
+                        print(f"Worker {worker_id} - too close to previous assignment ({days_between} days)")
+                        return False
+                    if days_between in [7, 14, 21]:
+                        print(f"Worker {worker_id} - prohibited interval ({days_between} days)")
+                        return False
+
+            return True
+
+        except Exception as e:
+            print(f"Error checking worker {worker_id} availability: {str(e)}")
             return False
-
-        # Check days off first (highest priority)
-        if worker.get('days_off'):
-            off_days = self._parse_dates(worker['days_off'])
-            if date in off_days:
-                return False
-
-        # Check work periods
-        if worker.get('work_periods'):
-            work_periods = self._parse_date_ranges(worker['work_periods'])
-            if not any(start <= date <= end for start, end in work_periods):
-                return False
-
-        # Check minimum distance between shifts
-        min_distance = max(2, int(4 / (float(worker.get('work_percentage', 100)) / 100)))
-        assignments = sorted(self.worker_assignments[worker_id])
-
-        if assignments:
-            for prev_date in reversed(assignments):
-                days_between = abs((date - prev_date).days)
-                if days_between < min_distance:
-                    return False
-                if days_between in [7, 14, 21]:  # Prohibited intervals
-                    return False
-
-        return True
 
     def _calculate_worker_score(self, worker, date):
         """Calculate a score for a worker based on various factors"""
