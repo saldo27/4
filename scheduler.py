@@ -10,7 +10,7 @@ class Scheduler:
         self.workers_data = config['workers_data']
         self.schedule = {}
         self.worker_assignments = {w['id']: [] for w in self.workers_data}
-        self.current_datetime = datetime(2025, 1, 17, 23, 39, 1)  # Updated timestamp
+        self.current_datetime = datetime(2025, 1, 18, 8, 26, 50)  # Updated datetime
         self.current_user = 'saldo27'
 
     def generate_schedule(self):
@@ -114,7 +114,7 @@ class Scheduler:
         candidates = []
         
         for worker in self.workers_data:
-            self._print_debug_info(worker['id'], date)  # Add debug info
+            self._print_debug_info(worker['id'], date)  # This line calls the debug method
             if self._can_assign_worker(worker['id'], date):
                 score = self._calculate_worker_score(worker, date)
                 candidates.append((worker, score))
@@ -128,6 +128,18 @@ class Scheduler:
         best_worker = max(candidates, key=lambda x: x[1])[0]
         print(f"Selected worker {best_worker['id']} for {date.strftime('%Y-%m-%d')}")
         return best_worker
+
+    # Add the debug method here
+    def _print_debug_info(self, worker_id, date):
+        """Print debug information for worker assignment"""
+        print(f"\nDebug info for {date.strftime('%Y-%m-%d')}:")
+        print(f"Trying to assign worker: {worker_id}")
+        if date in self.schedule:
+            print(f"Currently assigned workers: {self.schedule[date]}")
+            for w_id in self.schedule[date]:
+                worker = next(w for w in self.workers_data if w['id'] == w_id)
+                if 'incompatible_workers' in worker and worker['incompatible_workers']:
+                    print(f"Worker {w_id} incompatible with: {worker['incompatible_workers']}")
 
     def _can_assign_worker(self, worker_id, date):
         """Check if a worker can be assigned to a specific date"""
@@ -255,17 +267,6 @@ class Scheduler:
             except ValueError as e:
                 print(f"Warning: Invalid date range format '{date_range}' - {str(e)}")
         return ranges
-
-    def _print_debug_info(self, worker_id, date):
-        """Print debug information for worker assignment"""
-        print(f"\nDebug info for {date.strftime('%Y-%m-%d')}:")
-        print(f"Trying to assign worker: {worker_id}")
-        if date in self.schedule:
-            print(f"Currently assigned workers: {self.schedule[date]}")
-            for w_id in self.schedule[date]:
-                worker = next(w for w in self.workers_data if w['id'] == w_id)
-                if 'incompatible_workers' in worker and worker['incompatible_workers']:
-                    print(f"Worker {w_id} incompatible with: {worker['incompatible_workers']}")
                 
     def validate_schedule(self):
         """Validate the generated schedule"""
