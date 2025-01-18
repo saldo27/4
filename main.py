@@ -270,8 +270,7 @@ class WorkerDetailsScreen(Screen):
                 work_percentage = float(self.work_percentage.text or '100')
                 if not (0 < work_percentage <= 100):
                     raise ValueError("Work percentage must be between 0 and 100")
-        except ValueError:
-            raise ValueError("Invalid work percentage")
+                   raise ValueError("Invalid work percentage")
 
         # Validate dates
         try:
