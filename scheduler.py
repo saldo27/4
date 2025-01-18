@@ -15,8 +15,12 @@ class Scheduler:
 
     def generate_schedule(self):
         """Generate the complete guard schedule following all conditions"""
-        print(f"Starting schedule generation at {self.current_datetime}")
+        print(f"\nStarting schedule generation at {self.current_datetime}")
         print(f"Generator: {self.current_user}")
+        print("\nWorker Incompatibilities:")
+        for worker in self.workers_data:
+            if 'incompatible_workers' in worker and worker['incompatible_workers']:
+                print(f"Worker {worker['id']} is incompatible with: {worker['incompatible_workers']}")
 
         try:
             # Reset schedule
@@ -110,14 +114,20 @@ class Scheduler:
         candidates = []
         
         for worker in self.workers_data:
+            self._print_debug_info(worker['id'], date)  # Add debug info
             if self._can_assign_worker(worker['id'], date):
                 score = self._calculate_worker_score(worker, date)
                 candidates.append((worker, score))
+            else:
+                print(f"Worker {worker['id']} cannot be assigned to {date.strftime('%Y-%m-%d')}")
 
         if not candidates:
+            print(f"No suitable candidates found for {date.strftime('%Y-%m-%d')}")
             return None
 
-        return max(candidates, key=lambda x: x[1])[0]
+        best_worker = max(candidates, key=lambda x: x[1])[0]
+        print(f"Selected worker {best_worker['id']} for {date.strftime('%Y-%m-%d')}")
+        return best_worker
 
     def _can_assign_worker(self, worker_id, date):
         """Check if a worker can be assigned to a specific date"""
@@ -137,22 +147,25 @@ class Scheduler:
                         print(f"Worker {worker_id} is off on {date.strftime('%Y-%m-%d')}")
                         return False
 
-            # Check 3: Worker incompatibility (Updated)
-            if date in self.schedule and worker.get('incompatible_workers'):
-                current_workers = self.schedule[date]
-                incompatible_workers = worker['incompatible_workers']
+            # Check 3: Worker incompatibility (Enhanced check)
+            if date in self.schedule:
+                # Get the workers already assigned to this date
+                assigned_workers = self.schedule[date]
                 
-                # Check if any current workers are in the incompatible list
-                for assigned_worker in current_workers:
-                    if assigned_worker in incompatible_workers:
-                        print(f"Worker {worker_id} is incompatible with {assigned_worker} who is already assigned on {date.strftime('%Y-%m-%d')}")
-                        return False
-                    
-                    # Check reverse incompatibility
-                    assigned_worker_data = next(w for w in self.workers_data if w['id'] == assigned_worker)
-                    if assigned_worker_data.get('incompatible_workers') and worker_id in assigned_worker_data['incompatible_workers']:
-                        print(f"Worker {worker_id} is incompatible with {assigned_worker} (reverse check) on {date.strftime('%Y-%m-%d')}")
-                        return False
+                # Check if current worker is incompatible with any assigned worker
+                if 'incompatible_workers' in worker and worker['incompatible_workers']:
+                    for assigned_worker in assigned_workers:
+                        if assigned_worker in worker['incompatible_workers']:
+                            print(f"Cannot assign worker {worker_id}: Incompatible with {assigned_worker}")
+                            return False
+
+                # Check if any assigned worker is incompatible with current worker
+                for assigned_worker_id in assigned_workers:
+                    assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
+                    if 'incompatible_workers' in assigned_worker and assigned_worker['incompatible_workers']:
+                        if worker_id in assigned_worker['incompatible_workers']:
+                            print(f"Cannot assign worker {worker_id}: Worker {assigned_worker_id} marked them as incompatible")
+                            return False
 
             # Check 4: Within work periods
             if worker.get('work_periods'):
@@ -243,6 +256,17 @@ class Scheduler:
                 print(f"Warning: Invalid date range format '{date_range}' - {str(e)}")
         return ranges
 
+    def _print_debug_info(self, worker_id, date):
+        """Print debug information for worker assignment"""
+        print(f"\nDebug info for {date.strftime('%Y-%m-%d')}:")
+        print(f"Trying to assign worker: {worker_id}")
+        if date in self.schedule:
+            print(f"Currently assigned workers: {self.schedule[date]}")
+            for w_id in self.schedule[date]:
+                worker = next(w for w in self.workers_data if w['id'] == w_id)
+                if 'incompatible_workers' in worker and worker['incompatible_workers']:
+                    print(f"Worker {w_id} incompatible with: {worker['incompatible_workers']}")
+                
     def validate_schedule(self):
         """Validate the generated schedule"""
         errors = []
@@ -265,30 +289,20 @@ class Scheduler:
                 if days_between in [7, 14, 21]:
                     errors.append(f"Invalid spacing ({days_between} days) for worker {worker_id}")
 
-        # Check for incompatibilities
+        # Check 3: Worker incompatibilities (Enhanced check)
         for date, workers in self.schedule.items():
-            checked_pairs = set()
-            for worker_id in workers:
+            for i, worker_id in enumerate(workers):
                 worker = next(w for w in self.workers_data if w['id'] == worker_id)
-                incompatible_workers = worker.get('incompatible_workers', [])
-                
-                for other_worker in workers:
-                    if other_worker == worker_id:
-                        continue
-                        
-                    pair = tuple(sorted([worker_id, other_worker]))
-                    if pair in checked_pairs:
-                        continue
-                        
-                    checked_pairs.add(pair)
-                    
-                    if other_worker in incompatible_workers:
-                        errors.append(f"Incompatible workers {worker_id} and {other_worker} assigned on {date.strftime('%Y-%m-%d')}")
-                        
-                    # Check reverse incompatibility
-                    other_worker_data = next(w for w in self.workers_data if w['id'] == other_worker)
-                    if other_worker_data.get('incompatible_workers') and worker_id in other_worker_data['incompatible_workers']:
-                        errors.append(f"Incompatible workers {other_worker} and {worker_id} assigned on {date.strftime('%Y-%m-%d')}")
+                if 'incompatible_workers' in worker and worker['incompatible_workers']:
+                    for other_worker in workers:
+                        if other_worker != worker_id and other_worker in worker['incompatible_workers']:
+                            errors.append(f"Incompatible workers {worker_id} and {other_worker} assigned on {date.strftime('%Y-%m-%d')}")
+                            
+                        # Check reverse incompatibility
+                        other_worker_data = next(w for w in self.workers_data if w['id'] == other_worker)
+                        if other_worker_data.get('incompatible_workers') and worker_id in other_worker_data['incompatible_workers']:
+                            errors.append(f"Incompatible workers {other_worker} and {worker_id} assigned on {date.strftime('%Y-%m-%d')}")
+
 
         # Check 4: Days off violations
         for worker in self.workers_data:
