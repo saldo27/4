@@ -82,7 +82,7 @@ class InitialSetupScreen(Screen):
         shifts_layout.add_widget(Label(text='Number of Shifts per Day:'))
         self.shifts_spinner = Spinner(
             text='Select number of shifts',
-            values=[str(i) for i in range(1, 11)],
+            values=[str(i) for i in range(1, 5)],
             size_hint_y=0.7
         )
         shifts_layout.add_widget(self.shifts_spinner)
@@ -104,7 +104,7 @@ class InitialSetupScreen(Screen):
             text='Continue to Worker Details',
             size_hint_y=0.2
         )
-        self.continue_btn.bind(on_press=self.validate_and_continue)
+        self.continue_btn.bind(on_press=self.save_and_continue)
         layout.add_widget(self.continue_btn)
 
         self.add_widget(layout)
