@@ -17,7 +17,7 @@ import os
 
 # Update this in your header section
 date_label = Label(
-    text='Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-01-18 00:16:54',
+    text='Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-01-18 00:37:20',
     size_hint_y=None,
     height=30
 )
@@ -248,6 +248,48 @@ class WorkerDetailsScreen(Screen):
 
         self.layout.add_widget(buttons_layout)
         self.add_widget(self.layout)
+
+    def previous_worker(self, instance):
+        try:
+            app = App.get_running_app()
+            current_index = app.schedule_config['current_worker_index']
+            
+            if current_index > 0:
+                app.schedule_config['current_worker_index'] = current_index - 1
+                self.clear_inputs()
+                self.on_enter()
+                
+            self.prev_button.disabled = (current_index <= 1)
+            self.next_button.text = 'Next Worker'
+            
+        except Exception as e:
+            error_popup = ErrorPopup(str(e))
+            error_popup.open()
+
+    def clear_inputs(self):
+        """Clear all input fields"""
+        self.worker_id.text = ''
+        self.work_periods.text = ''
+        self.work_percentage.text = '100'
+        self.mandatory_days.text = ''
+        self.days_off.text = ''
+
+    def validate_dates(self, date_str):
+        """Validate date string format"""
+        if not date_str:
+            return True
+        try:
+            for period in date_str.split(';'):
+                period = period.strip()
+                if ' - ' in period:
+                    start, end = period.split(' - ')
+                    datetime.strptime(start.strip(), '%d-%m-%Y')
+                    datetime.strptime(end.strip(), '%d-%m-%Y')
+                else:
+                    datetime.strptime(period, '%d-%m-%Y')
+            return True
+        except ValueError:
+            return False
 
     def on_enter(self):
         app = App.get_running_app()
