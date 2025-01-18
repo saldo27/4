@@ -110,28 +110,27 @@ class Scheduler:
         """Check if a worker can be assigned to a specific date"""
         worker = next(w for w in self.workers_data if w['id'] == worker_id)
 
-        # Check 1: Already assigned that day
+        # Check if worker is already assigned that day
         if date in self.worker_assignments[worker_id]:
             return False
 
-        # Check 2: Days off (moved up in priority)
+        # Check days off first (highest priority)
         if worker.get('days_off'):
             off_days = self._parse_dates(worker['days_off'])
             if date in off_days:
                 return False
 
-        # Check 3: Within work periods
+        # Check work periods
         if worker.get('work_periods'):
             work_periods = self._parse_date_ranges(worker['work_periods'])
             if not any(start <= date <= end for start, end in work_periods):
                 return False
 
-        # Check 4: Minimum distance between guards (4/percentage)
+        # Check minimum distance between shifts
         min_distance = max(2, int(4 / (float(worker.get('work_percentage', 100)) / 100)))
         assignments = sorted(self.worker_assignments[worker_id])
 
         if assignments:
-            # Check past assignments
             for prev_date in reversed(assignments):
                 days_between = abs((date - prev_date).days)
                 if days_between < min_distance:
@@ -142,25 +141,25 @@ class Scheduler:
         return True
 
     def _calculate_worker_score(self, worker, date):
-        """Calculate a score for worker assignment suitability"""
+        """Calculate a score for a worker based on various factors"""
         score = 0.0
 
-        # Factor 1: Mandatory days (highest priority - 50% weight)
+        # Factor 1: Mandatory days (highest priority)
         if worker.get('mandatory_days'):
             mandatory_dates = self._parse_dates(worker['mandatory_days'])
             if date in mandatory_dates:
-                score += 1000  # Very high score for mandatory days
+                score += 1000
 
-        # Factor 2: Distance from target shifts (25% weight)
+        # Factor 2: Distance from target shifts
         current_shifts = len(self.worker_assignments[worker['id']])
         shift_difference = worker['target_shifts'] - current_shifts
         score += shift_difference * 25
 
-        # Factor 3: Monthly balance (25% weight)
+        # Factor 3: Monthly balance
         month_shifts = sum(1 for d in self.worker_assignments[worker['id']]
-                          if d.year == date.year and d.month == date.month)
+                         if d.year == date.year and d.month == date.month)
         target_month_shifts = worker['target_shifts'] / ((self.end_date.year * 12 + self.end_date.month) -
-                                                    (self.start_date.year * 12 + self.start_date.month) + 1)
+                                                       (self.start_date.year * 12 + self.start_date.month) + 1)
         monthly_balance = target_month_shifts - month_shifts
         score += monthly_balance * 25
 
@@ -224,7 +223,17 @@ class Scheduler:
                 if days_between in [7, 14, 21]:
                     errors.append(f"Invalid spacing ({days_between} days) for worker {worker_id}")
 
-        # Check 3: Monthly distribution
+        # Check 3: Days off violations
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            if worker.get('days_off'):
+                off_periods = self._parse_date_ranges(worker['days_off'])
+                for date in self.worker_assignments[worker_id]:
+                    for start, end in off_periods:
+                        if start <= date <= end:
+                            errors.append(f"Worker {worker_id} assigned on day off: {date.strftime('%Y-%m-%d')}")
+
+        # Check 4: Monthly distribution
         for worker in self.workers_data:
             worker_id = worker['id']
             monthly_counts = {}
@@ -239,3 +248,4 @@ class Scheduler:
                     warnings.append(f"Uneven monthly distribution for worker {worker_id}")
 
         return errors, warnings
+

@@ -466,48 +466,42 @@ class ScheduleGenerator:
             
         return max(candidates, key=lambda x: x[1])[0]
 
-    def can_assign_worker(self, worker_id, date):
+    def _can_assign_worker(self, worker_id, date):
         """Check if a worker can be assigned to a specific date"""
         worker = next(w for w in self.workers_data if w['id'] == worker_id)
-        
-        # Check if worker is already assigned that day
+
+        # Check 1: Already assigned that day
         if date in self.worker_assignments[worker_id]:
             return False
-            
-        # Check work periods
+
+        # Check 2: Days off (highest priority)
+        if worker.get('days_off'):
+            # Handle both single dates and date ranges for days off
+            off_periods = self._parse_date_ranges(worker['days_off'])
+            for start, end in off_periods:
+                if start <= date <= end:
+                    print(f"Worker {worker_id} is off on {date.strftime('%Y-%m-%d')}")
+                    return False
+
+        # Check 3: Within work periods
         if worker.get('work_periods'):
-            work_periods = self.parse_date_ranges(worker['work_periods'])
+            work_periods = self._parse_date_ranges(worker['work_periods'])
             if not any(start <= date <= end for start, end in work_periods):
                 return False
-                
-        # Check days off
-        if worker.get('days_off'):
-            off_days = self.parse_dates(worker['days_off'])
-            if date in off_days:
-                return False
-                
-        # Check minimum distance between guards
-        min_distance = int(4 / (float(worker.get('work_percentage', 100)) / 100))
+
+        # Check 4: Minimum distance between guards (4/percentage)
+        min_distance = max(2, int(4 / (float(worker.get('work_percentage', 100)) / 100)))
         assignments = sorted(self.worker_assignments[worker_id])
-        
+
         if assignments:
-            # Check previous assignments
+            # Check past assignments
             for prev_date in reversed(assignments):
-                days_between = (date - prev_date).days
+                days_between = abs((date - prev_date).days)
                 if days_between < min_distance:
                     return False
-                if days_between in [7, 14, 21]:
+                if days_between in [7, 14, 21]:  # Prohibited intervals
                     return False
-                    
-            # Check future assignments (already scheduled)
-            for next_date in assignments:
-                if next_date > date:
-                    days_between = (next_date - date).days
-                    if days_between < min_distance:
-                        return False
-                    if days_between in [7, 14, 21]:
-                        return False
-        
+
         return True
 
     def calculate_worker_score(self, worker, date):
