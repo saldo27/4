@@ -32,6 +32,18 @@ class InitialSetupScreen(Screen):
         super().__init__(**kwargs)
         layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
 
+        # Update datetime
+        date_label = Label(
+            text='Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-01-18 02:08:16',
+            size_hint_y=None,
+            height=30
+        )
+        user_label = Label(
+            text="Current User's Login: saldo27",
+            size_hint_y=None,
+            height=30
+        )
+
         # Title
         title = Label(
             text='Work Shift Manager',
@@ -40,74 +52,53 @@ class InitialSetupScreen(Screen):
         )
         layout.add_widget(title)
 
-        # Current Date/Time and User Info
-        info_layout = GridLayout(cols=1, size_hint_y=0.2, spacing=5)
-        current_datetime = datetime(2025, 1, 17, 23, 4, 12)
-        
-        # Updated datetime format
-        date_label = Label(
-            text=f'Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): {current_datetime.strftime("%Y-%m-%d %H:%M:%S")}',
-            size_hint_y=None,
-            height=30
-        )
-        info_layout.add_widget(date_label)
-        
-        user_label = Label(
-            text=f"Current User's Login: saldo27",
-            size_hint_y=None,
-            height=30
-        )
-        info_layout.add_widget(user_label)
-        layout.add_widget(info_layout)
+        # Rest of the InitialSetupScreen initialization...
+        # This screen should only have validate_and_continue, not save_and_continue
 
-        # Date Range Input
-        date_layout = GridLayout(cols=2, spacing=10, size_hint_y=0.3)
-        date_layout.add_widget(Label(text='Start Date (DD-MM-YYYY):'))
-        self.start_date = TextInput(
-            multiline=False,
-            input_filter=lambda text, from_undo: text[:10]
-        )
-        date_layout.add_widget(self.start_date)
+    def validate_and_continue(self, instance):
+        try:
+            # Validate dates
+            start = datetime.strptime(self.start_date.text, '%d-%m-%Y')
+            end = datetime.strptime(self.end_date.text, '%d-%m-%Y')
+            
+            if end < start:
+                raise ValueError("End date must be after start date")
 
-        date_layout.add_widget(Label(text='End Date (DD-MM-YYYY):'))
-        self.end_date = TextInput(
-            multiline=False,
-            input_filter=lambda text, from_undo: text[:10]
-        )
-        date_layout.add_widget(self.end_date)
-        layout.add_widget(date_layout)
+            if self.shifts_spinner.text == 'Select number of shifts':
+                raise ValueError("Please select number of shifts")
+            
+            num_shifts = int(self.shifts_spinner.text)
+            if num_shifts < 1:
+                raise ValueError("Must have at least 1 shift")
 
-        # Shifts per Day Input
-        shifts_layout = BoxLayout(orientation='vertical', spacing=5, size_hint_y=0.2)
-        shifts_layout.add_widget(Label(text='Number of Shifts per Day:'))
-        self.shifts_spinner = Spinner(
-            text='Select number of shifts',
-            values=[str(i) for i in range(1, 5)],
-            size_hint_y=0.7
-        )
-        shifts_layout.add_widget(self.shifts_spinner)
-        layout.add_widget(shifts_layout)
+            if not self.workers_input.text:
+                raise ValueError("Please enter number of workers")
+            
+            num_workers = int(self.workers_input.text)
+            if num_workers < 1:
+                raise ValueError("Must have at least 1 worker")
 
-        # Workers Input
-        workers_layout = BoxLayout(orientation='vertical', spacing=5, size_hint_y=0.2)
-        workers_layout.add_widget(Label(text='Number of Available Workers:'))
-        self.workers_input = TextInput(
-            multiline=False,
-            input_filter='int',
-            size_hint_y=0.7
-        )
-        workers_layout.add_widget(self.workers_input)
-        layout.add_widget(workers_layout)
+            app = App.get_running_app()
+            app.schedule_config = {
+                'start_date': start,
+                'end_date': end,
+                'num_shifts': num_shifts,
+                'num_workers': num_workers,
+                'current_worker_index': 0
+            }
 
-        # Continue Button
-        self.continue_btn = Button(
-            text='Continue to Worker Details',
-            size_hint_y=0.2
-        )
-        self.continue_btn.bind(on_press=self.save_and_continue)
-        layout.add_widget(self.continue_btn)
+            self.manager.current = 'worker_details'
 
-        self.add_widget(layout)
+        except ValueError as e:
+            error_popup = ErrorPopup(str(e))
+            error_popup.open()
+
+class WorkerDetailsScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+
+        # Worker Details screen initialization...
 
     def save_and_continue(self, instance):
         try:
@@ -825,13 +816,13 @@ class ShiftManagerApp(App):
         super().__init__(**kwargs)
         self.schedule_config = {}
         self.current_user = 'saldo27'
-        self.current_datetime = datetime(2025, 1, 17, 23, 24, 47)  # Updated datetime
+        self.current_datetime = datetime(2025, 1, 18, 2, 8, 16)  # Updated datetime
 
     def build(self):
         sm = ScreenManager()
         sm.add_widget(InitialSetupScreen(name='initial_setup'))
         sm.add_widget(WorkerDetailsScreen(name='worker_details'))
-        sm.add_widget(CalendarView(name='calendar_view'))  # Add CalendarView
+        sm.add_widget(CalendarView(name='calendar_view'))
         return sm
 
 class MainScreen(Screen):
