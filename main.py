@@ -163,7 +163,7 @@ class WorkerDetailsScreen(Screen):
             work_percentage = float(self.work_percentage.text or '100')
             if not (0 < work_percentage <= 100):
                 raise ValueError("Work percentage must be between 0 and 100")
-            
+
             # Validate all dates
             for field, name in [
                 (self.work_periods.text, "work period"),
@@ -172,16 +172,6 @@ class WorkerDetailsScreen(Screen):
             ]:
                 if field and not self.validate_dates(field):
                     raise ValueError(f"Invalid {name} format")
-            # Incompatible Workers
-            self.form_layout.add_widget(Label(
-                text='Incompatible Workers\n(Worker IDs separated by ;):'
-            ))
-            self.incompatible_workers = TextInput(
-                multiline=True,
-                size_hint_y=None,
-                height=60
-            )
-            self.form_layout.add_widget(self.incompatible_workers)
 
             # Save worker data
             app = App.get_running_app()
@@ -192,7 +182,7 @@ class WorkerDetailsScreen(Screen):
                 'mandatory_days': self.mandatory_days.text.strip(),
                 'days_off': self.days_off.text.strip(),
                 'incompatible_workers': [w.strip() for w in self.incompatible_workers.text.split(';') if w.strip()]
-            }  
+            }
 
             if 'workers_data' not in app.schedule_config:
                 app.schedule_config['workers_data'] = []
@@ -207,42 +197,31 @@ class WorkerDetailsScreen(Screen):
                 # Generate schedule
                 from scheduler import Scheduler
                 scheduler = Scheduler(app.schedule_config)
-                
-                try:
-                    # Initialize schedule
-                    app.schedule_config['schedule'] = {}
-                    
-                    # Generate and validate schedule
-                    app.schedule_config['schedule'] = scheduler.generate_schedule()
-                    errors, warnings = scheduler.validate_schedule()
-                    
-                    if errors:
-                        # Convert the schedule back to empty if there are errors
-                        app.schedule_config['schedule'] = {}
-                        error_message = "Schedule generation failed:\n" + "\n".join(errors)
-                        raise ValueError(error_message)
-                    
-                    if warnings:
-                        warning_popup = WarningPopup("\n".join(warnings))
-                        warning_popup.open()
+                app.schedule_config['schedule'] = scheduler.generate_schedule()
+            
+                # Validate schedule
+                errors, warnings = scheduler.validate_schedule()
+                if errors:
+                    raise ValueError("\n".join(errors))
+                if warnings:
+                    warning_popup = WarningPopup("\n".join(warnings))
+                    warning_popup.open()
 
-                    success_popup = SuccessPopup("Schedule generated successfully!")
-                    success_popup.open()
-                    self.manager.current = 'calendar_view'
-                    
-                except Exception as e:
-                    # Clear the schedule if there was an error
-                    app.schedule_config['schedule'] = {}
-                    raise ValueError(f"Schedule generation failed: {str(e)}")
+                success_popup = SuccessPopup("Schedule generated successfully!")
+                success_popup.open()
+                self.manager.current = 'calendar_view'
 
         except ValueError as e:
             error_popup = ErrorPopup(str(e))
             error_popup.open()
-
+        
 class WorkerDetailsScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+
+        # Update datetime
+        current_datetime = datetime(2025, 1, 18, 7, 47, 17)  # Updated datetime
 
         # Title with worker number
         self.title_label = Label(
@@ -315,6 +294,17 @@ class WorkerDetailsScreen(Screen):
         )
         self.form_layout.add_widget(self.days_off)
 
+        # Add Incompatible Workers field
+        self.form_layout.add_widget(Label(
+            text='Incompatible Workers\n(Worker IDs separated by ;):'
+        ))
+        self.incompatible_workers = TextInput(
+            multiline=True,
+            size_hint_y=None,
+            height=60
+        )
+        self.form_layout.add_widget(self.incompatible_workers)
+
         scroll.add_widget(self.form_layout)
         self.layout.add_widget(scroll)
 
@@ -340,7 +330,6 @@ class WorkerDetailsScreen(Screen):
 
         self.layout.add_widget(buttons_layout)
         self.add_widget(self.layout)
-
     def previous_worker(self, instance):
         try:
             app = App.get_running_app()
