@@ -251,14 +251,16 @@ class WorkerDetailsScreen(Screen):
 
     def save_and_continue(self, instance):
         try:
-        # Validate inputs
+            # Validate inputs
             if not self.worker_id.text.strip():
                 raise ValueError("Worker ID is required")
 
-        # Validate work percentage
-        except:
-            work_percentage = float(self.work_percentage.text or '100')
-            if not (0 < work_percentage <= 100):
+            # Validate work percentage
+            try:
+                work_percentage = float(self.work_percentage.text or '100')
+                if not (0 < work_percentage <= 100):
+                    raise ValueError()
+            except ValueError:
                 raise ValueError("Invalid work percentage")
         
         # Validate dates
@@ -310,7 +312,7 @@ class WorkerDetailsScreen(Screen):
             self.manager.current = 'calendar_view'
 
     except ValueError as e:
-        error_popup = ErrorPopup(str(error))
+        error_popup = ErrorPopup(str(e))
         error_popup.open()
 
 def validate_dates(self, date_str):
