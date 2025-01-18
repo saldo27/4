@@ -14,8 +14,17 @@ from fpdf import FPDF
 import csv
 import os
 
-# Update the current datetime
-current_datetime = datetime(2025, 1, 17, 23, 20, 49)
+# Update this in your header section
+date_label = Label(
+    text='Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-01-18 00:16:54',
+    size_hint_y=None,
+    height=30
+)
+user_label = Label(
+    text="Current User's Login: saldo27",
+    size_hint_y=None,
+    height=30
+)
 
 class InitialSetupScreen(Screen):
     def __init__(self, **kwargs):
