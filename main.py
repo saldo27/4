@@ -342,21 +342,23 @@ class WorkerDetailsScreen(Screen):
                 self.on_enter()
             else:
                 # Generate schedule
-                from scheduler import Scheduler
+                from scheduler import Scheduler  # Make sure to use Scheduler, not GuardScheduler
+                app.schedule_config['schedule'] = {}  # Initialize schedule
                 scheduler = Scheduler(app.schedule_config)
-                app.schedule_config['schedule'] = scheduler.generate_schedule()
-            
-                # Validate schedule
-                errors, warnings = scheduler.validate_schedule()
-                if errors:
-                    raise ValueError("\n".join(errors))
-                if warnings:
-                    warning_popup = WarningPopup("\n".join(warnings))
-                    warning_popup.open()
+                try:
+                    app.schedule_config['schedule'] = scheduler.generate_schedule()
+                
+                    # Validate schedule
+                    errors, warnings = scheduler.validate_schedule()
+                    if errors:
+                        raise ValueError("\n".join(errors))
+                    if warnings:
+                        warning_popup = WarningPopup("\n".join(warnings))
+                        warning_popup.open()
 
-                success_popup = SuccessPopup("Schedule generated successfully!")
-                success_popup.open()
-                self.manager.current = 'calendar_view'
+                    success_popup = SuccessPopup("Schedule generated successfully!")
+                    success_popup.open()
+                    self.manager.current = 'calendar_view'
 
         except ValueError as e:
             error_popup = ErrorPopup(str(e))
@@ -988,13 +990,6 @@ class CSVHandler:
                 guards = row['Guards'].split(';')
                 schedule[date] = guards
         return schedule
-    
-def generate_schedule(self):
-    from scheduler import GuardScheduler
-    scheduler = GuardScheduler(self.schedule_config)
-    schedule = scheduler.generate_schedule()
-    return schedule
-
 
 if __name__ == '__main__':
     ShiftManagerApp().run()
