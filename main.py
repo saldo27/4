@@ -256,13 +256,11 @@ class WorkerDetailsScreen(Screen):
                 raise ValueError("Worker ID is required")
 
         # Validate work percentage
-        try:
+        except:
             work_percentage = float(self.work_percentage.text or '100')
             if not (0 < work_percentage <= 100):
-                raise ValueError()
-        except ValueError:
-            raise ValueError("Invalid work percentage")
-
+                raise ValueError("Invalid work percentage")
+        
         # Validate dates
         if self.work_periods.text:
             if not self.validate_dates(self.work_periods.text):
@@ -312,7 +310,7 @@ class WorkerDetailsScreen(Screen):
             self.manager.current = 'calendar_view'
 
     except ValueError as e:
-        error_popup = ErrorPopup(str(e))
+        error_popup = ErrorPopup(str(error))
         error_popup.open()
 
 def validate_dates(self, date_str):
