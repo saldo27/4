@@ -318,7 +318,7 @@ class WorkerDetailsScreen(Screen):
 
         except ValueError as e:
             error_popup = ErrorPopup(str(e))
-            error_popup.open())
+            error_popup.open()
 
 def validate_dates(self, date_str):
     """Validate date string format"""
