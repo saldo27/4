@@ -259,29 +259,32 @@ class WorkerDetailsScreen(Screen):
         self.next_button.text = 'Finish' if current_index == total_workers - 1 else 'Next Worker'
 
     def save_and_continue(self, instance):
-        try:
-            # Validate inputs
-            if not self.worker_id.text.strip():
-                raise ValueError("Worker ID is required")
+    try:
+        # Validate inputs
+        if not self.worker_id.text.strip():
+            raise ValueError("Worker ID is required")
 
-            # Validate work percentage
-            try:
-                work_percentage = float(self.work_percentage.text or '100')
-                if not (0 < work_percentage <= 100):
-                    raise ValueError()
-            except ValueError:
-                raise ValueError("Invalid work percentage")
-        
+        # Validate work percentage
+        try:
+            work_percentage = float(self.work_percentage.text or '100')
+            if not (0 < work_percentage <= 100):
+                raise ValueError("Work percentage must be between 0 and 100")
+        except ValueError:
+            raise ValueError("Invalid work percentage")
+
         # Validate dates
-        if self.work_periods.text:
-            if not self.validate_dates(self.work_periods.text):
-                raise ValueError("Invalid work period format")
-        if self.mandatory_days.text:
-            if not self.validate_dates(self.mandatory_days.text):
-                raise ValueError("Invalid mandatory days format")
-        if self.days_off.text:
-            if not self.validate_dates(self.days_off.text):
-                raise ValueError("Invalid days off format")
+        try:
+            if self.work_periods.text:
+                if not self.validate_dates(self.work_periods.text):
+                    raise ValueError("Invalid work period format")
+            if self.mandatory_days.text:
+                if not self.validate_dates(self.mandatory_days.text):
+                    raise ValueError("Invalid mandatory days format")
+            if self.days_off.text:
+                if not self.validate_dates(self.days_off.text):
+                    raise ValueError("Invalid days off format")
+        except ValueError as date_error:
+            raise ValueError(str(date_error))
 
         # Save worker data
         app = App.get_running_app()
