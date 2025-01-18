@@ -1,3 +1,4 @@
+
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.boxlayout import BoxLayout
@@ -259,16 +260,16 @@ class WorkerDetailsScreen(Screen):
         self.next_button.text = 'Finish' if current_index == total_workers - 1 else 'Next Worker'
 
     def save_and_continue(self, instance):
-    try:
-        # Validate inputs
-        if not self.worker_id.text.strip():
-            raise ValueError("Worker ID is required")
-
-        # Validate work percentage
         try:
-            work_percentage = float(self.work_percentage.text or '100')
-            if not (0 < work_percentage <= 100):
-                raise ValueError("Work percentage must be between 0 and 100")
+            # Validate inputs
+            if not self.worker_id.text.strip():
+                raise ValueError("Worker ID is required")
+
+            # Validate work percentage
+            try:
+                work_percentage = float(self.work_percentage.text or '100')
+                if not (0 < work_percentage <= 100):
+                    raise ValueError("Work percentage must be between 0 and 100")
         except ValueError:
             raise ValueError("Invalid work percentage")
 
