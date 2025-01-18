@@ -37,22 +37,26 @@ class Scheduler:
     def _assign_mandatory_guards(self):
         """Assign all mandatory guards first"""
         print("Processing mandatory guards...")
-        
-        for worker in self.workers_data:
-            if not worker.get('mandatory_days'):
+    
+        # Sort workers by number of mandatory days to handle conflicts
+        workers_with_mandatory = [(w, self._parse_dates(w.get('mandatory_days', ''))) 
+                                for w in self.workers_data]
+        workers_with_mandatory.sort(key=lambda x: len(x[1]), reverse=True)
+
+        for worker, mandatory_dates in workers_with_mandatory:
+            if not mandatory_dates:
                 continue
 
-            mandatory_dates = self._parse_dates(worker['mandatory_days'])
             for date in mandatory_dates:
                 if self.start_date <= date <= self.end_date:
                     if date not in self.schedule:
                         self.schedule[date] = []
-                    
-                    if len(self.schedule[date]) < self.num_shifts:
-                        if self._can_assign_worker(worker['id'], date):
-                            self.schedule[date].append(worker['id'])
-                            self.worker_assignments[worker['id']].append(date)
-                            print(f"Assigned mandatory guard: {worker['id']} on {date.strftime('%Y-%m-%d')}")
+                
+                    if worker['id'] not in self.schedule[date] and len(self.schedule[date]) < self.num_shifts:
+                        # Force assignment for mandatory days
+                        self.schedule[date].append(worker['id'])
+                        self.worker_assignments[worker['id']].append(date)
+                        print(f"Assigned mandatory guard: {worker['id']} on {date.strftime('%Y-%m-%d')}")
 
     def _calculate_target_shifts(self):
         """Calculate target number of shifts for each worker based on their percentage"""
@@ -110,20 +114,20 @@ class Scheduler:
         if date in self.worker_assignments[worker_id]:
             return False
 
-        # Check 2: Within work periods
-        if worker.get('work_periods'):
-            work_periods = self._parse_date_ranges(worker['work_periods'])
-            if not any(start <= date <= end for start, end in work_periods):
-                return False
-
-        # Check 3: Not on days off
+        # Check 2: Days off (moved up in priority)
         if worker.get('days_off'):
             off_days = self._parse_dates(worker['days_off'])
             if date in off_days:
                 return False
 
+        # Check 3: Within work periods
+        if worker.get('work_periods'):
+            work_periods = self._parse_date_ranges(worker['work_periods'])
+            if not any(start <= date <= end for start, end in work_periods):
+                return False
+
         # Check 4: Minimum distance between guards (4/percentage)
-        min_distance = int(4 / (float(worker.get('work_percentage', 100)) / 100))
+        min_distance = max(2, int(4 / (float(worker.get('work_percentage', 100)) / 100)))
         assignments = sorted(self.worker_assignments[worker_id])
 
         if assignments:
@@ -135,41 +139,30 @@ class Scheduler:
                 if days_between in [7, 14, 21]:  # Prohibited intervals
                     return False
 
-            # Check future assignments
-            for next_date in assignments:
-                if next_date > date:
-                    days_between = abs((next_date - date).days)
-                    if days_between < min_distance:
-                        return False
-                    if days_between in [7, 14, 21]:  # Prohibited intervals
-                        return False
-
         return True
 
     def _calculate_worker_score(self, worker, date):
         """Calculate a score for worker assignment suitability"""
         score = 0.0
 
-        # Factor 1: Distance from target shifts (40% weight)
+        # Factor 1: Mandatory days (highest priority - 50% weight)
+        if worker.get('mandatory_days'):
+            mandatory_dates = self._parse_dates(worker['mandatory_days'])
+            if date in mandatory_dates:
+                score += 1000  # Very high score for mandatory days
+
+        # Factor 2: Distance from target shifts (25% weight)
         current_shifts = len(self.worker_assignments[worker['id']])
         shift_difference = worker['target_shifts'] - current_shifts
-        score += shift_difference * 40
+        score += shift_difference * 25
 
-        # Factor 2: Monthly balance (30% weight)
+        # Factor 3: Monthly balance (25% weight)
         month_shifts = sum(1 for d in self.worker_assignments[worker['id']]
-                         if d.year == date.year and d.month == date.month)
+                          if d.year == date.year and d.month == date.month)
         target_month_shifts = worker['target_shifts'] / ((self.end_date.year * 12 + self.end_date.month) -
-                                                       (self.start_date.year * 12 + self.start_date.month) + 1)
+                                                    (self.start_date.year * 12 + self.start_date.month) + 1)
         monthly_balance = target_month_shifts - month_shifts
-        score += monthly_balance * 30
-
-        # Factor 3: Distance from other assignments (30% weight)
-        if self.worker_assignments[worker['id']]:
-            assignments = sorted(self.worker_assignments[worker['id']])
-            if assignments:
-                last_assignment = max(assignments)
-                days_since_last = (date - last_assignment).days
-                score += min(days_since_last, 30) * 30
+        score += monthly_balance * 25
 
         return score
 
