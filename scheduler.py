@@ -137,14 +137,17 @@ class Scheduler:
                         print(f"Worker {worker_id} is off on {date.strftime('%Y-%m-%d')}")
                         return False
 
-            # Check 3: Worker incompatibility
-            if date in self.schedule:
+            # Check 3: Worker incompatibility (Updated)
+            if date in self.schedule and worker.get('incompatible_workers'):
                 current_workers = self.schedule[date]
-                incompatible_workers = worker.get('incompatible_workers', [])
+                incompatible_workers = worker['incompatible_workers']
+                
+                # Check if any current workers are in the incompatible list
                 for assigned_worker in current_workers:
                     if assigned_worker in incompatible_workers:
                         print(f"Worker {worker_id} is incompatible with {assigned_worker} who is already assigned on {date.strftime('%Y-%m-%d')}")
                         return False
+                    
                     # Check reverse incompatibility
                     assigned_worker_data = next(w for w in self.workers_data if w['id'] == assigned_worker)
                     if assigned_worker_data.get('incompatible_workers') and worker_id in assigned_worker_data['incompatible_workers']:
@@ -262,14 +265,30 @@ class Scheduler:
                 if days_between in [7, 14, 21]:
                     errors.append(f"Invalid spacing ({days_between} days) for worker {worker_id}")
 
-        # Check 3: Worker incompatibilities
+        # Check for incompatibilities
         for date, workers in self.schedule.items():
-            for i, worker_id in enumerate(workers):
+            checked_pairs = set()
+            for worker_id in workers:
                 worker = next(w for w in self.workers_data if w['id'] == worker_id)
                 incompatible_workers = worker.get('incompatible_workers', [])
-                for other_worker in workers[i+1:]:
+                
+                for other_worker in workers:
+                    if other_worker == worker_id:
+                        continue
+                        
+                    pair = tuple(sorted([worker_id, other_worker]))
+                    if pair in checked_pairs:
+                        continue
+                        
+                    checked_pairs.add(pair)
+                    
                     if other_worker in incompatible_workers:
                         errors.append(f"Incompatible workers {worker_id} and {other_worker} assigned on {date.strftime('%Y-%m-%d')}")
+                        
+                    # Check reverse incompatibility
+                    other_worker_data = next(w for w in self.workers_data if w['id'] == other_worker)
+                    if other_worker_data.get('incompatible_workers') and worker_id in other_worker_data['incompatible_workers']:
+                        errors.append(f"Incompatible workers {other_worker} and {worker_id} assigned on {date.strftime('%Y-%m-%d')}")
 
         # Check 4: Days off violations
         for worker in self.workers_data:
