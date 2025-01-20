@@ -918,7 +918,7 @@ class ShiftManagerApp(App):
         super().__init__(**kwargs)
         self.schedule_config = {}
         self.current_user = 'saldo27'
-        self.current_datetime = datetime(2025, 1, 18, 2, 28, 26)  # Updated datetime
+        self.current_datetime = datetime(2025, 1, 18, 8, 34, 32)  # Updated datetime
 
     def build(self):
         sm = ScreenManager()
