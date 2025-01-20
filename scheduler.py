@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import calendar
+from zoneinfo import ZoneInfo  # For Python 3.9+
 
 class Scheduler:
     def __init__(self, config):
@@ -10,7 +11,12 @@ class Scheduler:
         self.workers_data = config['workers_data']
         self.schedule = {}
         self.worker_assignments = {w['id']: [] for w in self.workers_data}
-        self.current_datetime = datetime(2025, 1, 20, 8, 38, 18)  # Updated datetime
+        
+        # Get current UTC time and convert to Spain time (UTC+1)
+        self.current_datetime = datetime.now(timezone.utc).astimezone(ZoneInfo("Europe/Madrid"))
+        self.current_user = config.get('current_user', 'saldo27')
+        
+        print(f"Current time in Spain: {self.current_datetime.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         self.current_user = 'saldo27'
     
     def generate_schedule(self):
