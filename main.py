@@ -253,20 +253,28 @@ class WorkerDetailsScreen(Screen):
                      size_hint=(None, None), size=(400, 200))
         popup.open()
 
-    def generate_schedule(self):
-        app = App.get_running_app()
-        try:
-            from scheduler import Scheduler
-            scheduler = Scheduler(app.schedule_config)
-            app.schedule_config['schedule'] = scheduler.generate_schedule()
+   def generate_schedule(self):
+    app = App.get_running_app()
+    try:
+        from scheduler import Scheduler
+        scheduler = Scheduler(app.schedule_config)
+        schedule = scheduler.generate_schedule()
+        
+        if not schedule:
+            raise ValueError("No schedule was generated")
             
-            popup = Popup(title='Success',
-                         content=Label(text='Schedule generated successfully!'),
-                         size_hint=(None, None), size=(400, 200))
-            popup.open()
-            self.manager.current = 'calendar_view'
-        except:
-            self.show_error("Failed to generate schedule")
+        app.schedule_config['schedule'] = schedule
+        
+        popup = Popup(title='Success',
+                     content=Label(text='Schedule generated successfully!'),
+                     size_hint=(None, None), size=(400, 200))
+        popup.open()
+        self.manager.current = 'calendar_view'
+        
+    except Exception as e:
+        error_message = f"Failed to generate schedule: {str(e)}"
+        logging.error(error_message)
+        self.show_error(error_message)
 
     def clear_inputs(self):
         self.worker_id.text = ''
@@ -286,9 +294,140 @@ class CalendarViewScreen(Screen):
     def __init__(self, **kwargs):
         super(CalendarViewScreen, self).__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-        self.layout.add_widget(Label(text='Calendar View'))
+        
+        # Title
+        self.layout.add_widget(Label(text='Schedule View', size_hint_y=0.1))
+        
+        # Create a scroll view for the calendar
+        scroll = ScrollView(size_hint=(1, 0.8))
+        self.calendar_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=10)
+        self.calendar_layout.bind(minimum_height=self.calendar_layout.setter('height'))
+        scroll.add_widget(self.calendar_layout)
+        self.layout.add_widget(scroll)
+        
+        # Add Save and Export buttons
+        buttons_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
+        
+        save_btn = Button(text='Save Schedule')
+        save_btn.bind(on_press=self.save_schedule)
+        buttons_layout.add_widget(save_btn)
+        
+        export_btn = Button(text='Export to File')
+        export_btn.bind(on_press=self.export_schedule)
+        buttons_layout.add_widget(export_btn)
+        
+        self.layout.add_widget(buttons_layout)
         self.add_widget(self.layout)
 
+    def on_enter(self):
+        """Called when the screen is entered"""
+        self.display_schedule()
+
+    def display_schedule(self):
+        """Display the generated schedule"""
+        app = App.get_running_app()
+        schedule = app.schedule_config.get('schedule', {})
+        
+        # Clear previous content
+        self.calendar_layout.clear_widgets()
+        
+        if not schedule:
+            self.calendar_layout.add_widget(Label(
+                text='No schedule available',
+                size_hint_y=None, 
+                height=40
+            ))
+            return
+
+        # Sort dates
+        dates = sorted(schedule.keys())
+        
+        for date in dates:
+            # Create date header
+            date_str = date.strftime('%Y-%m-%d')
+            date_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=100, padding=5)
+            
+            # Add date header
+            date_layout.add_widget(Label(
+                text=f'Date: {date_str}',
+                size_hint_y=None,
+                height=30,
+                bold=True
+            ))
+            
+            # Add workers for this date
+            workers = schedule[date]
+            workers_text = 'Assigned Workers:\n' + '\n'.join(f'Worker {w}' for w in workers)
+            date_layout.add_widget(Label(
+                text=workers_text,
+                size_hint_y=None,
+                height=70
+            ))
+            
+            # Add a separator
+            separator = BoxLayout(size_hint_y=None, height=2)
+            separator.add_widget(Label(
+                size_hint_y=None,
+                height=2,
+                color=(0.7, 0.7, 0.7, 1)
+            ))
+            
+            # Add layouts to calendar
+            self.calendar_layout.add_widget(date_layout)
+            self.calendar_layout.add_widget(separator)
+
+    def save_schedule(self, instance):
+        """Save the schedule to a JSON file"""
+        try:
+            app = App.get_running_app()
+            schedule_data = {}
+            
+            # Convert datetime objects to strings for JSON serialization
+            for date, workers in app.schedule_config['schedule'].items():
+                schedule_data[date.strftime('%Y-%m-%d')] = workers
+            
+            with open('schedule.json', 'w') as f:
+                json.dump(schedule_data, f, indent=2)
+            
+            popup = Popup(title='Success',
+                         content=Label(text='Schedule saved successfully!'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()
+            
+        except Exception as e:
+            popup = Popup(title='Error',
+                         content=Label(text=f'Failed to save schedule: {str(e)}'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()
+
+    def export_schedule(self, instance):
+        """Export the schedule to a text file"""
+        try:
+            app = App.get_running_app()
+            schedule = app.schedule_config['schedule']
+            
+            with open('schedule.txt', 'w') as f:
+                f.write("SHIFT SCHEDULE\n")
+                f.write("=" * 50 + "\n\n")
+                
+                for date in sorted(schedule.keys()):
+                    f.write(f"Date: {date.strftime('%Y-%m-%d')}\n")
+                    f.write("Assigned Workers:\n")
+                    for worker in schedule[date]:
+                        f.write(f"  - Worker {worker}\n")
+                    f.write("\n")
+            
+            popup = Popup(title='Success',
+                         content=Label(text='Schedule exported successfully!'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()
+            
+        except Exception as e:
+            popup = Popup(title='Error',
+                         content=Label(text=f'Failed to export schedule: {str(e)}'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()
+            
 class ShiftManagerApp(App):
     def __init__(self, **kwargs):
         super(ShiftManagerApp, self).__init__(**kwargs)
