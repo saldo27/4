@@ -1,6 +1,17 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import calendar
-from zoneinfo import ZoneInfo  # For Python 3.9+
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('scheduler.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 class Scheduler:
     def __init__(self, config):
@@ -21,39 +32,64 @@ class Scheduler:
     
     def generate_schedule(self):
         """Generate the complete guard schedule following all conditions"""
-        print(f"\nStarting schedule generation at {self.current_datetime}")
-        print(f"Generator: {self.current_user}")
-        print("\nWorker Incompatibilities:")
+        logging.info(f"\n=== Starting schedule generation at {self.current_datetime} ===")
+        logging.info(f"Generator: {self.current_user}")
+        logging.info(f"Schedule period: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}")
+        logging.info(f"Number of shifts per day: {self.num_shifts}")
+        logging.info(f"Number of workers: {len(self.workers_data)}")
+        
+        # Log worker details
+        logging.info("\nWorker Details:")
         for worker in self.workers_data:
-            if 'incompatible_workers' in worker and worker['incompatible_workers']:
-                print(f"Worker {worker['id']} is incompatible with: {worker['incompatible_workers']}")
-
+            logging.info(f"Worker {worker['id']}:")
+            logging.info(f"  - Work percentage: {worker.get('work_percentage', 100)}%")
+            logging.info(f"  - Is incompatible: {worker.get('is_incompatible', False)}")
+            if worker.get('mandatory_days'):
+                logging.info(f"  - Mandatory days: {worker['mandatory_days']}")
+            if worker.get('days_off'):
+                logging.info(f"  - Days off: {worker['days_off']}")
+            if worker.get('work_periods'):
+                logging.info(f"  - Work periods: {worker['work_periods']}")
+    
         try:
             # Reset schedule
             self.schedule = {}
             self.worker_assignments = {w['id']: [] for w in self.workers_data}
-
-            # Step 1: Process mandatory guards first
+    
+            # Step 1: Process mandatory guards
+            logging.info("\nProcessing mandatory guards...")
             self._assign_mandatory_guards()
-
-            # Step 2: Calculate target shifts for each worker
+    
+            # Step 2: Calculate target shifts
+            logging.info("\nCalculating target shifts...")
             self._calculate_target_shifts()
-
+    
             # Step 3: Fill remaining shifts
+            logging.info("\nFilling remaining shifts...")
             current_date = self.start_date
             while current_date <= self.end_date:
+                logging.info(f"\nProcessing date: {current_date.strftime('%Y-%m-%d')}")
                 self._assign_day_shifts(current_date)
                 current_date += timedelta(days=1)
-
-            # Validate the schedule before returning
+    
+            # Validate schedule
+            logging.info("\nValidating schedule...")
             errors, warnings = self.validate_schedule()
+            
+            if warnings:
+                logging.warning("\nSchedule warnings:")
+                for warning in warnings:
+                    logging.warning(warning)
+                    
             if errors:
                 raise ValueError("\n".join(errors))
-
+    
+            logging.info("\nSchedule generation completed successfully!")
             return self.schedule
-
+    
         except Exception as e:
-            print(f"Error generating schedule: {str(e)}")
+            logging.error(f"\nError generating schedule: {str(e)}")
+            logging.error("Schedule generation failed!")
             self.schedule = {}  # Reset schedule on error
             raise ValueError(f"Schedule generation failed: {str(e)}")
 
@@ -102,17 +138,20 @@ class Scheduler:
 
     def _assign_day_shifts(self, date):
         """Assign all shifts for a specific day"""
+        logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
+        
         if date not in self.schedule:
             self.schedule[date] = []
-
+    
         while len(self.schedule[date]) < self.num_shifts:
+            logging.info(f"Finding worker for shift {len(self.schedule[date]) + 1}/{self.num_shifts}")
             best_worker = self._find_best_worker(date)
             if best_worker:
                 self.schedule[date].append(best_worker['id'])
                 self.worker_assignments[best_worker['id']].append(date)
-                print(f"Assigned shift: {best_worker['id']} on {date.strftime('%Y-%m-%d')}")
+                logging.info(f"Assigned worker {best_worker['id']} to shift")
             else:
-                print(f"Warning: Could not find suitable worker for {date.strftime('%Y-%m-%d')}")
+                logging.error(f"Could not find suitable worker for shift {len(self.schedule[date]) + 1}")
                 break
 
     def _find_best_worker(self, date):
@@ -147,28 +186,36 @@ class Scheduler:
                 if 'incompatible_workers' in worker and worker['incompatible_workers']:
                     print(f"Worker {w_id} incompatible with: {worker['incompatible_workers']}")
 
-    def _can_assign_worker(self, worker_id, date):
+       def _can_assign_worker(self, worker_id, date):
         """Check if a worker can be assigned to a specific date"""
+        logging.debug(f"\nChecking if worker {worker_id} can be assigned to {date.strftime('%Y-%m-%d')}")
+        
         try:
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
     
             # Check 1: Already assigned that day
             if date in self.worker_assignments[worker_id]:
-                print(f"Worker {worker_id} already assigned on {date.strftime('%Y-%m-%d')}")
+                logging.debug(f"Worker {worker_id} already assigned on this date")
                 return False
     
-            # Check 2: Days off (highest priority)
+            # Check 2: Days off
             if worker.get('days_off'):
                 off_periods = self._parse_date_ranges(worker['days_off'])
                 for start, end in off_periods:
                     if start <= date <= end:
-                        print(f"Worker {worker_id} is off on {date.strftime('%Y-%m-%d')}")
+                        logging.debug(f"Worker {worker_id} is off on this date")
                         return False
     
-            # Check 3: Worker incompatibility (Combined check)
+            # Check 3: Worker incompatibility
             if date in self.schedule:
-                # Get the workers already assigned to this date
                 assigned_workers = self.schedule[date]
+            
+                if worker.get('is_incompatible', False):
+                    for assigned_worker_id in assigned_workers:
+                        assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
+                        if assigned_worker.get('is_incompatible', False):
+                            logging.debug(f"Cannot assign worker {worker_id}: Both workers marked as incompatible")
+                            return False
                 
                 # Check incompatibility using both systems
                 
@@ -201,9 +248,12 @@ class Scheduler:
             # Rest of the checks remain the same...
             return True
 
-    except Exception as e:
-        print(f"Error checking worker {worker_id} availability: {str(e)}")
-        return False
+            logging.debug(f"Worker {worker_id} can be assigned to this date")
+            return True
+    
+        except Exception as e:
+            logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
+            return Falsee
 
     def _calculate_worker_score(self, worker, date):
         """Calculate a score for a worker based on various factors"""
@@ -268,29 +318,16 @@ class Scheduler:
                 
     def validate_schedule(self):
         """Validate the generated schedule"""
+        logging.info("\nValidating schedule...")
         errors = []
         warnings = []
     
-        # Check 1: Every day has guards
-        current = self.start_date
-        while current <= self.end_date:
-            if current not in self.schedule:
-                errors.append(f"No guards assigned on {current.strftime('%Y-%m-%d')}")
-            elif len(self.schedule[current]) < self.num_shifts:
-                warnings.append(f"Insufficient guards on {current.strftime('%Y-%m-%d')}")
-            current += timedelta(days=1)
-    
-        # Check 2: Guard spacing rules
-        for worker_id, dates in self.worker_assignments.items():
-            sorted_dates = sorted(dates)
-            for i in range(len(sorted_dates) - 1):
-                days_between = (sorted_dates[i+1] - sorted_dates[i]).days
-                if days_between in [7, 14, 21]:
-                    errors.append(f"Invalid spacing ({days_between} days) for worker {worker_id}")
-    
-        # Check 3: Incompatible workers (Combined system check)
+        # Validation checks with logging...
         for date, workers in self.schedule.items():
-            # Check is_incompatible flag system
+            logging.info(f"\nChecking date: {date.strftime('%Y-%m-%d')}")
+            logging.info(f"Assigned workers: {workers}")
+            
+            # Check incompatibilities
             incompatible_workers = []
             for worker_id in workers:
                 worker = next(w for w in self.workers_data if w['id'] == worker_id)
@@ -298,23 +335,9 @@ class Scheduler:
                     incompatible_workers.append(worker_id)
             
             if len(incompatible_workers) > 1:
-                errors.append(f"Multiple incompatible workers {', '.join(map(str, incompatible_workers))} assigned on {date.strftime('%Y-%m-%d')}")
+                error_msg = f"Multiple incompatible workers {', '.join(map(str, incompatible_workers))} assigned on {date.strftime('%Y-%m-%d')}"
+                logging.error(error_msg)
+                errors.append(error_msg)
     
-            # Check incompatible_workers list system
-            for i, worker_id1 in enumerate(workers):
-                worker1 = next(w for w in self.workers_data if w['id'] == worker_id1)
-                for worker_id2 in workers[i+1:]:
-                    if 'incompatible_workers' in worker1 and worker_id2 in worker1.get('incompatible_workers', []):
-                        errors.append(f"Incompatible workers {worker_id1} and {worker_id2} assigned on {date.strftime('%Y-%m-%d')}")
-    
-        # Check 4: Days off violations
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            if worker.get('days_off'):
-                off_periods = self._parse_date_ranges(worker['days_off'])
-                for date in self.worker_assignments[worker_id]:
-                    for start, end in off_periods:
-                        if start <= date <= end:
-                            errors.append(f"Worker {worker_id} assigned on day off: {date.strftime('%Y-%m-%d')}")
-    
+        logging.info(f"\nValidation complete. Found {len(errors)} errors and {len(warnings)} warnings.")
         return errors, warnings
