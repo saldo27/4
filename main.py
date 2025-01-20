@@ -253,28 +253,28 @@ class WorkerDetailsScreen(Screen):
                      size_hint=(None, None), size=(400, 200))
         popup.open()
 
-   def generate_schedule(self):
-    app = App.get_running_app()
-    try:
-        from scheduler import Scheduler
-        scheduler = Scheduler(app.schedule_config)
-        schedule = scheduler.generate_schedule()
-        
-        if not schedule:
-            raise ValueError("No schedule was generated")
+       def generate_schedule(self):
+        app = App.get_running_app()
+        try:
+            from scheduler import Scheduler
+            scheduler = Scheduler(app.schedule_config)
+            schedule = scheduler.generate_schedule()
             
-        app.schedule_config['schedule'] = schedule
-        
-        popup = Popup(title='Success',
-                     content=Label(text='Schedule generated successfully!'),
-                     size_hint=(None, None), size=(400, 200))
-        popup.open()
-        self.manager.current = 'calendar_view'
-        
-    except Exception as e:
-        error_message = f"Failed to generate schedule: {str(e)}"
-        logging.error(error_message)
-        self.show_error(error_message)
+            if not schedule:
+                raise ValueError("No schedule was generated")
+                
+            app.schedule_config['schedule'] = schedule
+            
+            popup = Popup(title='Success',
+                         content=Label(text='Schedule generated successfully!'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()
+            self.manager.current = 'calendar_view'
+            
+        except Exception as e:
+            error_message = f"Failed to generate schedule: {str(e)}"
+            logging.error(error_message)
+            self.show_error(error_message)
 
     def clear_inputs(self):
         self.worker_id.text = ''
