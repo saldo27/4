@@ -100,88 +100,88 @@ class SetupScreen(Screen):
 
 class WorkerDetailsScreen(Screen):
     def __init__(self, **kwargs):
-            super(WorkerDetailsScreen, self).__init__(**kwargs)
-            self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-    
-            # Title
-            self.title_label = Label(text='Worker Details', size_hint_y=0.1)
-            self.layout.add_widget(self.title_label)
-    
-            # Form layout
-            scroll = ScrollView(size_hint=(1, 0.8))
-            self.form_layout = GridLayout(cols=2, spacing=10, size_hint_y=None, padding=10)
-            self.form_layout.bind(minimum_height=self.form_layout.setter('height'))
-    
-            # Worker ID
-            self.form_layout.add_widget(Label(text='Worker ID:'))
-            self.worker_id = TextInput(multiline=False, size_hint_y=None, height=40)
-            self.form_layout.add_widget(self.worker_id)
-    
-            # Work Periods
-            self.form_layout.add_widget(Label(text='Work Periods (DD-MM-YYYY):'))
-            self.work_periods = TextInput(multiline=True, size_hint_y=None, height=60)
-            self.form_layout.add_widget(self.work_periods)
-    
-            # Work Percentage
-            self.form_layout.add_widget(Label(text='Work Percentage:'))
-            self.work_percentage = TextInput(
-                multiline=False,
-                text='100',
-                input_filter='float',
-                size_hint_y=None,
-                height=40
-            )
-            self.form_layout.add_widget(self.work_percentage)
-    
-            # Mandatory Days
-            self.form_layout.add_widget(Label(text='Mandatory Days:'))
-            self.mandatory_days = TextInput(multiline=True, size_hint_y=None, height=60)
-            self.form_layout.add_widget(self.mandatory_days)
-    
-            # Days Off
-            self.form_layout.add_widget(Label(text='Days Off:'))
-            self.days_off = TextInput(multiline=True, size_hint_y=None, height=60)
-            self.form_layout.add_widget(self.days_off)
-    
-            # Incompatibility Checkbox - Updated Layout
-            checkbox_label = Label(
-                text='Incompatible Worker:',
-                size_hint_y=None,
-                height=40
-            )
-            self.form_layout.add_widget(checkbox_label)
-    
-            checkbox_container = BoxLayout(
-                orientation='horizontal',
-                size_hint_y=None,
-                height=40
-            )
-            
-            self.incompatible_checkbox = CheckBox(
-                size_hint_x=None,
-                width=40,
-                active=False
-            )
-            
-            checkbox_text = Label(
-                text='Cannot work with other incompatible workers',
-                size_hint_x=1,
-                halign='left'
-            )
-            
-            checkbox_container.add_widget(self.incompatible_checkbox)
-            checkbox_container.add_widget(checkbox_text)
-            self.form_layout.add_widget(checkbox_container)
-    
-            scroll.add_widget(self.form_layout)
-            self.layout.add_widget(scroll)
-    
-            # Continue Button
-            self.continue_btn = Button(text='Continue', size_hint_y=0.1)
-            self.continue_btn.bind(on_press=self.save_and_continue)
-            self.layout.add_widget(self.continue_btn)
-    
-            self.add_widget(self.layout)
+        super(WorkerDetailsScreen, self).__init__(**kwargs)
+        self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+
+        # Title
+        self.title_label = Label(text='Worker Details', size_hint_y=0.1)
+        self.layout.add_widget(self.title_label)
+
+        # Form layout
+        scroll = ScrollView(size_hint=(1, 0.8))
+        self.form_layout = GridLayout(cols=2, spacing=10, size_hint_y=None, padding=10)
+        self.form_layout.bind(minimum_height=self.form_layout.setter('height'))
+
+        # Worker ID
+        self.form_layout.add_widget(Label(text='Worker ID:'))
+        self.worker_id = TextInput(multiline=False, size_hint_y=None, height=40)
+        self.form_layout.add_widget(self.worker_id)
+
+        # Work Periods
+        self.form_layout.add_widget(Label(text='Work Periods (DD-MM-YYYY):'))
+        self.work_periods = TextInput(multiline=True, size_hint_y=None, height=60)
+        self.form_layout.add_widget(self.work_periods)
+
+        # Work Percentage
+        self.form_layout.add_widget(Label(text='Work Percentage:'))
+        self.work_percentage = TextInput(
+            multiline=False,
+            text='100',
+            input_filter='float',
+            size_hint_y=None,
+            height=40
+        )
+        self.form_layout.add_widget(self.work_percentage)
+
+        # Mandatory Days
+        self.form_layout.add_widget(Label(text='Mandatory Days:'))
+        self.mandatory_days = TextInput(multiline=True, size_hint_y=None, height=60)
+        self.form_layout.add_widget(self.mandatory_days)
+
+        # Days Off
+        self.form_layout.add_widget(Label(text='Days Off:'))
+        self.days_off = TextInput(multiline=True, size_hint_y=None, height=60)
+        self.form_layout.add_widget(self.days_off)
+
+        # Incompatibility Checkbox - Updated Layout
+        checkbox_label = Label(
+            text='Incompatible Worker:',
+            size_hint_y=None,
+            height=40
+        )
+        self.form_layout.add_widget(checkbox_label)
+
+        checkbox_container = BoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            height=40
+        )
+        
+        self.incompatible_checkbox = CheckBox(
+            size_hint_x=None,
+            width=40,
+            active=False
+        )
+        
+        checkbox_text = Label(
+            text='Cannot work with other incompatible workers',
+            size_hint_x=1,
+            halign='left'
+        )
+        
+        checkbox_container.add_widget(self.incompatible_checkbox)
+        checkbox_container.add_widget(checkbox_text)
+        self.form_layout.add_widget(checkbox_container)
+
+        scroll.add_widget(self.form_layout)
+        self.layout.add_widget(scroll)
+
+        # Continue Button
+        self.continue_btn = Button(text='Continue', size_hint_y=0.1)
+        self.continue_btn.bind(on_press=self.save_and_continue)
+        self.layout.add_widget(self.continue_btn)
+
+        self.add_widget(self.layout)
 
     def validate_dates(self, date_str):
         if not date_str:
