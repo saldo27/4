@@ -261,9 +261,6 @@ class WorkerDetailsScreen(Screen):
         super().__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
 
-        # Update datetime
-        current_datetime = datetime(2025, 1, 18, 7, 47, 17)  # Updated datetime
-
         # Title with worker number
         self.title_label = Label(
             text='Worker Details',
@@ -335,70 +332,32 @@ class WorkerDetailsScreen(Screen):
         )
         self.form_layout.add_widget(self.days_off)
 
-        # Add Incompatible Workers field
-        self.form_layout.add_widget(Label(
-            text='Incompatible Workers\n(Worker IDs separated by ;):'
+        # Incompatibility Checkbox
+        checkbox_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=40)
+        self.incompatible_checkbox = CheckBox(size_hint_x=None, width=40)
+        checkbox_layout.add_widget(self.incompatible_checkbox)
+        checkbox_layout.add_widget(Label(
+            text='Worker cannot work with other incompatible workers',
+            size_hint_x=1
         ))
-        self.incompatible_workers = TextInput(
-            multiline=True,
-            size_hint_y=None,
-            height=60
-        )
-        self.form_layout.add_widget(self.incompatible_workers)
+        self.form_layout.add_widget(Label(text='Incompatibility:'))
+        self.form_layout.add_widget(checkbox_layout)
 
+        # Add the form to the scroll view
         scroll.add_widget(self.form_layout)
         self.layout.add_widget(scroll)
 
-        # Buttons layout
-        buttons_layout = BoxLayout(
-            orientation='horizontal',
-            size_hint_y=0.1,
-            spacing=10
+        # Continue Button
+        self.continue_btn = Button(
+            text='Continue',
+            size_hint_y=0.1
         )
+        self.continue_btn.bind(on_press=self.save_and_continue)
+        self.layout.add_widget(self.continue_btn)
 
-        self.prev_button = Button(
-            text='Previous Worker',
-            disabled=True
-        )
-        self.prev_button.bind(on_press=self.previous_worker)
-        buttons_layout.add_widget(self.prev_button)
-
-        self.next_button = Button(
-            text='Next Worker'
-        )
-        self.next_button.bind(on_press=self.save_and_continue)
-        buttons_layout.add_widget(self.next_button)
-
-        self.layout.add_widget(buttons_layout)
         self.add_widget(self.layout)
-    def previous_worker(self, instance):
-        try:
-            app = App.get_running_app()
-            current_index = app.schedule_config['current_worker_index']
-            
-            if current_index > 0:
-                app.schedule_config['current_worker_index'] = current_index - 1
-                self.clear_inputs()
-                self.on_enter()
-                
-            self.prev_button.disabled = (current_index <= 1)
-            self.next_button.text = 'Next Worker'
-            
-        except Exception as e:
-            error_popup = ErrorPopup(str(e))
-            error_popup.open()
-
-    def clear_inputs(self):
-        """Clear all input fields"""
-        self.worker_id.text = ''
-        self.work_periods.text = ''
-        self.work_percentage.text = '100'
-        self.mandatory_days.text = ''
-        self.days_off.text = ''
-        self.incompatible_checkbox.active = False
 
     def validate_dates(self, date_str):
-        """Validate date string format"""
         if not date_str:
             return True
         try:
@@ -406,23 +365,17 @@ class WorkerDetailsScreen(Screen):
                 period = period.strip()
                 if ' - ' in period:
                     start, end = period.split(' - ')
+                    if len(start.strip()) != 10 or len(end.strip()) != 10:
+                        return False
                     datetime.strptime(start.strip(), '%d-%m-%Y')
                     datetime.strptime(end.strip(), '%d-%m-%Y')
                 else:
+                    if len(period) != 10:
+                        return False
                     datetime.strptime(period, '%d-%m-%Y')
             return True
         except ValueError:
             return False
-
-    def on_enter(self):
-        app = App.get_running_app()
-        current_index = app.schedule_config['current_worker_index']
-        total_workers = app.schedule_config['num_workers']
-        
-        self.title_label.text = f'Worker Details ({current_index + 1} of {total_workers})'
-        
-        self.prev_button.disabled = (current_index == 0)
-        self.next_button.text = 'Finish' if current_index == total_workers - 1 else 'Next Worker'
 
     def save_and_continue(self, instance):
         try:
@@ -442,16 +395,18 @@ class WorkerDetailsScreen(Screen):
                 (self.days_off.text, "days off")
             ]:
                 if field and not self.validate_dates(field):
-                    raise ValueError(f"Invalid {name} format")
+                    raise ValueError(f"Invalid {name} format. Use DD-MM-YYYY format, separate multiple dates with semicolon (;)")
 
             # Save worker data
             app = App.get_running_app()
+            
             worker_data = {
                 'id': self.worker_id.text.strip(),
                 'work_periods': self.work_periods.text.strip(),
                 'work_percentage': work_percentage,
                 'mandatory_days': self.mandatory_days.text.strip(),
-                'days_off': self.days_off.text.strip()
+                'days_off': self.days_off.text.strip(),
+                'is_incompatible': self.incompatible_checkbox.active
             }
 
             if 'workers_data' not in app.schedule_config:
@@ -467,23 +422,52 @@ class WorkerDetailsScreen(Screen):
                 # Generate schedule
                 from scheduler import Scheduler
                 scheduler = Scheduler(app.schedule_config)
-                app.schedule_config['schedule'] = scheduler.generate_schedule()
-            
-                # Validate schedule
-                errors, warnings = scheduler.validate_schedule()
-                if errors:
-                    raise ValueError("\n".join(errors))
-                if warnings:
-                    warning_popup = WarningPopup("\n".join(warnings))
-                    warning_popup.open()
+                try:
+                    # Initialize schedule
+                    app.schedule_config['schedule'] = {}
+                    
+                    # Generate and validate schedule
+                    app.schedule_config['schedule'] = scheduler.generate_schedule()
+                    errors, warnings = scheduler.validate_schedule()
+                    
+                    if errors:
+                        # Convert the schedule back to empty if there are errors
+                        app.schedule_config['schedule'] = {}
+                        error_message = "Schedule generation failed:\n" + "\n".join(errors)
+                        raise ValueError(error_message)
+                    
+                    if warnings:
+                        warning_popup = WarningPopup("\n".join(warnings))
+                        warning_popup.open()
 
-                success_popup = SuccessPopup("Schedule generated successfully!")
-                success_popup.open()
-                self.manager.current = 'calendar_view'
+                    success_popup = SuccessPopup("Schedule generated successfully!")
+                    success_popup.open()
+                    self.manager.current = 'calendar_view'
+                    
+                except Exception as e:
+                    # Clear the schedule if there was an error
+                    app.schedule_config['schedule'] = {}
+                    raise ValueError(f"Schedule generation failed: {str(e)}")
 
         except ValueError as e:
             error_popup = ErrorPopup(str(e))
             error_popup.open()
+
+    def clear_inputs(self):
+        """Clear all input fields"""
+        self.worker_id.text = ''
+        self.work_periods.text = ''
+        self.work_percentage.text = '100'
+        self.mandatory_days.text = ''
+        self.days_off.text = ''
+        self.incompatible_checkbox.active = False
+
+    def on_enter(self):
+        """Update the title when entering the screen"""
+        app = App.get_running_app()
+        current_index = app.schedule_config.get('current_worker_index', 0)
+        total_workers = app.schedule_config.get('num_workers', 0)
+        self.title_label.text = f'Worker Details ({current_index + 1}/{total_workers})'
 
 # Add WarningPopup class
 class WarningPopup(Popup):
