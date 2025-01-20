@@ -201,23 +201,15 @@ class WorkerDetailsScreen(Screen):
             # Save worker data
             app = App.get_running_app()
             
-            # Process incompatible workers
-            incompatible_workers = [w.strip() for w in self.incompatible_workers.text.split(';') if w.strip()]
-            
-            # Validate incompatible workers
-            current_worker_id = self.worker_id.text.strip()
-            if current_worker_id in incompatible_workers:
-                raise ValueError(f"Worker cannot be incompatible with themselves")
-
             worker_data = {
-                'id': current_worker_id,
+                'id': self.worker_id.text.strip(),
                 'work_periods': self.work_periods.text.strip(),
                 'work_percentage': work_percentage,
                 'mandatory_days': self.mandatory_days.text.strip(),
                 'days_off': self.days_off.text.strip(),
-                'incompatible_workers': incompatible_workers
+                'is_incompatible': self.incompatible_checkbox.active  # Store checkbox state
             }
-
+    
             if 'workers_data' not in app.schedule_config:
                 app.schedule_config['workers_data'] = []
             app.schedule_config['workers_data'].append(worker_data)
@@ -403,7 +395,7 @@ class WorkerDetailsScreen(Screen):
         self.work_percentage.text = '100'
         self.mandatory_days.text = ''
         self.days_off.text = ''
-        self.incompatible_workers.text = ''
+        self.incompatible_checkbox.active = False
 
     def validate_dates(self, date_str):
         """Validate date string format"""
@@ -620,6 +612,15 @@ class ScheduleGenerator:
             if not any(start <= date <= end for start, end in work_periods):
                 return False
 
+        # Check for incompatibility
+        if date in self.schedule and worker.get('is_incompatible', False):
+            # Check if any currently assigned worker is marked as incompatible
+            for assigned_worker_id in self.schedule[date]:
+                assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
+                if assigned_worker.get('is_incompatible', False):
+                    print(f"Cannot assign worker {worker_id}: Incompatibility with {assigned_worker_id}")
+                    return False
+                    
         # Check 4: Minimum distance between guards (4/percentage)
         min_distance = max(2, int(4 / (float(worker.get('work_percentage', 100)) / 100)))
         assignments = sorted(self.worker_assignments[worker_id])
@@ -634,6 +635,9 @@ class ScheduleGenerator:
                     return False
 
         return True
+    except Exception as e:
+        print(f"Error checking worker {worker_id} availability: {str(e)}")
+        return False
 
     def calculate_worker_score(self, worker, date):
         """Calculate a score for a worker based on various factors"""
