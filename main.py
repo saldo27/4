@@ -293,138 +293,191 @@ class WorkerDetailsScreen(Screen):
 class CalendarViewScreen(Screen):
     def __init__(self, **kwargs):
         super(CalendarViewScreen, self).__init__(**kwargs)
-        self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        self.layout = BoxLayout(orientation='vertical', padding=10, spacing=5)
         
-        # Title
-        self.layout.add_widget(Label(text='Schedule View', size_hint_y=0.1))
+        # Header with title and navigation
+        header = BoxLayout(orientation='horizontal', size_hint_y=0.1)
+        self.month_label = Label(text='', size_hint_x=0.6)
+        prev_month = Button(text='<', size_hint_x=0.2)
+        next_month = Button(text='>', size_hint_x=0.2)
+        prev_month.bind(on_press=self.previous_month)
+        next_month.bind(on_press=self.next_month)
         
-        # Create a scroll view for the calendar
-        scroll = ScrollView(size_hint=(1, 0.8))
-        self.calendar_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=10)
-        self.calendar_layout.bind(minimum_height=self.calendar_layout.setter('height'))
-        scroll.add_widget(self.calendar_layout)
-        self.layout.add_widget(scroll)
+        header.add_widget(prev_month)
+        header.add_widget(self.month_label)
+        header.add_widget(next_month)
+        self.layout.add_widget(header)
         
-        # Add Save and Export buttons
-        buttons_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
+        # Days of week header
+        days_header = GridLayout(cols=7, size_hint_y=0.1)
+        for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']:
+            days_header.add_widget(Label(text=day))
+        self.layout.add_widget(days_header)
         
-        save_btn = Button(text='Save Schedule')
+        # Calendar grid
+        self.calendar_grid = GridLayout(cols=7, size_hint_y=0.7)
+        self.layout.add_widget(self.calendar_grid)
+        
+        # Scroll view for details
+        details_scroll = ScrollView(size_hint_y=0.3)
+        self.details_layout = GridLayout(cols=1, size_hint_y=None)
+        self.details_layout.bind(minimum_height=self.details_layout.setter('height'))
+        details_scroll.add_widget(self.details_layout)
+        self.layout.add_widget(details_scroll)
+        
+        # Export buttons
+        button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
+        save_btn = Button(text='Save to JSON')
+        export_btn = Button(text='Export to TXT')
         save_btn.bind(on_press=self.save_schedule)
-        buttons_layout.add_widget(save_btn)
-        
-        export_btn = Button(text='Export to File')
         export_btn.bind(on_press=self.export_schedule)
-        buttons_layout.add_widget(export_btn)
+        button_layout.add_widget(save_btn)
+        button_layout.add_widget(export_btn)
+        self.layout.add_widget(button_layout)
         
-        self.layout.add_widget(buttons_layout)
         self.add_widget(self.layout)
+        self.current_date = None
+        self.schedule = {}
 
     def on_enter(self):
-        """Called when the screen is entered"""
-        self.display_schedule()
-
-    def display_schedule(self):
-        """Display the generated schedule"""
         app = App.get_running_app()
-        schedule = app.schedule_config.get('schedule', {})
+        self.schedule = app.schedule_config.get('schedule', {})
+        if self.schedule:
+            # Set current_date to the first date in the schedule
+            self.current_date = min(self.schedule.keys())
+            self.display_month(self.current_date)
         
-        # Clear previous content
-        self.calendar_layout.clear_widgets()
+    def display_month(self, date):
+        self.calendar_grid.clear_widgets()
+        self.details_layout.clear_widgets()
         
-        if not schedule:
-            self.calendar_layout.add_widget(Label(
-                text='No schedule available',
-                size_hint_y=None, 
-                height=40
-            ))
-            return
+        # Update month label
+        self.month_label.text = date.strftime('%B %Y')
+        
+        # Calculate the first day of the month
+        first_day = datetime(date.year, date.month, 1)
+        
+        # Calculate number of days in the month
+        if date.month == 12:
+            next_month = datetime(date.year + 1, 1, 1)
+        else:
+            next_month = datetime(date.year, date.month + 1, 1)
+        days_in_month = (next_month - first_day).days
+        
+        # Calculate the weekday of the first day (0 = Monday, 6 = Sunday)
+        first_weekday = first_day.weekday()
+        
+        # Add empty cells for days before the first of the month
+        for _ in range(first_weekday):
+            self.calendar_grid.add_widget(Label(text=''))
+        
+        # Add days of the month
+        for day in range(1, days_in_month + 1):
+            current = datetime(date.year, date.month, day)
+            cell = BoxLayout(orientation='vertical')
+            
+            # Day number
+            day_label = Label(text=str(day))
+            cell.add_widget(day_label)
+            
+            # If there are workers scheduled for this day, show them
+            if current in self.schedule:
+                workers = self.schedule[current]
+                worker_count = len(workers)
+                workers_label = Label(
+                    text=f'{worker_count} workers',
+                    font_size='10sp'
+                )
+                cell.add_widget(workers_label)
+                
+                # Make the cell clickable
+                btn = Button(size_hint=(1, 1), background_color=(0.8, 0.9, 1, 0.3))
+                btn.bind(on_press=lambda x, d=current: self.show_details(d))
+                cell.add_widget(btn)
+            
+            self.calendar_grid.add_widget(cell)
+        
+        # Fill remaining cells
+        remaining_cells = 42 - (first_weekday + days_in_month)  # 42 = 6 rows * 7 days
+        for _ in range(remaining_cells):
+            self.calendar_grid.add_widget(Label(text=''))
 
-        # Sort dates
-        dates = sorted(schedule.keys())
-        
-        for date in dates:
-            # Create date header
-            date_str = date.strftime('%Y-%m-%d')
-            date_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=100, padding=5)
-            
-            # Add date header
-            date_layout.add_widget(Label(
-                text=f'Date: {date_str}',
+    def show_details(self, date):
+        self.details_layout.clear_widgets()
+        if date in self.schedule:
+            header = Label(
+                text=f'Schedule for {date.strftime("%Y-%m-%d")}',
                 size_hint_y=None,
-                height=30,
+                height=40,
                 bold=True
-            ))
+            )
+            self.details_layout.add_widget(header)
             
-            # Add workers for this date
-            workers = schedule[date]
-            workers_text = 'Assigned Workers:\n' + '\n'.join(f'Worker {w}' for w in workers)
-            date_layout.add_widget(Label(
-                text=workers_text,
-                size_hint_y=None,
-                height=70
-            ))
-            
-            # Add a separator
-            separator = BoxLayout(size_hint_y=None, height=2)
-            separator.add_widget(Label(
-                size_hint_y=None,
-                height=2,
-                color=(0.7, 0.7, 0.7, 1)
-            ))
-            
-            # Add layouts to calendar
-            self.calendar_layout.add_widget(date_layout)
-            self.calendar_layout.add_widget(separator)
+            for worker_id in self.schedule[date]:
+                worker_label = Label(
+                    text=f'Worker {worker_id}',
+                    size_hint_y=None,
+                    height=30
+                )
+                self.details_layout.add_widget(worker_label)
+
+    def previous_month(self, instance):
+        if self.current_date:
+            if self.current_date.month == 1:
+                self.current_date = self.current_date.replace(year=self.current_date.year - 1, month=12)
+            else:
+                self.current_date = self.current_date.replace(month=self.current_date.month - 1)
+            self.display_month(self.current_date)
+
+    def next_month(self, instance):
+        if self.current_date:
+            if self.current_date.month == 12:
+                self.current_date = self.current_date.replace(year=self.current_date.year + 1, month=1)
+            else:
+                self.current_date = self.current_date.replace(month=self.current_date.month + 1)
+            self.display_month(self.current_date)
 
     def save_schedule(self, instance):
-        """Save the schedule to a JSON file"""
         try:
-            app = App.get_running_app()
             schedule_data = {}
-            
-            # Convert datetime objects to strings for JSON serialization
-            for date, workers in app.schedule_config['schedule'].items():
+            for date, workers in self.schedule.items():
                 schedule_data[date.strftime('%Y-%m-%d')] = workers
             
             with open('schedule.json', 'w') as f:
                 json.dump(schedule_data, f, indent=2)
             
             popup = Popup(title='Success',
-                         content=Label(text='Schedule saved successfully!'),
+                         content=Label(text='Schedule saved to schedule.json'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
             
         except Exception as e:
             popup = Popup(title='Error',
-                         content=Label(text=f'Failed to save schedule: {str(e)}'),
+                         content=Label(text=f'Failed to save: {str(e)}'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
 
     def export_schedule(self, instance):
-        """Export the schedule to a text file"""
         try:
-            app = App.get_running_app()
-            schedule = app.schedule_config['schedule']
-            
             with open('schedule.txt', 'w') as f:
                 f.write("SHIFT SCHEDULE\n")
                 f.write("=" * 50 + "\n\n")
                 
-                for date in sorted(schedule.keys()):
+                for date in sorted(self.schedule.keys()):
                     f.write(f"Date: {date.strftime('%Y-%m-%d')}\n")
                     f.write("Assigned Workers:\n")
-                    for worker in schedule[date]:
+                    for worker in self.schedule[date]:
                         f.write(f"  - Worker {worker}\n")
                     f.write("\n")
             
             popup = Popup(title='Success',
-                         content=Label(text='Schedule exported successfully!'),
+                         content=Label(text='Schedule exported to schedule.txt'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
             
         except Exception as e:
             popup = Popup(title='Error',
-                         content=Label(text=f'Failed to export schedule: {str(e)}'),
+                         content=Label(text=f'Failed to export: {str(e)}'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
             
