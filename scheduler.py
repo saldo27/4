@@ -10,9 +10,9 @@ class Scheduler:
         self.workers_data = config['workers_data']
         self.schedule = {}
         self.worker_assignments = {w['id']: [] for w in self.workers_data}
-        self.current_datetime = datetime(2025, 1, 18, 8, 26, 50)  # Updated datetime
+        self.current_datetime = datetime(2025, 1, 20, 8, 38, 18)  # Updated datetime
         self.current_user = 'saldo27'
-
+    
     def generate_schedule(self):
         """Generate the complete guard schedule following all conditions"""
         print(f"\nStarting schedule generation at {self.current_datetime}")
@@ -272,7 +272,7 @@ class Scheduler:
         """Validate the generated schedule"""
         errors = []
         warnings = []
-
+    
         # Check 1: Every day has guards
         current = self.start_date
         while current <= self.end_date:
@@ -281,7 +281,7 @@ class Scheduler:
             elif len(self.schedule[current]) < self.num_shifts:
                 warnings.append(f"Insufficient guards on {current.strftime('%Y-%m-%d')}")
             current += timedelta(days=1)
-
+    
         # Check 2: Guard spacing rules
         for worker_id, dates in self.worker_assignments.items():
             sorted_dates = sorted(dates)
@@ -289,22 +289,18 @@ class Scheduler:
                 days_between = (sorted_dates[i+1] - sorted_dates[i]).days
                 if days_between in [7, 14, 21]:
                     errors.append(f"Invalid spacing ({days_between} days) for worker {worker_id}")
-
-        # Check 3: Worker incompatibilities (Enhanced check)
+    
+        # Check 3: Incompatible workers check (Updated for checkbox system)
         for date, workers in self.schedule.items():
-            for i, worker_id in enumerate(workers):
+            incompatible_workers = []
+            for worker_id in workers:
                 worker = next(w for w in self.workers_data if w['id'] == worker_id)
-                if 'incompatible_workers' in worker and worker['incompatible_workers']:
-                    for other_worker in workers:
-                        if other_worker != worker_id and other_worker in worker['incompatible_workers']:
-                            errors.append(f"Incompatible workers {worker_id} and {other_worker} assigned on {date.strftime('%Y-%m-%d')}")
-                            
-                        # Check reverse incompatibility
-                        other_worker_data = next(w for w in self.workers_data if w['id'] == other_worker)
-                        if other_worker_data.get('incompatible_workers') and worker_id in other_worker_data['incompatible_workers']:
-                            errors.append(f"Incompatible workers {other_worker} and {worker_id} assigned on {date.strftime('%Y-%m-%d')}")
-
-
+                if worker.get('is_incompatible', False):
+                    incompatible_workers.append(worker_id)
+            
+            if len(incompatible_workers) > 1:
+                errors.append(f"Multiple incompatible workers {', '.join(incompatible_workers)} assigned on {date.strftime('%Y-%m-%d')}")
+    
         # Check 4: Days off violations
         for worker in self.workers_data:
             worker_id = worker['id']
@@ -314,6 +310,6 @@ class Scheduler:
                     for start, end in off_periods:
                         if start <= date <= end:
                             errors.append(f"Worker {worker_id} assigned on day off: {date.strftime('%Y-%m-%d')}")
-
+    
         return errors, warnings
 
