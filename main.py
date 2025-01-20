@@ -99,7 +99,7 @@ class SetupScreen(Screen):
             popup.open()
 
 class WorkerDetailsScreen(Screen):
-    def __init__(self, **kwargs):
+def __init__(self, **kwargs):
         super(WorkerDetailsScreen, self).__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
 
@@ -143,13 +143,35 @@ class WorkerDetailsScreen(Screen):
         self.days_off = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.days_off)
 
-        # Incompatibility Checkbox
-        self.form_layout.add_widget(Label(text='Incompatible Worker:'))
-        checkbox_layout = BoxLayout(orientation='horizontal')
-        self.incompatible_checkbox = CheckBox()
-        checkbox_layout.add_widget(self.incompatible_checkbox)
-        checkbox_layout.add_widget(Label(text='Cannot work with other incompatible workers'))
-        self.form_layout.add_widget(checkbox_layout)
+        # Incompatibility Checkbox - Updated Layout
+        checkbox_label = Label(
+            text='Incompatible Worker:',
+            size_hint_y=None,
+            height=40
+        )
+        self.form_layout.add_widget(checkbox_label)
+
+        checkbox_container = BoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            height=40
+        )
+        
+        self.incompatible_checkbox = CheckBox(
+            size_hint_x=None,
+            width=40,
+            active=False
+        )
+        
+        checkbox_text = Label(
+            text='Cannot work with other incompatible workers',
+            size_hint_x=1,
+            halign='left'
+        )
+        
+        checkbox_container.add_widget(self.incompatible_checkbox)
+        checkbox_container.add_widget(checkbox_text)
+        self.form_layout.add_widget(checkbox_container)
 
         scroll.add_widget(self.form_layout)
         self.layout.add_widget(scroll)
