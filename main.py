@@ -149,49 +149,30 @@ class InitialSetupScreen(Screen):
 
 class WorkerDetailsScreen(Screen):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super(WorkerDetailsScreen, self).__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
 
-        # Title with worker number
-        self.title_label = Label(
-            text='Worker Details',
-            size_hint_y=0.1,
-            font_size='24sp'
-        )
+        # Title
+        self.title_label = Label(text='Worker Details', size_hint_y=0.1)
         self.layout.add_widget(self.title_label)
 
-        # Create scrollable form
+        # Form layout
         scroll = ScrollView(size_hint=(1, 0.8))
-        self.form_layout = GridLayout(
-            cols=2,
-            spacing=10,
-            size_hint_y=None,
-            padding=10
-        )
+        self.form_layout = GridLayout(cols=2, spacing=10, size_hint_y=None, padding=10)
         self.form_layout.bind(minimum_height=self.form_layout.setter('height'))
 
         # Worker ID
         self.form_layout.add_widget(Label(text='Worker ID:'))
-        self.worker_id = TextInput(
-            multiline=False,
-            size_hint_y=None,
-            height=40
-        )
+        self.worker_id = TextInput(multiline=False, size_hint_y=None, height=40)
         self.form_layout.add_widget(self.worker_id)
 
         # Work Periods
-        self.form_layout.add_widget(Label(
-            text='Work Periods\n(DD-MM-YYYY - DD-MM-YYYY,\nseparate multiple periods with ;):'
-        ))
-        self.work_periods = TextInput(
-            multiline=True,
-            size_hint_y=None,
-            height=60
-        )
+        self.form_layout.add_widget(Label(text='Work Periods (DD-MM-YYYY):'))
+        self.work_periods = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.work_periods)
 
         # Work Percentage
-        self.form_layout.add_widget(Label(text='Work Percentage (default 100%):'))
+        self.form_layout.add_widget(Label(text='Work Percentage:'))
         self.work_percentage = TextInput(
             multiline=False,
             text='100',
@@ -202,46 +183,28 @@ class WorkerDetailsScreen(Screen):
         self.form_layout.add_widget(self.work_percentage)
 
         # Mandatory Days
-        self.form_layout.add_widget(Label(
-            text='Mandatory Coverage Days\n(DD-MM-YYYY, separate with ;):'
-        ))
-        self.mandatory_days = TextInput(
-            multiline=True,
-            size_hint_y=None,
-            height=60
-        )
+        self.form_layout.add_widget(Label(text='Mandatory Days:'))
+        self.mandatory_days = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.mandatory_days)
 
         # Days Off
-        self.form_layout.add_widget(Label(
-            text='Days Off\n(DD-MM-YYYY or DD-MM-YYYY - DD-MM-YYYY,\nseparate with ;):'
-        ))
-        self.days_off = TextInput(
-            multiline=True,
-            size_hint_y=None,
-            height=60
-        )
+        self.form_layout.add_widget(Label(text='Days Off:'))
+        self.days_off = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.days_off)
 
         # Incompatibility Checkbox
-        checkbox_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=40)
-        self.incompatible_checkbox = CheckBox(size_hint_x=None, width=40)
+        self.form_layout.add_widget(Label(text='Incompatible Worker:'))
+        checkbox_layout = BoxLayout(orientation='horizontal')
+        self.incompatible_checkbox = CheckBox()
         checkbox_layout.add_widget(self.incompatible_checkbox)
-        checkbox_layout.add_widget(Label(
-            text='Cannot work with other incompatible workers',
-            size_hint_x=1
-        ))
-        self.form_layout.add_widget(Label(text='Incompatibility:'))
+        checkbox_layout.add_widget(Label(text='Cannot work with other incompatible workers'))
         self.form_layout.add_widget(checkbox_layout)
 
         scroll.add_widget(self.form_layout)
         self.layout.add_widget(scroll)
 
         # Continue Button
-        self.continue_btn = Button(
-            text='Continue',
-            size_hint_y=0.1
-        )
+        self.continue_btn = Button(text='Continue', size_hint_y=0.1)
         self.continue_btn.bind(on_press=self.save_and_continue)
         self.layout.add_widget(self.continue_btn)
 
@@ -253,64 +216,101 @@ class WorkerDetailsScreen(Screen):
         try:
             for period in date_str.split(';'):
                 period = period.strip()
-                if ' - ' in period:
-                    start, end = period.split(' - ')
-                    if len(start.strip()) != 10 or len(end.strip()) != 10:
-                        return False
+                if '-' in period:
+                    start, end = period.split('-')
                     datetime.strptime(start.strip(), '%d-%m-%Y')
                     datetime.strptime(end.strip(), '%d-%m-%Y')
                 else:
-                    if len(period) != 10:
-                        return False
                     datetime.strptime(period, '%d-%m-%Y')
             return True
-        except ValueError:
+        except:
             return False
 
     def save_and_continue(self, instance):
-        try:
-            if not self.worker_id.text.strip():
-                raise ValueError("Worker ID is required")
+        if not self.worker_id.text.strip():
+            self.show_error("Worker ID is required")
+            return
 
+        try:
             work_percentage = float(self.work_percentage.text or '100')
             if not (0 < work_percentage <= 100):
-                raise ValueError("Work percentage must be between 0 and 100")
+                self.show_error("Work percentage must be between 0 and 100")
+                return
+        except:
+            self.show_error("Invalid work percentage")
+            return
 
-            for field, name in [
-                (self.work_periods.text, "work period"),
-                (self.mandatory_days.text, "mandatory days"),
-                (self.days_off.text, "days off")
-            ]:
-                if field and not self.validate_dates(field):
-                    raise ValueError(f"Invalid {name} format. Use DD-MM-YYYY format, separate multiple dates with semicolon (;)")
+        if not self.validate_dates(self.work_periods.text):
+            self.show_error("Invalid work periods format")
+            return
 
-            app = App.get_running_app()
-            
-            worker_data = {
-                'id': self.worker_id.text.strip(),
-                'work_periods': self.work_periods.text.strip(),
-                'work_percentage': work_percentage,
-                'mandatory_days': self.mandatory_days.text.strip(),
-                'days_off': self.days_off.text.strip(),
-                'is_incompatible': self.incompatible_checkbox.active
-            }
+        if not self.validate_dates(self.mandatory_days.text):
+            self.show_error("Invalid mandatory days format")
+            return
 
-            if 'workers_data' not in app.schedule_config:
-                app.schedule_config['workers_data'] = []
-            
-            app.schedule_config['workers_data'].append(worker_data)
-            current_index = app.schedule_config['current_worker_index']
-            
-            if current_index < app.schedule_config['num_workers'] - 1:
-                app.schedule_config['current_worker_index'] = current_index + 1
-                self.clear_inputs()
-                self.on_enter()
-            else:
-                self.generate_schedule()
+        if not self.validate_dates(self.days_off.text):
+            self.show_error("Invalid days off format")
+            return
 
-        except ValueError as e:
-            error_popup = ErrorPopup(str(e))
-            error_popup.open()
+        app = App.get_running_app()
+        worker_data = {
+            'id': self.worker_id.text.strip(),
+            'work_periods': self.work_periods.text.strip(),
+            'work_percentage': work_percentage,
+            'mandatory_days': self.mandatory_days.text.strip(),
+            'days_off': self.days_off.text.strip(),
+            'is_incompatible': self.incompatible_checkbox.active
+        }
+
+        if 'workers_data' not in app.schedule_config:
+            app.schedule_config['workers_data'] = []
+        app.schedule_config['workers_data'].append(worker_data)
+
+        current_index = app.schedule_config['current_worker_index']
+        if current_index < app.schedule_config['num_workers'] - 1:
+            app.schedule_config['current_worker_index'] = current_index + 1
+            self.clear_inputs()
+            self.on_enter()
+        else:
+            self.generate_schedule()
+
+    def generate_schedule(self):
+        app = App.get_running_app()
+        from scheduler import Scheduler
+        scheduler = Scheduler(app.schedule_config)
+        
+        try:
+            app.schedule_config['schedule'] = scheduler.generate_schedule()
+            self.show_success("Schedule generated successfully!")
+            self.manager.current = 'calendar_view'
+        except Exception as error:
+            self.show_error(str(error))
+
+    def show_error(self, message):
+        popup = Popup(title='Error',
+                     content=Label(text=message),
+                     size_hint=(None, None), size=(400, 200))
+        popup.open()
+
+    def show_success(self, message):
+        popup = Popup(title='Success',
+                     content=Label(text=message),
+                     size_hint=(None, None), size=(400, 200))
+        popup.open()
+
+    def clear_inputs(self):
+        self.worker_id.text = ''
+        self.work_periods.text = ''
+        self.work_percentage.text = '100'
+        self.mandatory_days.text = ''
+        self.days_off.text = ''
+        self.incompatible_checkbox.active = False
+
+    def on_enter(self):
+        app = App.get_running_app()
+        current_index = app.schedule_config.get('current_worker_index', 0)
+        total_workers = app.schedule_config.get('num_workers', 0)
+        self.title_label.text = f'Worker Details ({current_index + 1}/{total_workers})'
 
     def generate_schedule(self):
         app = App.get_running_app()
