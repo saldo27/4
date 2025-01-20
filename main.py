@@ -347,7 +347,7 @@ class CalendarViewScreen(Screen):
             self.current_date = min(self.schedule.keys())
             self.display_month(self.current_date)
         
-    def display_month(self, date):
+   def display_month(self, date):
         self.calendar_grid.clear_widgets()
         self.details_layout.clear_widgets()
         
@@ -374,26 +374,44 @@ class CalendarViewScreen(Screen):
         # Add days of the month
         for day in range(1, days_in_month + 1):
             current = datetime(date.year, date.month, day)
-            cell = BoxLayout(orientation='vertical')
+            cell = BoxLayout(orientation='vertical', spacing=2)
             
             # Day number
-            day_label = Label(text=str(day))
+            day_label = Label(
+                text=str(day),
+                size_hint_y=0.2,
+                bold=True
+            )
             cell.add_widget(day_label)
             
-            # If there are workers scheduled for this day, show them
+            # If there are workers scheduled for this day, show their IDs
             if current in self.schedule:
                 workers = self.schedule[current]
-                worker_count = len(workers)
+                # Create a label with worker IDs
+                workers_text = '\n'.join(str(w) for w in workers)
                 workers_label = Label(
-                    text=f'{worker_count} workers',
-                    font_size='10sp'
+                    text=workers_text,
+                    font_size='10sp',
+                    size_hint_y=0.8
                 )
                 cell.add_widget(workers_label)
                 
-                # Make the cell clickable
-                btn = Button(size_hint=(1, 1), background_color=(0.8, 0.9, 1, 0.3))
+                # Make the cell clickable and highlight it
+                btn = Button(
+                    size_hint=(1, 1),
+                    background_color=(0.8, 0.9, 1, 0.3),
+                    background_normal=''
+                )
                 btn.bind(on_press=lambda x, d=current: self.show_details(d))
+                
+                # Add the button as a background
+                cell.bind(size=btn.setter('size'), pos=btn.setter('pos'))
                 cell.add_widget(btn)
+            
+            # Add a border to make the cell more visible
+            with cell.canvas.before:
+                Color(0.8, 0.8, 0.8, 1)  # Light gray color for borders
+                Line(rectangle=(cell.x, cell.y, cell.width, cell.height))
             
             self.calendar_grid.add_widget(cell)
         
@@ -406,7 +424,7 @@ class CalendarViewScreen(Screen):
         self.details_layout.clear_widgets()
         if date in self.schedule:
             header = Label(
-                text=f'Schedule for {date.strftime("%Y-%m-%d")}',
+                text=f'Schedule for {date.strftime("%d-%m-%Y")}',
                 size_hint_y=None,
                 height=40,
                 bold=True
@@ -414,12 +432,18 @@ class CalendarViewScreen(Screen):
             self.details_layout.add_widget(header)
             
             for worker_id in self.schedule[date]:
-                worker_label = Label(
-                    text=f'Worker {worker_id}',
+                worker_box = BoxLayout(
+                    orientation='horizontal',
                     size_hint_y=None,
-                    height=30
+                    height=40,
+                    padding=(10, 5)
                 )
-                self.details_layout.add_widget(worker_label)
+                worker_box.add_widget(Label(
+                    text=f'Worker {worker_id}',
+                    size_hint_x=1,
+                    halign='left'
+                ))
+                self.details_layout.add_widget(worker_box)
 
     def previous_month(self, instance):
         if self.current_date:
