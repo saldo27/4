@@ -253,7 +253,7 @@ class WorkerDetailsScreen(Screen):
                      size_hint=(None, None), size=(400, 200))
         popup.open()
 
-       def generate_schedule(self):
+    def generate_schedule(self):
         app = App.get_running_app()
         try:
             from scheduler import Scheduler
