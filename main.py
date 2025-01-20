@@ -635,9 +635,9 @@ class ScheduleGenerator:
                     return False
 
         return True
-    except Exception as e:
-        print(f"Error checking worker {worker_id} availability: {str(e)}")
-        return False
+        except Exception as e:
+            print(f"Error checking worker {worker_id} availability: {str(e)}")
+            return False
 
     def calculate_worker_score(self, worker, date):
         """Calculate a score for a worker based on various factors"""
