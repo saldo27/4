@@ -1,79 +1,93 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import calendar
 import logging
 import sys
+from zoneinfo import ZoneInfo
 
-# Configure logging
+# Configure logging with more detail and ensure file is created
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.DEBUG,  # Changed to DEBUG level for more detail
+    format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
-        logging.FileHandler('scheduler.log'),
+        logging.FileHandler('scheduler.log', mode='w'),  # 'w' mode to create new log each time
         logging.StreamHandler(sys.stdout)
     ]
 )
 
 class Scheduler:
     def __init__(self, config):
-        self.config = config
-        self.start_date = config['start_date']
-        self.end_date = config['end_date']
-        self.num_shifts = config['num_shifts']
-        self.workers_data = config['workers_data']
-        self.schedule = {}
-        self.worker_assignments = {w['id']: [] for w in self.workers_data}
-        
-        # Get current UTC time and convert to Spain time (UTC+1)
-        self.current_datetime = datetime.now(timezone.utc).astimezone(ZoneInfo("Europe/Madrid"))
-        self.current_user = config.get('current_user', 'saldo27')
-        
-        print(f"Current time in Spain: {self.current_datetime.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        self.current_user = 'saldo27'
+        try:
+            self.config = config
+            self.start_date = config['start_date']
+            self.end_date = config['end_date']
+            self.num_shifts = config['num_shifts']
+            self.workers_data = config['workers_data']
+            self.schedule = {}
+            self.worker_assignments = {w['id']: [] for w in self.workers_data}
+            
+            # Set current time to UTC+1 (Spain)
+            self.current_datetime = datetime(2025, 1, 20, 9, 57, 14)
+            self.current_user = 'saldo27'
+            
+            logging.info(f"Scheduler initialized with:")
+            logging.info(f"Start date: {self.start_date}")
+            logging.info(f"End date: {self.end_date}")
+            logging.info(f"Number of shifts: {self.num_shifts}")
+            logging.info(f"Number of workers: {len(self.workers_data)}")
+            logging.info(f"Current datetime: {self.current_datetime}")
+            logging.info(f"Current user: {self.current_user}")
+            
+        except Exception as e:
+            logging.error(f"Error initializing scheduler: {str(e)}")
+            raise
     
     def generate_schedule(self):
         """Generate the complete guard schedule following all conditions"""
-        logging.info(f"\n=== Starting schedule generation at {self.current_datetime} ===")
-        logging.info(f"Generator: {self.current_user}")
-        logging.info(f"Schedule period: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}")
-        logging.info(f"Number of shifts per day: {self.num_shifts}")
-        logging.info(f"Number of workers: {len(self.workers_data)}")
-        
-        # Log worker details
-        logging.info("\nWorker Details:")
-        for worker in self.workers_data:
-            logging.info(f"Worker {worker['id']}:")
-            logging.info(f"  - Work percentage: {worker.get('work_percentage', 100)}%")
-            logging.info(f"  - Is incompatible: {worker.get('is_incompatible', False)}")
-            if worker.get('mandatory_days'):
-                logging.info(f"  - Mandatory days: {worker['mandatory_days']}")
-            if worker.get('days_off'):
-                logging.info(f"  - Days off: {worker['days_off']}")
-            if worker.get('work_periods'):
-                logging.info(f"  - Work periods: {worker['work_periods']}")
-    
+        logging.info("=== Starting schedule generation ===")
         try:
+            # Log initial configuration
+            logging.info("\nConfiguration:")
+            logging.info(f"Start Date: {self.start_date.strftime('%Y-%m-%d')}")
+            logging.info(f"End Date: {self.end_date.strftime('%Y-%m-%d')}")
+            logging.info(f"Shifts per day: {self.num_shifts}")
+            logging.info(f"Total workers: {len(self.workers_data)}")
+
+            # Log worker details
+            logging.info("\nWorker Details:")
+            for worker in self.workers_data:
+                logging.info(f"\nWorker {worker['id']}:")
+                for key, value in worker.items():
+                    if key != 'id':
+                        logging.info(f"  - {key}: {value}")
+
             # Reset schedule
             self.schedule = {}
             self.worker_assignments = {w['id']: [] for w in self.workers_data}
-    
+            
             # Step 1: Process mandatory guards
-            logging.info("\nProcessing mandatory guards...")
+            logging.info("\nStep 1: Processing mandatory guards...")
             self._assign_mandatory_guards()
-    
+            logging.info("Mandatory guards processed")
+
             # Step 2: Calculate target shifts
-            logging.info("\nCalculating target shifts...")
+            logging.info("\nStep 2: Calculating target shifts...")
             self._calculate_target_shifts()
-    
+            logging.info("Target shifts calculated")
+
             # Step 3: Fill remaining shifts
-            logging.info("\nFilling remaining shifts...")
+            logging.info("\nStep 3: Filling remaining shifts...")
             current_date = self.start_date
             while current_date <= self.end_date:
                 logging.info(f"\nProcessing date: {current_date.strftime('%Y-%m-%d')}")
                 self._assign_day_shifts(current_date)
+                if current_date in self.schedule:
+                    logging.info(f"Assigned workers for {current_date.strftime('%Y-%m-%d')}: {self.schedule[current_date]}")
+                else:
+                    logging.warning(f"No assignments made for {current_date.strftime('%Y-%m-%d')}")
                 current_date += timedelta(days=1)
-    
-            # Validate schedule
-            logging.info("\nValidating schedule...")
+
+            # Validate final schedule
+            logging.info("\nValidating final schedule...")
             errors, warnings = self.validate_schedule()
             
             if warnings:
@@ -82,14 +96,17 @@ class Scheduler:
                     logging.warning(warning)
                     
             if errors:
+                logging.error("\nSchedule errors:")
+                for error in errors:
+                    logging.error(error)
                 raise ValueError("\n".join(errors))
-    
+
             logging.info("\nSchedule generation completed successfully!")
             return self.schedule
-    
+
         except Exception as e:
-            logging.error(f"\nError generating schedule: {str(e)}")
-            logging.error("Schedule generation failed!")
+            logging.error(f"Error generating schedule: {str(e)}")
+            logging.error("Stack trace:", exc_info=True)
             self.schedule = {}  # Reset schedule on error
             raise ValueError(f"Schedule generation failed: {str(e)}")
 
@@ -156,24 +173,28 @@ class Scheduler:
 
     def _find_best_worker(self, date):
         """Find the most suitable worker for a given date"""
+        logging.info(f"\nFinding best worker for {date.strftime('%Y-%m-%d')}")
         candidates = []
         
         for worker in self.workers_data:
-            self._print_debug_info(worker['id'], date)  # This line calls the debug method
-            if self._can_assign_worker(worker['id'], date):
+            worker_id = worker['id']
+            logging.debug(f"Checking worker {worker_id}")
+            
+            if self._can_assign_worker(worker_id, date):
                 score = self._calculate_worker_score(worker, date)
                 candidates.append((worker, score))
+                logging.debug(f"Worker {worker_id} is candidate with score {score}")
             else:
-                print(f"Worker {worker['id']} cannot be assigned to {date.strftime('%Y-%m-%d')}")
+                logging.debug(f"Worker {worker_id} cannot be assigned to this date")
 
         if not candidates:
-            print(f"No suitable candidates found for {date.strftime('%Y-%m-%d')}")
+            logging.warning(f"No suitable candidates found for {date.strftime('%Y-%m-%d')}")
             return None
 
         best_worker = max(candidates, key=lambda x: x[1])[0]
-        print(f"Selected worker {best_worker['id']} for {date.strftime('%Y-%m-%d')}")
+        logging.info(f"Selected worker {best_worker['id']} with score {max(candidates, key=lambda x: x[1])[1]}")
         return best_worker
-
+        
     # Add the debug method here
     def _print_debug_info(self, worker_id, date):
         """Print debug information for worker assignment"""
