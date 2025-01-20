@@ -382,12 +382,12 @@ class WorkerDetailsScreen(Screen):
             # Validate worker ID
             if not self.worker_id.text.strip():
                 raise ValueError("Worker ID is required")
-
+    
             # Validate work percentage
             work_percentage = float(self.work_percentage.text or '100')
             if not (0 < work_percentage <= 100):
                 raise ValueError("Work percentage must be between 0 and 100")
-
+    
             # Validate all dates
             for field, name in [
                 (self.work_periods.text, "work period"),
@@ -396,7 +396,7 @@ class WorkerDetailsScreen(Screen):
             ]:
                 if field and not self.validate_dates(field):
                     raise ValueError(f"Invalid {name} format. Use DD-MM-YYYY format, separate multiple dates with semicolon (;)")
-
+    
             # Save worker data
             app = App.get_running_app()
             
@@ -408,49 +408,56 @@ class WorkerDetailsScreen(Screen):
                 'days_off': self.days_off.text.strip(),
                 'is_incompatible': self.incompatible_checkbox.active
             }
-
+    
             if 'workers_data' not in app.schedule_config:
                 app.schedule_config['workers_data'] = []
             app.schedule_config['workers_data'].append(worker_data)
-
+    
             current_index = app.schedule_config['current_worker_index']
             if current_index < app.schedule_config['num_workers'] - 1:
                 app.schedule_config['current_worker_index'] = current_index + 1
                 self.clear_inputs()
                 self.on_enter()
             else:
-                # Generate schedule
-                from scheduler import Scheduler
-                scheduler = Scheduler(app.schedule_config)
-                try:
-                    # Initialize schedule
-                    app.schedule_config['schedule'] = {}
-                    
-                    # Generate and validate schedule
-                    app.schedule_config['schedule'] = scheduler.generate_schedule()
-                    errors, warnings = scheduler.validate_schedule()
-                    
-                    if errors:
-                        # Convert the schedule back to empty if there are errors
-                        app.schedule_config['schedule'] = {}
-                        error_message = "Schedule generation failed:\n" + "\n".join(errors)
-                        raise ValueError(error_message)
-                    
-                    if warnings:
-                        warning_popup = WarningPopup("\n".join(warnings))
-                        warning_popup.open()
-
-                    success_popup = SuccessPopup("Schedule generated successfully!")
-                    success_popup.open()
-                    self.manager.current = 'calendar_view'
-                    
-                except Exception as e:
-                    # Clear the schedule if there was an error
-                    app.schedule_config['schedule'] = {}
-                    raise ValueError(f"Schedule generation failed: {str(e)}")
-
+                self.generate_schedule(app)
+    
         except ValueError as e:
             error_popup = ErrorPopup(str(e))
+            error_popup.open()
+    
+    def generate_schedule(self, app):
+        """Generate the schedule after all workers are entered"""
+        try:
+            from scheduler import Scheduler
+            scheduler = Scheduler(app.schedule_config)
+            scheduler.current_datetime = datetime(2025, 1, 20, 8, 55, 34)  # Updated datetime
+            scheduler.current_user = 'saldo27'
+    
+            # Initialize schedule
+            app.schedule_config['schedule'] = {}
+            
+            # Generate and validate schedule
+            app.schedule_config['schedule'] = scheduler.generate_schedule()
+            errors, warnings = scheduler.validate_schedule()
+            
+            if errors:
+                # Convert the schedule back to empty if there are errors
+                app.schedule_config['schedule'] = {}
+                error_message = "Schedule generation failed:\n" + "\n".join(errors)
+                raise ValueError(error_message)
+            
+            if warnings:
+                warning_popup = WarningPopup("\n".join(warnings))
+                warning_popup.open()
+    
+            success_popup = SuccessPopup("Schedule generated successfully!")
+            success_popup.open()
+            self.manager.current = 'calendar_view'
+            
+        except Exception as e:
+            # Clear the schedule if there was an error
+            app.schedule_config['schedule'] = {}
+            error_popup = ErrorPopup(f"Schedule generation failed: {str(e)}")
             error_popup.open()
 
     def clear_inputs(self):
