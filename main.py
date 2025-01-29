@@ -347,9 +347,9 @@ class CalendarViewScreen(Screen):
             self.current_date = min(self.schedule.keys())
             self.display_month(self.current_date)
         
-   def display_month(self, date):
-        self.calendar_grid.clear_widgets()
-        self.details_layout.clear_widgets()
+   def display_month(self, date):  # <-- Correct indentation
+    self.calendar_grid.clear_widgets()
+    self.details_layout.clear_widgets()
         
         # Update month label
         self.month_label.text = date.strftime('%B %Y')
