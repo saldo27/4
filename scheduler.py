@@ -30,37 +30,56 @@ class Scheduler:
         # Fallback: Use system time converted to Spain time
         return datetime.now(ZoneInfo('Europe/Madrid')).replace(tzinfo=None)
     
-    def __init__(self, config):
-        try:
-            self.config = config
-            self.start_date = config['start_date']
-            self.end_date = config['end_date']
-            self.num_shifts = config['num_shifts']
-            self.workers_data = config['workers_data']
-            self.schedule = {}
-            self.worker_assignments = {w['id']: [] for w in self.workers_data}
+   def __init__(self, config):
+    try:
+        self.config = config
+        self.start_date = config['start_date']
+        self.end_date = config['end_date']
+        self.num_shifts = config['num_shifts']
+        self.workers_data = config['workers_data']
+        self.holidays = config.get('holidays', [])  # Add this line
+        self.schedule = {}
+        self.worker_assignments = {w['id']: [] for w in self.workers_data}
     
-            # New tracking dictionaries
-            self.worker_posts = {w['id']: set() for w in self.workers_data}
-            self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}
-            self.worker_weekends = {w['id']: [] for w in self.workers_data}
+        # New tracking dictionaries
+        self.worker_posts = {w['id']: set() for w in self.workers_data}
+        self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}
+        self.worker_weekends = {w['id']: [] for w in self.workers_data}
     
-            # Get current time in Spain
-            self.current_datetime = self._get_spain_time()
-            self.current_user = 'saldo27'
+        # Get current time in Spain
+        self.current_datetime = self._get_spain_time()
+        self.current_user = 'saldo27'
     
-            logging.info(f"Scheduler initialized with:")
-            logging.info(f"Start date: {self.start_date}")
-            logging.info(f"End date: {self.end_date}")
-            logging.info(f"Number of shifts: {self.num_shifts}")
-            logging.info(f"Number of workers: {len(self.workers_data)}")
-            logging.info(f"Current datetime (Spain): {self.current_datetime}")
-            logging.info(f"Current user: {self.current_user}")
+        logging.info(f"Scheduler initialized with:")
+        logging.info(f"Start date: {self.start_date}")
+        logging.info(f"End date: {self.end_date}")
+        logging.info(f"Number of shifts: {self.num_shifts}")
+        logging.info(f"Number of workers: {len(self.workers_data)}")
+        logging.info(f"Holidays: {[h.strftime('%Y-%m-%d') for h in self.holidays]}")
+        logging.info(f"Current datetime (Spain): {self.current_datetime}")
+        logging.info(f"Current user: {self.current_user}")
     
-        except Exception as e:
-            logging.error(f"Error initializing scheduler: {str(e)}")
-            raise
-     
+    except Exception as e:
+        logging.error(f"Error initializing scheduler: {str(e)}")
+        raise
+        
+    def _is_holiday(self, date):
+        """Check if a date is a holiday"""
+        return date in self.holidays
+
+    def _is_pre_holiday(self, date):
+        """Check if a date is the day before a holiday"""
+        next_day = date + timedelta(days=1)
+        return next_day in self.holidays
+
+    def _get_effective_weekday(self, date):
+        """Get the effective weekday, treating holidays as Sundays and pre-holidays as Fridays"""
+        if self._is_holiday(date):
+            return 6  # Sunday
+        if self._is_pre_holiday(date):
+            return 4  # Friday
+        return date.weekday()
+        
     def generate_schedule(self):
         """Generate the complete guard schedule following all conditions"""
         logging.info("=== Starting schedule generation ===")
@@ -176,7 +195,7 @@ class Scheduler:
             self._assign_day_shifts(current_date)
             current_date += timedelta(days=1)
 
-    def _assign_day_shifts(self, date):
+   def _assign_day_shifts(self, date):
         """Assign all shifts for a specific day"""
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
     
@@ -199,11 +218,20 @@ class Scheduler:
                 
                     # Update tracking data
                     self.worker_posts[best_worker['id']].add(post)
-                    self.worker_weekdays[best_worker['id']][date.weekday()] += 1
+                    effective_weekday = self._get_effective_weekday(date)
+                    self.worker_weekdays[best_worker['id']][effective_weekday] += 1
+                
                     if self._is_weekend_day(date):
-                        weekend_friday = date - timedelta(days=date.weekday() - 4)
-                        if weekend_friday not in self.worker_weekends[best_worker['id']]:
-                            self.worker_weekends[best_worker['id']].append(weekend_friday)
+                        # Get the appropriate weekend start date
+                        if self._is_pre_holiday(date):
+                            weekend_start = date
+                        elif self._is_holiday(date):
+                            weekend_start = date - timedelta(days=1)
+                        else:
+                            weekend_start = date - timedelta(days=date.weekday() - 4)
+                        
+                        if weekend_start not in self.worker_weekends[best_worker['id']]:
+                            self.worker_weekends[best_worker['id']].append(weekend_start)
                 
                     logging.info(f"Assigned worker {best_worker['id']} to shift {post + 1}")
                 else:
@@ -214,17 +242,27 @@ class Scheduler:
                 break
 
     def _is_weekend_day(self, date):
-        """Check if the date is a weekend day (Friday, Saturday, or Sunday)"""
+        """Check if the date is a weekend day (Friday, Saturday, Sunday) or a holiday/pre-holiday"""
+        if self._is_holiday(date):
+            return True  # Holidays are treated as Sundays
+        if self._is_pre_holiday(date):
+            return True  # Days before holidays are treated as Fridays
         return date.weekday() in [4, 5, 6]  # 4=Friday, 5=Saturday, 6=Sunday
 
     def _has_three_consecutive_weekends(self, worker_id, date):
-        """Check if worker has worked three consecutive weekends"""
+        """Check if worker has worked three consecutive weekends (including holidays)"""
         if not self._is_weekend_day(date):
             return False
-        
+    
         weekends = self.worker_weekends[worker_id]
-        # Add current weekend if not already included
-        current_weekend = date - timedelta(days=date.weekday() - 5)  # Get Friday of current week
+        # Get Friday of current week or the pre-holiday date
+        if self._is_pre_holiday(date):
+            current_weekend = date
+        elif self._is_holiday(date):
+            current_weekend = date - timedelta(days=1)  # Use the pre-holiday date
+        else:
+            current_weekend = date - timedelta(days=date.weekday() - 4)
+    
         if current_weekend not in weekends:
             weekends.append(current_weekend)
     
