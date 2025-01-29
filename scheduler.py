@@ -3,6 +3,7 @@ import calendar
 import logging
 import sys
 from zoneinfo import ZoneInfo
+import requests  
 
 # Configure logging with more detail and ensure file is created
 logging.basicConfig(
@@ -15,6 +16,20 @@ logging.basicConfig(
 )
 
 class Scheduler:
+    def _get_spain_time(self):
+        """Get current time in Spain using a time API"""
+        try:
+            # Try to get time from WorldTimeAPI
+            response = requests.get('http://worldtimeapi.org/api/timezone/Europe/Madrid')
+            if response.status_code == 200:
+                time_data = response.json()
+                return datetime.fromisoformat(time_data['datetime']).replace(tzinfo=None)
+        except Exception as e:
+            logging.warning(f"Could not fetch time from API: {str(e)}")
+    
+        # Fallback: Use system time converted to Spain time
+        return datetime.now(ZoneInfo('Europe/Madrid')).replace(tzinfo=None)
+    
     def __init__(self, config):
         try:
             self.config = config
@@ -24,24 +39,24 @@ class Scheduler:
             self.workers_data = config['workers_data']
             self.schedule = {}
             self.worker_assignments = {w['id']: [] for w in self.workers_data}
-        
+    
             # New tracking dictionaries
-            self.worker_posts = {w['id']: set() for w in self.workers_data}  # Track posts for each worker
-            self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}  # Track weekday assignments
-            self.worker_weekends = {w['id']: [] for w in self.workers_data}  # Track weekend assignments
-        
-            # Update current time to UTC
-            self.current_datetime = datetime(2025, 1, 29, 9, 30, 19)
+            self.worker_posts = {w['id']: set() for w in self.workers_data}
+            self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}
+            self.worker_weekends = {w['id']: [] for w in self.workers_data}
+    
+            # Get current time in Spain
+            self.current_datetime = self._get_spain_time()
             self.current_user = 'saldo27'
-        
+    
             logging.info(f"Scheduler initialized with:")
             logging.info(f"Start date: {self.start_date}")
             logging.info(f"End date: {self.end_date}")
             logging.info(f"Number of shifts: {self.num_shifts}")
             logging.info(f"Number of workers: {len(self.workers_data)}")
-            logging.info(f"Current datetime: {self.current_datetime}")
+            logging.info(f"Current datetime (Spain): {self.current_datetime}")
             logging.info(f"Current user: {self.current_user}")
-        
+    
         except Exception as e:
             logging.error(f"Error initializing scheduler: {str(e)}")
             raise
@@ -220,24 +235,24 @@ class Scheduler:
             return post_number not in posts
         return True
     
-    def _find_best_worker(self, date):
-        """Find the most suitable worker for a given date"""
-        logging.info(f"\nFinding best worker for {date.strftime('%Y-%m-%d')}")
+    def _find_best_worker(self, date, post):
+        """Find the most suitable worker for a given date and post"""
+        logging.info(f"\nFinding best worker for {date.strftime('%Y-%m-%d')} post {post}")
         candidates = []
-        
+    
         for worker in self.workers_data:
             worker_id = worker['id']
             logging.debug(f"Checking worker {worker_id}")
-            
+        
             if self._can_assign_worker(worker_id, date):
-                score = self._calculate_worker_score(worker, date)
+                score = self._calculate_worker_score(worker, date, post)  # Add post parameter
                 candidates.append((worker, score))
                 logging.debug(f"Worker {worker_id} is candidate with score {score}")
             else:
                 logging.debug(f"Worker {worker_id} cannot be assigned to this date")
 
         if not candidates:
-            logging.warning(f"No suitable candidates found for {date.strftime('%Y-%m-%d')}")
+            logging.warning(f"No suitable candidates found for {date.strftime('%Y-%m-%d')} post {post}")
             return None
 
         best_worker = max(candidates, key=lambda x: x[1])[0]
@@ -258,9 +273,6 @@ class Scheduler:
                     print(f"Worker {w_id} incompatible with: {worker['incompatible_workers']}")
 
     def _can_assign_worker(self, worker_id, date):
-        """Check if a worker can be assigned to a specific date"""
-        logging.debug(f"\nChecking if worker {worker_id} can be assigned to {date.strftime('%Y-%m-%d')}")
-        
         try:
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
 
@@ -333,23 +345,25 @@ class Scheduler:
             return True
              # New checks:
         
-            # 6. Check weekend rule
+            # Check 6 weekend rule
             if self._has_three_consecutive_weekends(worker_id, date):
                 logging.debug(f"Worker {worker_id} would exceed three consecutive weekends")
                 return False
-            
-            # 7. Check weekday balance
+        
+            # Check 7 weekday balance 
             weekday = date.weekday()
             min_weekday = self._get_least_used_weekday(worker_id)
             if len(self.worker_assignments[worker_id]) > 7 and weekday != min_weekday:
                 logging.debug(f"Worker {worker_id} should work on {min_weekday} first")
                 return False
+            logging.debug(f"Worker {worker_id} can be assigned to this date")
+            return True
 
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
-            return False
+            return False 
 
-    def _calculate_worker_score(self, worker, date):
+    def _calculate_worker_score(self, worker, date, post):
         """Calculate a score for a worker based on various factors"""
         score = 0.0
 
@@ -366,22 +380,21 @@ class Scheduler:
 
         # Factor 3: Monthly balance
         month_shifts = sum(1 for d in self.worker_assignments[worker['id']]
-                         if d.year == date.year and d.month == date.month)
+                          if d.year == date.year and d.month == date.month)
         target_month_shifts = worker['target_shifts'] / ((self.end_date.year * 12 + self.end_date.month) -
-                                                       (self.start_date.year * 12 + self.start_date.month) + 1)
+                                                        (self.start_date.year * 12 + self.start_date.month) + 1)
         monthly_balance = target_month_shifts - month_shifts
         score += monthly_balance * 25
 
-       # Factor 4: Post rotation balance
-        current_post = len(self.schedule.get(date, []))
-        if self._is_balanced_post_rotation(worker['id'], current_post):
+        # Factor 4: Post rotation balance
+        if self._is_balanced_post_rotation(worker['id'], post):
             score += 15
 
-       # Factor 5: Weekday balance
+        # Factor 5: Weekday balance
         if date.weekday() == self._get_least_used_weekday(worker['id']):
             score += 20
 
-       # Factor 6: Weekend distribution
+        # Factor 6: Weekend distribution
         if self._is_weekend_day(date):
             weekend_count = len(self.worker_weekends[worker['id']])
             score -= weekend_count * 5  # Penalize workers with more weekend assignments
