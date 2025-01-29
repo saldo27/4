@@ -106,6 +106,9 @@ class Scheduler:
                     logging.warning(f"No assignments made for {current_date.strftime('%Y-%m-%d')}")
                 current_date += timedelta(days=1)
 
+            # Clean up any over-assigned days
+            self._cleanup_schedule()
+        
             # Validate final schedule
             logging.info("\nValidating final schedule...")
             errors, warnings = self.validate_schedule()
@@ -179,23 +182,33 @@ class Scheduler:
     
         if date not in self.schedule:
             self.schedule[date] = []
+        elif len(self.schedule[date]) >= self.num_shifts:
+            logging.warning(f"Day {date.strftime('%Y-%m-%d')} already has {len(self.schedule[date])} shifts assigned (max: {self.num_shifts})")
+            return
     
-        for post in range(self.num_shifts):
+        # Calculate how many shifts still need to be assigned
+        remaining_shifts = self.num_shifts - len(self.schedule[date])
+    
+        for post in range(remaining_shifts):
             logging.info(f"Finding worker for shift {post + 1}/{self.num_shifts}")
             best_worker = self._find_best_worker(date, post)
             if best_worker:
-                self.schedule[date].append(best_worker['id'])
-                self.worker_assignments[best_worker['id']].append(date)
-            
-                # Update tracking data
-                self.worker_posts[best_worker['id']].add(post)
-                self.worker_weekdays[best_worker['id']][date.weekday()] += 1
-                if self._is_weekend_day(date):
-                    weekend_friday = date - timedelta(days=date.weekday() - 4)
-                    if weekend_friday not in self.worker_weekends[best_worker['id']]:
-                        self.worker_weekends[best_worker['id']].append(weekend_friday)
-            
-                logging.info(f"Assigned worker {best_worker['id']} to shift {post}")
+                if len(self.schedule[date]) < self.num_shifts:  # Double-check before adding
+                    self.schedule[date].append(best_worker['id'])
+                    self.worker_assignments[best_worker['id']].append(date)
+                
+                    # Update tracking data
+                    self.worker_posts[best_worker['id']].add(post)
+                    self.worker_weekdays[best_worker['id']][date.weekday()] += 1
+                    if self._is_weekend_day(date):
+                        weekend_friday = date - timedelta(days=date.weekday() - 4)
+                        if weekend_friday not in self.worker_weekends[best_worker['id']]:
+                            self.worker_weekends[best_worker['id']].append(weekend_friday)
+                
+                    logging.info(f"Assigned worker {best_worker['id']} to shift {post + 1}")
+                else:
+                    logging.warning(f"Maximum shifts ({self.num_shifts}) reached for {date.strftime('%Y-%m-%d')}")
+                    break
             else:
                 logging.error(f"Could not find suitable worker for shift {post + 1}")
                 break
@@ -442,11 +455,27 @@ class Scheduler:
         logging.info("\nValidating schedule...")
         errors = []
         warnings = []
-    
-        # Validation checks with logging...
+
+        # Check each date in the schedule
         for date, workers in self.schedule.items():
             logging.info(f"\nChecking date: {date.strftime('%Y-%m-%d')}")
             logging.info(f"Assigned workers: {workers}")
+        
+            # Check number of shifts
+            if len(workers) > self.num_shifts:
+                error_msg = f"Too many workers ({len(workers)}) assigned on {date.strftime('%Y-%m-%d')}. Maximum is {self.num_shifts}"
+                logging.error(error_msg)
+                errors.append(error_msg)
+            elif len(workers) < self.num_shifts:
+                warning_msg = f"Too few workers ({len(workers)}) assigned on {date.strftime('%Y-%m-%d')}. Expected {self.num_shifts}"
+                logging.warning(warning_msg)
+                warnings.append(warning_msg)
+        
+            # Check for duplicates
+            if len(workers) != len(set(workers)):
+                error_msg = f"Duplicate workers assigned on {date.strftime('%Y-%m-%d')}"
+                logging.error(error_msg)
+                errors.append(error_msg)
             
             # Check incompatibilities
             incompatible_workers = []
@@ -454,11 +483,27 @@ class Scheduler:
                 worker = next(w for w in self.workers_data if w['id'] == worker_id)
                 if worker.get('is_incompatible', False):
                     incompatible_workers.append(worker_id)
-            
+        
             if len(incompatible_workers) > 1:
                 error_msg = f"Multiple incompatible workers {', '.join(map(str, incompatible_workers))} assigned on {date.strftime('%Y-%m-%d')}"
                 logging.error(error_msg)
                 errors.append(error_msg)
-    
+
         logging.info(f"\nValidation complete. Found {len(errors)} errors and {len(warnings)} warnings.")
         return errors, warnings
+
+    def _cleanup_schedule(self):
+        """Clean up any days that have too many assignments"""
+        for date in list(self.schedule.keys()):
+            workers = self.schedule[date]
+            if len(workers) > self.num_shifts:
+                logging.warning(f"Cleaning up over-assigned day {date.strftime('%Y-%m-%d')}")
+                # Keep only the first num_shifts workers
+                removed_workers = workers[self.num_shifts:]
+                self.schedule[date] = workers[:self.num_shifts]
+                
+                # Update worker assignments
+                for worker_id in removed_workers:
+                    if date in self.worker_assignments[worker_id]:
+                        self.worker_assignments[worker_id].remove(date)
+                    logging.info(f"Removed excess assignment of worker {worker_id}")
