@@ -40,67 +40,100 @@ class SetupScreen(Screen):
     def __init__(self, **kwargs):
         super(SetupScreen, self).__init__(**kwargs)
         layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-        
+    
         layout.add_widget(Label(text='Setup'))
-        
-        # Start Date
+    
+       # Start Date
         layout.add_widget(Label(text='Start Date (DD-MM-YYYY):'))
         self.start_date = TextInput(multiline=False)
         layout.add_widget(self.start_date)
-        
+    
         # End Date
         layout.add_widget(Label(text='End Date (DD-MM-YYYY):'))
         self.end_date = TextInput(multiline=False)
         layout.add_widget(self.end_date)
-        
+    
+        # Holidays
+        layout.add_widget(Label(text='Holidays (DD-MM-YYYY, semicolon-separated):'))
+        self.holidays = TextInput(
+            multiline=True,
+           hint_text='Example: 25-12-2025; 01-01-2026'
+        )
+        layout.add_widget(self.holidays)
+    
         # Number of Workers
         layout.add_widget(Label(text='Number of Workers:'))
         self.num_workers = TextInput(multiline=False, input_filter='int')
         layout.add_widget(self.num_workers)
-        
+    
         # Number of Shifts per Day
         layout.add_widget(Label(text='Number of Shifts per Day:'))
         self.num_shifts = TextInput(multiline=False, input_filter='int')
         layout.add_widget(self.num_shifts)
-        
+    
         # Continue Button
         continue_btn = Button(text='Continue', size_hint_y=None, height=50)
         continue_btn.bind(on_press=self.validate_and_continue)
         layout.add_widget(continue_btn)
-        
+    
         self.add_widget(layout)
 
+    def parse_holidays(self, holidays_str):
+        """Parse and validate holiday dates"""
+        if not holidays_str.strip():
+            return []
+        
+        holidays = []
+        try:
+            for date_str in holidays_str.split(';'):
+                date_str = date_str.strip()
+                if date_str:
+                    holiday_date = datetime.strptime(date_str, '%d-%m-%Y')
+                    holidays.append(holiday_date)
+            return sorted(holidays)
+        except ValueError as e:
+            raise ValueError(f"Invalid holiday date format: {str(e)}")
+        
     def validate_and_continue(self, instance):
         try:
             # Validate dates
             start = datetime.strptime(self.start_date.text, '%d-%m-%Y')
             end = datetime.strptime(self.end_date.text, '%d-%m-%Y')
-            
+        
             if end <= start:
                 raise ValueError("End date must be after start date")
-            
+        
+            # Validate and parse holidays
+            holidays = self.parse_holidays(self.holidays.text)
+        
+            # Validate holidays are within range
+            for holiday in holidays:
+                if holiday < start or holiday > end:
+                    raise ValueError(f"Holiday {holiday.strftime('%d-%m-%Y')} is outside the schedule period")
+        
             # Validate numbers
             num_workers = int(self.num_workers.text)
             num_shifts = int(self.num_shifts.text)
-            
+        
             if num_workers < 1:
                 raise ValueError("Number of workers must be positive")
             if num_shifts < 1:
                 raise ValueError("Number of shifts must be positive")
-            
+        
             # Store configuration
             app = App.get_running_app()
             app.schedule_config = {
                 'start_date': start,
                 'end_date': end,
+                'holidays': holidays,  # Add holidays to config
                 'num_workers': num_workers,
                 'num_shifts': num_shifts,
                 'current_worker_index': 0
             }
-            
+        
             # Switch to worker details screen
             self.manager.current = 'worker_details'
-            
+        
         except ValueError as e:
             popup = Popup(title='Error',
                          content=Label(text=str(e)),
