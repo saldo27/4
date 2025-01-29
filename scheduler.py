@@ -24,11 +24,16 @@ class Scheduler:
             self.workers_data = config['workers_data']
             self.schedule = {}
             self.worker_assignments = {w['id']: [] for w in self.workers_data}
-            
-            # Set current time to UTC+1 (Spain)
-            self.current_datetime = datetime(2025, 1, 20, 9, 57, 14)
+        
+            # New tracking dictionaries
+            self.worker_posts = {w['id']: set() for w in self.workers_data}  # Track posts for each worker
+            self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}  # Track weekday assignments
+            self.worker_weekends = {w['id']: [] for w in self.workers_data}  # Track weekend assignments
+        
+            # Update current time to UTC
+            self.current_datetime = datetime(2025, 1, 29, 9, 30, 19)
             self.current_user = 'saldo27'
-            
+        
             logging.info(f"Scheduler initialized with:")
             logging.info(f"Start date: {self.start_date}")
             logging.info(f"End date: {self.end_date}")
@@ -36,11 +41,11 @@ class Scheduler:
             logging.info(f"Number of workers: {len(self.workers_data)}")
             logging.info(f"Current datetime: {self.current_datetime}")
             logging.info(f"Current user: {self.current_user}")
-            
+        
         except Exception as e:
             logging.error(f"Error initializing scheduler: {str(e)}")
             raise
-    
+     
     def generate_schedule(self):
         """Generate the complete guard schedule following all conditions"""
         logging.info("=== Starting schedule generation ===")
@@ -156,21 +161,65 @@ class Scheduler:
     def _assign_day_shifts(self, date):
         """Assign all shifts for a specific day"""
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
-        
+    
         if date not in self.schedule:
             self.schedule[date] = []
     
-        while len(self.schedule[date]) < self.num_shifts:
-            logging.info(f"Finding worker for shift {len(self.schedule[date]) + 1}/{self.num_shifts}")
-            best_worker = self._find_best_worker(date)
+        for post in range(self.num_shifts):
+            logging.info(f"Finding worker for shift {post + 1}/{self.num_shifts}")
+            best_worker = self._find_best_worker(date, post)
             if best_worker:
                 self.schedule[date].append(best_worker['id'])
                 self.worker_assignments[best_worker['id']].append(date)
-                logging.info(f"Assigned worker {best_worker['id']} to shift")
+            
+                # Update tracking data
+                self.worker_posts[best_worker['id']].add(post)
+                self.worker_weekdays[best_worker['id']][date.weekday()] += 1
+                if self._is_weekend_day(date):
+                    weekend_friday = date - timedelta(days=date.weekday() - 4)
+                    if weekend_friday not in self.worker_weekends[best_worker['id']]:
+                        self.worker_weekends[best_worker['id']].append(weekend_friday)
+            
+                logging.info(f"Assigned worker {best_worker['id']} to shift {post}")
             else:
-                logging.error(f"Could not find suitable worker for shift {len(self.schedule[date]) + 1}")
+                logging.error(f"Could not find suitable worker for shift {post + 1}")
                 break
 
+    def _is_weekend_day(self, date):
+        """Check if the date is a weekend day (Friday, Saturday, or Sunday)"""
+        return date.weekday() in [4, 5, 6]  # 4=Friday, 5=Saturday, 6=Sunday
+
+    def _has_three_consecutive_weekends(self, worker_id, date):
+        """Check if worker has worked three consecutive weekends"""
+        if not self._is_weekend_day(date):
+            return False
+        
+        weekends = self.worker_weekends[worker_id]
+        # Add current weekend if not already included
+        current_weekend = date - timedelta(days=date.weekday() - 5)  # Get Friday of current week
+        if current_weekend not in weekends:
+            weekends.append(current_weekend)
+    
+        # Sort weekends and check for three consecutive
+        weekends.sort()
+        if len(weekends) >= 3:
+            for i in range(len(weekends) - 2):
+                if (weekends[i + 2] - weekends[i]).days <= 14:  # Two weeks difference or less
+                    return True
+        return False
+
+    def _get_least_used_weekday(self, worker_id):
+        """Get the weekday that the worker has worked least"""
+        weekdays = self.worker_weekdays[worker_id]
+        return min(weekdays.items(), key=lambda x: x[1])[0]
+
+    def _is_balanced_post_rotation(self, worker_id, post_number):
+        """Check if assigning this post maintains balanced rotation"""
+        posts = self.worker_posts[worker_id]
+        if len(posts) < self.num_shifts:  # If worker hasn't worked all posts yet
+            return post_number not in posts
+        return True
+    
     def _find_best_worker(self, date):
         """Find the most suitable worker for a given date"""
         logging.info(f"\nFinding best worker for {date.strftime('%Y-%m-%d')}")
@@ -194,7 +243,8 @@ class Scheduler:
         best_worker = max(candidates, key=lambda x: x[1])[0]
         logging.info(f"Selected worker {best_worker['id']} with score {max(candidates, key=lambda x: x[1])[1]}")
         return best_worker
-        
+
+       
     # Add the debug method here
     def _print_debug_info(self, worker_id, date):
         """Print debug information for worker assignment"""
@@ -281,6 +331,19 @@ class Scheduler:
 
             logging.debug(f"Worker {worker_id} can be assigned to this date")
             return True
+             # New checks:
+        
+            # 6. Check weekend rule
+            if self._has_three_consecutive_weekends(worker_id, date):
+                logging.debug(f"Worker {worker_id} would exceed three consecutive weekends")
+                return False
+            
+            # 7. Check weekday balance
+            weekday = date.weekday()
+            min_weekday = self._get_least_used_weekday(worker_id)
+            if len(self.worker_assignments[worker_id]) > 7 and weekday != min_weekday:
+                logging.debug(f"Worker {worker_id} should work on {min_weekday} first")
+                return False
 
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
@@ -308,6 +371,20 @@ class Scheduler:
                                                        (self.start_date.year * 12 + self.start_date.month) + 1)
         monthly_balance = target_month_shifts - month_shifts
         score += monthly_balance * 25
+
+       # Factor 4: Post rotation balance
+        current_post = len(self.schedule.get(date, []))
+        if self._is_balanced_post_rotation(worker['id'], current_post):
+            score += 15
+
+       # Factor 5: Weekday balance
+        if date.weekday() == self._get_least_used_weekday(worker['id']):
+            score += 20
+
+       # Factor 6: Weekend distribution
+        if self._is_weekend_day(date):
+            weekend_count = len(self.worker_weekends[worker['id']])
+            score -= weekend_count * 5  # Penalize workers with more weekend assignments
 
         return score
 
