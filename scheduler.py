@@ -30,38 +30,38 @@ class Scheduler:
         # Fallback: Use system time converted to Spain time
         return datetime.now(ZoneInfo('Europe/Madrid')).replace(tzinfo=None)
     
-   def __init__(self, config):
-    try:
-        self.config = config
-        self.start_date = config['start_date']
-        self.end_date = config['end_date']
-        self.num_shifts = config['num_shifts']
-        self.workers_data = config['workers_data']
-        self.holidays = config.get('holidays', [])  # Add this line
-        self.schedule = {}
-        self.worker_assignments = {w['id']: [] for w in self.workers_data}
+    def __init__(self, config):
+        try:
+            self.config = config
+            self.start_date = config['start_date']
+            self.end_date = config['end_date']
+            self.num_shifts = config['num_shifts']
+            self.workers_data = config['workers_data']
+            self.holidays = config.get('holidays', [])  # Add this line
+            self.schedule = {}
+            self.worker_assignments = {w['id']: [] for w in self.workers_data}
     
-        # New tracking dictionaries
-        self.worker_posts = {w['id']: set() for w in self.workers_data}
-        self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}
-        self.worker_weekends = {w['id']: [] for w in self.workers_data}
+            # New tracking dictionaries
+            self.worker_posts = {w['id']: set() for w in self.workers_data}
+            self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}
+            self.worker_weekends = {w['id']: [] for w in self.workers_data}
     
-        # Get current time in Spain
-        self.current_datetime = self._get_spain_time()
-        self.current_user = 'saldo27'
+            # Get current time in Spain
+            self.current_datetime = self._get_spain_time()
+            self.current_user = 'saldo27'
     
-        logging.info(f"Scheduler initialized with:")
-        logging.info(f"Start date: {self.start_date}")
-        logging.info(f"End date: {self.end_date}")
-        logging.info(f"Number of shifts: {self.num_shifts}")
-        logging.info(f"Number of workers: {len(self.workers_data)}")
-        logging.info(f"Holidays: {[h.strftime('%Y-%m-%d') for h in self.holidays]}")
-        logging.info(f"Current datetime (Spain): {self.current_datetime}")
-        logging.info(f"Current user: {self.current_user}")
+            logging.info(f"Scheduler initialized with:")
+            logging.info(f"Start date: {self.start_date}")
+            logging.info(f"End date: {self.end_date}")
+            logging.info(f"Number of shifts: {self.num_shifts}")
+            logging.info(f"Number of workers: {len(self.workers_data)}")
+            logging.info(f"Holidays: {[h.strftime('%Y-%m-%d') for h in self.holidays]}")
+            logging.info(f"Current datetime (Spain): {self.current_datetime}")
+            logging.info(f"Current user: {self.current_user}")
     
-    except Exception as e:
-        logging.error(f"Error initializing scheduler: {str(e)}")
-        raise
+        except Exception as e:
+            logging.error(f"Error initializing scheduler: {str(e)}")
+            raise
         
     def _is_holiday(self, date):
         """Check if a date is a holiday"""
@@ -195,7 +195,7 @@ class Scheduler:
             self._assign_day_shifts(current_date)
             current_date += timedelta(days=1)
 
-   def _assign_day_shifts(self, date):
+    def _assign_day_shifts(self, date):
         """Assign all shifts for a specific day"""
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
     
