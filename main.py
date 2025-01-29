@@ -11,6 +11,7 @@ from kivy.uix.popup import Popup
 from kivy.graphics import Color, Line
 from datetime import datetime, timedelta
 import json
+import logging 
 
 class WelcomeScreen(Screen):
     def __init__(self, **kwargs):
