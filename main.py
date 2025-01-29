@@ -11,7 +11,14 @@ from kivy.uix.popup import Popup
 from kivy.graphics import Color, Line
 from datetime import datetime, timedelta
 import json
-import logging 
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 
 class WelcomeScreen(Screen):
     def __init__(self, **kwargs):
