@@ -8,6 +8,7 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.popup import Popup
+from kivy.graphics import Color, Line
 from datetime import datetime, timedelta
 import json
 
@@ -410,8 +411,8 @@ class CalendarViewScreen(Screen):
             
             # Add a border to make the cell more visible
             with cell.canvas.before:
-                Color(0.8, 0.8, 0.8, 1)  # Light gray color for borders
-                Line(rectangle=(cell.x, cell.y, cell.width, cell.height))
+            Color(0.8, 0.8, 0.8, 1)  # Light gray color for borders
+            Line(rectangle=(cell.x, cell.y, cell.width, cell.height))
             
             self.calendar_grid.add_widget(cell)
         
