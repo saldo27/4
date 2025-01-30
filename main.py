@@ -381,13 +381,17 @@ class CalendarViewScreen(Screen):
         self.current_date = None
         self.schedule = {}
 
-    def on_enter(self):
-        app = App.get_running_app()
-        self.schedule = app.schedule_config.get('schedule', {})
-        if self.schedule:
-            # Set current_date to the first date in the schedule
-            self.current_date = min(self.schedule.keys())
-            self.display_month(self.current_date)
+        # Add Summary button to header
+        summary_btn = Button(text='Summary', size_hint_x=0.2)
+        summary_btn.bind(on_press=self.show_month_summary)
+        header.add_widget(summary_btn
+        def on_enter(self):
+            app = App.get_running_app()
+            self.schedule = app.schedule_config.get('schedule', {})
+            if self.schedule:
+                # Set current_date to the first date in the schedule
+                self.current_date = min(self.schedule.keys())
+                self.display_month(self.current_date)
 
     def display_month(self, date):  # <-- Correct indentation
         self.calendar_grid.clear_widgets()
@@ -417,43 +421,48 @@ class CalendarViewScreen(Screen):
         for day in range(1, days_in_month + 1):
             current = datetime(date.year, date.month, day)
             cell = BoxLayout(orientation='vertical', spacing=2)
+        
+        # Add color coding for weekends and holidays
+            app = App.get_running_app()
+            is_weekend = current.weekday() >= 5
+            is_holiday = current in app.schedule_config.get('holidays', [])
+        
+        # Day number with special formatting for weekends/holidays
+        day_label = Label(
+            text=str(day),
+            size_hint_y=0.2,
+            bold=True,
+            color=(1, 0, 0, 1) if is_weekend or is_holiday else (0, 0, 0, 1)
+        )
+        cell.add_widget(day_label)
             
-            # Day number
-            day_label = Label(
-                text=str(day),
-                size_hint_y=0.2,
-                bold=True
+        # If there are workers scheduled for this day, show their IDs with shift numbers
+        if current in self.schedule:
+            workers = self.schedule[current]
+            workers_text = '\n'.join(f"Shift {i+1}: {w}" for i, w in enumerate(workers))
+            workers_label = Label(
+                text=workers_text,
+                font_size='10sp',
+                size_hint_y=0.8
             )
-            cell.add_widget(day_label)
-            
-            # If there are workers scheduled for this day, show their IDs
-            if current in self.schedule:
-                workers = self.schedule[current]
-                # Create a label with worker IDs
-                workers_text = '\n'.join(str(w) for w in workers)
-                workers_label = Label(
-                    text=workers_text,
-                    font_size='10sp',
-                    size_hint_y=0.8
-                )
-                cell.add_widget(workers_label)
+            cell.add_widget(workers_label)
                 
-                # Make the cell clickable and highlight it
-                btn = Button(
-                    size_hint=(1, 1),
-                    background_color=(0.8, 0.9, 1, 0.3),
-                    background_normal=''
-                )
-                btn.bind(on_press=lambda x, d=current: self.show_details(d))
-                
-                # Add the button as a background
-                cell.bind(size=btn.setter('size'), pos=btn.setter('pos'))
-                cell.add_widget(btn)
+        # Make the cell clickable and highlight it
+            btn = Button(
+            size_hint=(1, 1),
+            background_color=(0.8, 0.9, 1, 0.3),
+            background_normal=''
+            )
+            btn.bind(on_press=lambda x, d=current: self.show_details(d))
+               
+        # Add the button as a background
+            cell.bind(size=btn.setter('size'), pos=btn.setter('pos'))
+            cell.add_widget(btn)
             
-            # Add a border to make the cell more visible
-            with cell.canvas.before:
-                Color(0.8, 0.8, 0.8, 1)  # Light gray color for borders
-                Line(rectangle=(cell.x, cell.y, cell.width, cell.height))
+        # Add a border to make the cell more visible
+        with cell.canvas.before:
+            Color(0.8, 0.8, 0.8, 1)  # Light gray color for borders
+            Line(rectangle=(cell.x, cell.y, cell.width, cell.height))
             
             self.calendar_grid.add_widget(cell)
         
@@ -465,15 +474,31 @@ class CalendarViewScreen(Screen):
     def show_details(self, date):
         self.details_layout.clear_widgets()
         if date in self.schedule:
+            # Add date header with day of week
             header = Label(
-                text=f'Schedule for {date.strftime("%d-%m-%Y")}',
+                text=f'Schedule for {date.strftime("%A, %d-%m-%Y")}',
                 size_hint_y=None,
                 height=40,
                 bold=True
             )
             self.details_layout.add_widget(header)
-            
-            for worker_id in self.schedule[date]:
+        
+            app = App.get_running_app()
+            is_weekend = date.weekday() >= 5
+            is_holiday = date in app.schedule_config.get('holidays', [])
+        
+            # Show if it's a weekend or holiday
+            if is_weekend or is_holiday:
+                status = Label(
+                    text='WEEKEND' if is_weekend else 'HOLIDAY',
+                    size_hint_y=None,
+                    height=30,
+                    color=(1, 0, 0, 1)
+                )
+                self.details_layout.add_widget(status)
+        
+            # Show workers with shift numbers
+            for i, worker_id in enumerate(self.schedule[date]):
                 worker_box = BoxLayout(
                     orientation='horizontal',
                     size_hint_y=None,
@@ -481,7 +506,7 @@ class CalendarViewScreen(Screen):
                     padding=(10, 5)
                 )
                 worker_box.add_widget(Label(
-                    text=f'Worker {worker_id}',
+                    text=f'Shift {i+1}: Worker {worker_id}',
                     size_hint_x=1,
                     halign='left'
                 ))
@@ -528,24 +553,141 @@ class CalendarViewScreen(Screen):
             with open('schedule.txt', 'w') as f:
                 f.write("SHIFT SCHEDULE\n")
                 f.write("=" * 50 + "\n\n")
-                
+            
                 for date in sorted(self.schedule.keys()):
-                    f.write(f"Date: {date.strftime('%Y-%m-%d')}\n")
+                    f.write(f"Date: {date.strftime('%A, %Y-%m-%d')}\n")
+                    app = App.get_running_app()
+                    if date in app.schedule_config.get('holidays', []):
+                        f.write("(HOLIDAY)\n")
                     f.write("Assigned Workers:\n")
-                    for worker in self.schedule[date]:
-                        f.write(f"  - Worker {worker}\n")
+                    for i, worker in enumerate(self.schedule[date]):
+                        f.write(f"  Shift {i+1}: Worker {worker}\n")
                     f.write("\n")
+
+    def show_month_summary(self, instance):
+        """Display a summary of the current month's schedule"""
+        if not self.current_date:
+            return
+        
+        # Create the content layout
+        content = BoxLayout(orientation='vertical', padding=10, spacing=5)
+    
+        # Month header
+        month_label = Label(
+            text=f"Summary for {self.current_date.strftime('%B %Y')}",
+            size_hint_y=None,
+            height=40,
+            bold=True
+        )
+        content.add_widget(month_label)
+    
+        # Calculate statistics
+        month_stats = {
+            'total_shifts': 0,
+            'workers': {},
+            'weekend_shifts': 0,
+            'holiday_shifts': 0
+        }
+    
+        # Collect data for the current month
+        for date, workers in self.schedule.items():
+            if date.year == self.current_date.year and date.month == self.current_date.month:
+                month_stats['total_shifts'] += len(workers)
             
-            popup = Popup(title='Success',
-                         content=Label(text='Schedule exported to schedule.txt'),
-                         size_hint=(None, None), size=(400, 200))
-            popup.open()
-            
-        except Exception as e:
-            popup = Popup(title='Error',
-                         content=Label(text=f'Failed to export: {str(e)}'),
-                         size_hint=(None, None), size=(400, 200))
-            popup.open()
+                # Count worker shifts
+                for worker in workers:
+                    if worker not in month_stats['workers']:
+                        month_stats['workers'][worker] = {
+                            'total': 0,
+                            'weekends': 0,
+                            'holidays': 0
+                        }
+                    month_stats['workers'][worker]['total'] += 1
+                
+                    # Count weekend shifts
+                    if date.weekday() >= 5:
+                        month_stats['weekend_shifts'] += 1
+                        month_stats['workers'][worker]['weekends'] += 1
+                
+                    # Count holiday shifts
+                    app = App.get_running_app()
+                    if date in app.schedule_config.get('holidays', []):
+                        month_stats['holiday_shifts'] += 1
+                        month_stats['workers'][worker]['holidays'] += 1
+    
+        # Create scrollable view for statistics
+        scroll = ScrollView(size_hint_y=None, height=300)
+        stats_layout = GridLayout(
+            cols=1,
+            spacing=5,
+            size_hint_y=None,
+            padding=5
+        )
+        stats_layout.bind(minimum_height=stats_layout.setter('height'))
+    
+        # Add general statistics
+        stats_layout.add_widget(Label(
+            text=f"Total Shifts: {month_stats['total_shifts']}",
+            size_hint_y=None,
+            height=30
+        ))
+        stats_layout.add_widget(Label(
+            text=f"Weekend Shifts: {month_stats['weekend_shifts']}",
+            size_hint_y=None,
+            height=30
+        ))
+        stats_layout.add_widget(Label(
+            text=f"Holiday Shifts: {month_stats['holiday_shifts']}",
+            size_hint_y=None,
+            height=30
+        ))
+    
+        # Add separator
+        stats_layout.add_widget(Label(
+            text="Worker Details:",
+            size_hint_y=None,
+            height=40,
+            bold=True
+        ))
+    
+        # Add per-worker statistics
+        for worker, stats in sorted(month_stats['workers'].items()):
+            worker_stats = (
+                f"Worker {worker}:\n"
+                f"  Total: {stats['total']}\n"
+                f"  Weekends: {stats['weekends']}\n"
+                f"  Holidays: {stats['holidays']}"
+            )
+            stats_layout.add_widget(Label(
+                text=worker_stats,
+                size_hint_y=None,
+                height=100,
+                halign='left'
+            ))
+    
+        scroll.add_widget(stats_layout)
+        content.add_widget(scroll)
+    
+        # Add close button
+        close_button = Button(
+            text='Close',
+            size_hint_y=None,
+            height=40
+        )
+        content.add_widget(close_button)
+    
+        # Create and show popup
+        popup = Popup(
+            title='Monthly Summary',
+            content=content,
+            size_hint=(None, None),
+            size=(400, 500)
+        )
+    
+        # Bind close button
+        close_button.bind(on_press=popup.dismiss)
+    
+        popup.open()
             
 class ShiftManagerApp(App):
     def __init__(self, **kwargs):
