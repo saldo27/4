@@ -610,13 +610,10 @@ class Scheduler:
     
         assignments = sorted(self.worker_assignments[worker_id])
         if assignments:
-            for prev_date in reversed(assignments):
-               days_between = abs((date - prev_date).days)
-               if days_between < min_distance:
-                   return False
-               # We can break after checking the closest previous assignment
-               if days_between > min_distance:
-                   break
+            for prev_date in assignments:  # Changed from reversed to check all assignments
+                days_between = abs((date - prev_date).days)
+                if days_between < min_distance:
+                    return False
         
         # Days off
         if worker.get('days_off'):
