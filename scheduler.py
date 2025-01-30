@@ -568,37 +568,37 @@ class Scheduler:
         """Validate the generated schedule"""
         errors = []
         warnings = []
-    
+
         for date in sorted(self.schedule.keys()):
             assigned_workers = self.schedule[date]
             logging.info(f"Checking date {date}")
             logging.info(f"Assigned workers {assigned_workers}")
-        
+    
             # Check number of workers
-            if len(assigned_workers) < self.required_workers:  # Changed from workers_per_day to required_workers
-                warnings.append(f"Too few workers ({len(assigned_workers)}) assigned on {date}. Expected {self.required_workers}")
-        
+            if len(assigned_workers) < self.num_shifts:  # Changed from self.required_workers to self.num_shifts
+                warnings.append(f"Too few workers ({len(assigned_workers)}) assigned on {date}. Expected {self.num_shifts}")
+    
             # Check for incompatible workers
             incompatible_groups = []
             for i, worker_id in enumerate(assigned_workers):
                 worker = next(w for w in self.workers_data if w['id'] == worker_id)
-            
+        
                 # Check for incompatible workers
                 incompatible_group = [worker_id]
                 for other_id in assigned_workers[i+1:]:
                     if (worker.get('is_incompatible', False) and 
                         next(w for w in self.workers_data if w['id'] == other_id).get('is_incompatible', False)):
-                          incompatible_group.append(other_id)
+                        incompatible_group.append(other_id)
                     elif ('incompatible_workers' in worker and 
                           other_id in worker['incompatible_workers']):
                         incompatible_group.append(other_id)
-                    
-                if len(incompatible_group) > 1:
-                   incompatible_groups.append(incompatible_group)
                 
+                if len(incompatible_group) > 1:
+                    incompatible_groups.append(incompatible_group)
+            
             if incompatible_groups:
                 errors.append(f"Multiple incompatible workers {', '.join(map(str, incompatible_groups[0]))} assigned on {date}")
-            
+        
         return errors, warnings
 
     def _cleanup_schedule(self):
