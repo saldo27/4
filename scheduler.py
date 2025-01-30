@@ -295,21 +295,41 @@ class Scheduler:
             worker_id = worker['id']
             logging.debug(f"Checking worker {worker_id}")
         
-            if self._can_assign_worker(worker_id, date):
-                score = self._calculate_worker_score(worker, date, post)  # Add post parameter
-                candidates.append((worker, score))
-                logging.debug(f"Worker {worker_id} is candidate with score {score}")
-            else:
+            can_assign = self._can_assign_worker(worker_id, date)
+        
+            if not can_assign:
                 logging.debug(f"Worker {worker_id} cannot be assigned to this date")
-
+                continue
+        
+            score = self._calculate_worker_score(worker, date, post)
+            candidates.append((worker, score))
+            logging.debug(f"Worker {worker_id} is candidate with score {score}")
+    
         if not candidates:
             logging.warning(f"No suitable candidates found for {date.strftime('%Y-%m-%d')} post {post}")
+        
+            # Ask for permission to skip constraints in order
+            for worker in self.workers_data:
+                worker_id = worker['id']
+            
+                if not self._can_assign_worker(worker_id, date, skip_incompatibility=True):
+                    if self._ask_permission(f"Can I skip the incompatibility constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
+                        return worker
+            
+                if not self._can_assign_worker(worker_id, date, skip_gap=True):
+                    if self._ask_permission(f"Can I skip the 21-day gap constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
+                        return worker
+            
+                if not self._can_assign_worker(worker_id, date, skip_weekend_limit=True):
+                    if self._ask_permission(f"Can I skip the weekend limit constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
+                        return worker
+        
+            logging.warning(f"Leaving shift unassigned for {date.strftime('%Y-%m-%d')}")
             return None
-
+    
         best_worker = max(candidates, key=lambda x: x[1])[0]
         logging.info(f"Selected worker {best_worker['id']} with score {max(candidates, key=lambda x: x[1])[1]}")
         return best_worker
-
        
     # Add the debug method here
     def _print_debug_info(self, worker_id, date):
