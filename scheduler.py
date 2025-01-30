@@ -575,8 +575,8 @@ class Scheduler:
             logging.info(f"Assigned workers {assigned_workers}")
         
             # Check number of workers
-            if len(assigned_workers) < self.workers_per_day:
-                warnings.append(f"Too few workers ({len(assigned_workers)}) assigned on {date}. Expected {self.workers_per_day}")
+            if len(assigned_workers) < self.required_workers:  # Changed from workers_per_day to required_workers
+                warnings.append(f"Too few workers ({len(assigned_workers)}) assigned on {date}. Expected {self.required_workers}")
         
             # Check for incompatible workers
             incompatible_groups = []
@@ -588,13 +588,13 @@ class Scheduler:
                 for other_id in assigned_workers[i+1:]:
                     if (worker.get('is_incompatible', False) and 
                         next(w for w in self.workers_data if w['id'] == other_id).get('is_incompatible', False)):
-                        incompatible_group.append(other_id)
+                          incompatible_group.append(other_id)
                     elif ('incompatible_workers' in worker and 
                           other_id in worker['incompatible_workers']):
                         incompatible_group.append(other_id)
                     
                 if len(incompatible_group) > 1:
-                    incompatible_groups.append(incompatible_group)
+                   incompatible_groups.append(incompatible_group)
                 
             if incompatible_groups:
                 errors.append(f"Multiple incompatible workers {', '.join(map(str, incompatible_groups[0]))} assigned on {date}")
