@@ -68,8 +68,8 @@ class Scheduler:
             self.skipped_constraints = {
                 'incompatibility': set(),  # Will store (date, (worker1, worker2)) tuples
                 'gap': set()              # Will store (date, worker_id) tuples
-            }}
-    
+            }
+            
             # Get current time in Spain
             self.current_datetime = self._get_spain_time()
             self.current_user = 'saldo27'
