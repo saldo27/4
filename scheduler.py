@@ -467,33 +467,133 @@ class Scheduler:
                 if 'incompatible_workers' in worker and worker['incompatible_workers']:
                     print(f"Worker {w_id} incompatible with: {worker['incompatible_workers']}")
 
-    def _can_assign_worker(self, worker_id, date):
-        """Check if a worker can be assigned to a date.
-        Only includes basic availability, weekend rule, and weekday balance checks."""
-        try:
-            # First check basic availability
-            if not self._check_basic_availability(worker_id, date):
-                return False
-
-            worker = next(w for w in self.workers_data if w['id'] == worker_id)
-
-            # Check 6: Weekend rule
-            if self._has_three_consecutive_weekends(worker_id, date):
-                logging.debug(f"Worker {worker_id} would exceed three consecutive weekends")
-                return False
-
-            # Check 7: Weekday balance
-            weekday = date.weekday()
-            min_weekday = self._get_least_used_weekday(worker_id)
-            if len(self.worker_assignments[worker_id]) > 7 and weekday != min_weekday:
-                logging.debug(f"Worker {worker_id} should work on {min_weekday} first")
-                return False
-
-            return True
-
-        except Exception as e:
-            logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
+    def _can_assign_worker_except_incompatibility(self, worker_id, date):
+        """Check if worker can be assigned ignoring incompatibility constraints"""
+        if not self._check_basic_availability(worker_id, date):
             return False
+        
+        if not self._check_gap_constraint(worker_id, date):
+            return False
+        
+        # Check all other constraints except incompatibility
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+    
+        # Check maximum consecutive days
+        if worker.get('max_consecutive_days'):
+            max_days = worker['max_consecutive_days']
+            consecutive_days = self._count_consecutive_days(worker_id, date)
+            if consecutive_days >= max_days:
+                return False
+            
+        # Check maximum shifts per week
+        if worker.get('max_shifts_per_week'):
+            max_weekly = worker['max_shifts_per_week']
+            week_shifts = self._count_week_shifts(worker_id, date)
+            if week_shifts >= max_weekly:
+                return False
+            
+        # Check maximum weekend shifts
+        if worker.get('max_weekend_shifts'):
+            max_weekend = worker['max_weekend_shifts']
+            if self._is_weekend_day(date):
+                weekend_count = len(self.worker_weekends[worker_id])
+                if weekend_count >= max_weekend:
+                    return False
+                
+        # Check consecutive weekends
+        if worker.get('max_consecutive_weekends'):
+            max_weekends = worker['max_consecutive_weekends']
+            if self._is_weekend_day(date):
+                consecutive_weekends = self._count_consecutive_weekends(worker_id, date)
+                if consecutive_weekends >= max_weekends:
+                    return False
+    
+        return True
+
+    def _can_assign_worker_except_gap(self, worker_id, date):
+        """Check if worker can be assigned ignoring gap constraints"""
+        if not self._check_basic_availability(worker_id, date):
+            return False
+        
+        if not self._check_incompatibility(worker_id, date):
+            return False
+        
+        # Check all other constraints except gap
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+    
+        # Check maximum consecutive days
+        if worker.get('max_consecutive_days'):
+            max_days = worker['max_consecutive_days']
+            consecutive_days = self._count_consecutive_days(worker_id, date)
+            if consecutive_days >= max_days:
+                return False
+            
+        # Check maximum shifts per week
+        if worker.get('max_shifts_per_week'):
+            max_weekly = worker['max_shifts_per_week']
+            week_shifts = self._count_week_shifts(worker_id, date)
+            if week_shifts >= max_weekly:
+                return False
+            
+        # Check maximum weekend shifts
+        if worker.get('max_weekend_shifts'):
+            max_weekend = worker['max_weekend_shifts']
+            if self._is_weekend_day(date):
+                weekend_count = len(self.worker_weekends[worker_id])
+                if weekend_count >= max_weekend:
+                    return False
+                
+        # Check consecutive weekends
+        if worker.get('max_consecutive_weekends'):
+            max_weekends = worker['max_consecutive_weekends']
+            if self._is_weekend_day(date):
+                consecutive_weekends = self._count_consecutive_weekends(worker_id, date)
+                if consecutive_weekends >= max_weekends:
+                    return False
+    
+        return True
+
+    def _check_incompatibility(self, worker_id, date):
+        """Check if worker is compatible with already assigned workers"""
+        if date not in self.schedule:
+            return True
+        
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+    
+        # Check incompatible workers
+        for assigned_id in self.schedule[date]:
+            assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_id)
+        
+            # Check if both workers are marked as incompatible
+            if (worker.get('is_incompatible', False) and 
+                assigned_worker.get('is_incompatible', False)):
+                return False
+            
+            # Check specific incompatibilities
+            if ('incompatible_workers' in worker and 
+                assigned_id in worker['incompatible_workers']):
+                return False
+            
+            if ('incompatible_workers' in assigned_worker and 
+                worker_id in assigned_worker['incompatible_workers']):
+                return False
+    
+        return True
+
+    def _check_gap_constraint(self, worker_id, date):
+        """Check if assigning worker would violate the gap constraint"""
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+        work_percentage = float(worker.get('work_percentage', 100))
+        min_distance = max(2, int(4 / (work_percentage / 100)))
+    
+        assignments = sorted(self.worker_assignments[worker_id])
+        if assignments:
+            for prev_date in assignments:
+                days_between = abs((date - prev_date).days)
+                if days_between < min_distance or days_between in [7, 14, 21]:
+                    return False
+    
+        return True
      
 
     def _check_basic_availability(self, worker_id, date):
@@ -531,49 +631,7 @@ class Scheduler:
                 return False
             
         return True
-
-    def _check_incompatibility(self, worker_id, date):
-        """Check only incompatibility constraints"""
-        worker = next(w for w in self.workers_data if w['id'] == worker_id)
-
-        if date in self.schedule:
-            assigned_workers = self.schedule[date]
-        
-            # Count incompatible workers already assigned
-            incompatible_count = sum(
-                1 for w_id in assigned_workers 
-                if next(w for w in self.workers_data if w['id'] == w_id).get('is_incompatible', False)
-            )
-        
-            # Don't allow more than 2 incompatible workers
-            if incompatible_count >= 2:
-                return False
-            
-            if worker.get('is_incompatible', False):
-                if incompatible_count >= 2:
-                    return False
-                
-            if 'incompatible_workers' in worker and worker['incompatible_workers']:
-                if any(w_id in worker['incompatible_workers'] for w_id in assigned_workers):
-                    return False
-                
-        return True
-
-    def _check_gap_constraint(self, worker_id, date):
-        """Check only the 21-day gap constraint"""
-        worker = next(w for w in self.workers_data if w['id'] == worker_id)
-        work_percentage = float(worker.get('work_percentage', 100))
-        min_distance = max(2, int(4 / (work_percentage / 100)))
-        assignments = sorted(self.worker_assignments[worker_id])
-    
-        if assignments:
-            for prev_date in reversed(assignments):
-                days_between = abs((date - prev_date).days)
-                if days_between < min_distance or days_between in [7, 14, 21]:
-                    return False
-                
-        return True
-    
+     
     def _calculate_worker_score(self, worker, date, post):
         """Calculate a score for a worker based on various factors"""
         score = 0.0
