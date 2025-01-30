@@ -281,9 +281,9 @@ class Scheduler:
     
         # Sort weekends and check for three consecutive
         weekends.sort()
-        if len(weekends) >= 3:
-            for i in range(len(weekends) - 2):
-                if (weekends[i + 2] - weekends[i]).days <= 14:  # Two weeks difference or less
+        if len(weekends) >= 4:
+            for i in range(len(weekends) - 3):
+                if (weekends[i + 3] - weekends[i]).days <= 21:  # Three weeks difference or less
                     return True
         return False
 
