@@ -343,7 +343,7 @@ class Scheduler:
                 if 'incompatible_workers' in worker and worker['incompatible_workers']:
                     print(f"Worker {w_id} incompatible with: {worker['incompatible_workers']}")
 
-    def _can_assign_worker(self, worker_id, date):
+    def _can_assign_worker(self, worker_id, date, skip_incompatibility=False, skip_gap=False, skip_weekend_limit=False):
         try:
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
 
@@ -368,72 +368,69 @@ class Scheduler:
                     return False
 
             # Check 4: Worker incompatibility
-            if date in self.schedule:
-                assigned_workers = self.schedule[date]
-                
-                # System 1: is_incompatible flag
-                if worker.get('is_incompatible', False):
+            if not skip_incompatibility:
+                if date in self.schedule:
+                    assigned_workers = self.schedule[date]
+
+                    if worker.get('is_incompatible', False):
+                        for assigned_worker_id in assigned_workers:
+                            assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
+                            if assigned_worker.get('is_incompatible', False):
+                                logging.debug(f"Cannot assign worker {worker_id}: Both workers marked as incompatible")
+                                return False
+
+                    if 'incompatible_workers' in worker and worker['incompatible_workers']:
+                        for assigned_worker_id in assigned_workers:
+                            if assigned_worker_id in worker['incompatible_workers']:
+                                logging.debug(f"Cannot assign worker {worker_id}: Incompatible with {assigned_worker_id}")
+                                return False
+
                     for assigned_worker_id in assigned_workers:
                         assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
-                        if assigned_worker.get('is_incompatible', False):
+                        if assigned_worker.get('is_incompatible', False) and worker.get('is_incompatible', False):
                             logging.debug(f"Cannot assign worker {worker_id}: Both workers marked as incompatible")
                             return False
-
-                # System 2: incompatible_workers list
-                if 'incompatible_workers' in worker and worker['incompatible_workers']:
-                    for assigned_worker_id in assigned_workers:
-                        if assigned_worker_id in worker['incompatible_workers']:
-                            logging.debug(f"Cannot assign worker {worker_id}: Incompatible with {assigned_worker_id}")
-                            return False
-
-                # Check if any assigned worker has incompatibility with current worker
-                for assigned_worker_id in assigned_workers:
-                    assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
-                    if assigned_worker.get('is_incompatible', False) and worker.get('is_incompatible', False):
-                        logging.debug(f"Cannot assign worker {worker_id}: Both workers marked as incompatible")
-                        return False
-                    if 'incompatible_workers' in assigned_worker and assigned_worker['incompatible_workers']:
-                        if worker_id in assigned_worker['incompatible_workers']:
-                            logging.debug(f"Cannot assign worker {worker_id}: Worker {assigned_worker_id} marked them as incompatible")
-                            return False
+                        if 'incompatible_workers' in assigned_worker and assigned_worker['incompatible_workers']:
+                            if worker_id in assigned_worker['incompatible_workers']:
+                                logging.debug(f"Cannot assign worker {worker_id}: Worker {assigned_worker_id} marked them as incompatible")
+                                return False
 
             # Check 5: Minimum distance between assignments
-            work_percentage = float(worker.get('work_percentage', 100))
-            min_distance = max(2, int(4 / (work_percentage / 100)))
-            assignments = sorted(self.worker_assignments[worker_id])
+            if not skip_gap:
+                work_percentage = float(worker.get('work_percentage', 100))
+                min_distance = max(2, int(4 / (work_percentage / 100)))
+                assignments = sorted(self.worker_assignments[worker_id])
 
-            if assignments:
-                for prev_date in reversed(assignments):
-                    days_between = abs((date - prev_date).days)
-                    if days_between < min_distance:
-                        logging.debug(f"Worker {worker_id} - too close to previous assignment ({days_between} days)")
-                        return False
-                    if days_between in [7, 14, 21]:
-                        logging.debug(f"Worker {worker_id} - prohibited interval ({days_between} days)")
-                        return False
+                if assignments:
+                    for prev_date in reversed(assignments):
+                        days_between = abs((date - prev_date).days)
+                        if days_between < min_distance:
+                            logging.debug(f"Worker {worker_id} - too close to previous assignment ({days_between} days)")
+                            return False
+                        if days_between in [7, 14, 21]:
+                            logging.debug(f"Worker {worker_id} - prohibited interval ({days_between} days)")
+                            return False
 
-            logging.debug(f"Worker {worker_id} can be assigned to this date")
-            return True
-             # New checks:
-        
-            # Check 6 weekend rule
-            if self._has_three_consecutive_weekends(worker_id, date):
-                logging.debug(f"Worker {worker_id} would exceed three consecutive weekends")
-                return False
-        
-            # Check 7 weekday balance 
+            # Check 6: Weekend rule
+            if not skip_weekend_limit:
+                if self._has_three_consecutive_weekends(worker_id, date):
+                    logging.debug(f"Worker {worker_id} would exceed three consecutive weekends")
+                    return False
+
+            # Check 7: Weekday balance
             weekday = date.weekday()
             min_weekday = self._get_least_used_weekday(worker_id)
             if len(self.worker_assignments[worker_id]) > 7 and weekday != min_weekday:
                 logging.debug(f"Worker {worker_id} should work on {min_weekday} first")
                 return False
+
             logging.debug(f"Worker {worker_id} can be assigned to this date")
             return True
 
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
-            return False 
-
+            return False
+        
     def _calculate_worker_score(self, worker, date, post):
         """Calculate a score for a worker based on various factors"""
         score = 0.0
