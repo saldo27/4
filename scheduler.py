@@ -285,7 +285,13 @@ class Scheduler:
         if len(posts) < self.num_shifts:  # If worker hasn't worked all posts yet
             return post_number not in posts
         return True
-    
+    def _ask_permission(self, message):
+        """Simulate asking the user for permission to skip a constraint.
+        Replace this with actual user input handling in your application."""
+        print(message)
+        response = input("Type 'yes' to allow, 'no' to deny: ").strip().lower()
+        return response == 'yes'
+        
     def _find_best_worker(self, date, post):
         """Find the most suitable worker for a given date and post"""
         logging.info(f"\nFinding best worker for {date.strftime('%Y-%m-%d')} post {post}")
