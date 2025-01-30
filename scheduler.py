@@ -63,6 +63,12 @@ class Scheduler:
             self.worker_posts = {w['id']: set() for w in self.workers_data}
             self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
+
+            # Add tracking for constraint skips
+            self.constraint_skips = {w['id']: {
+                'incompatibility': 0,
+                'gap': 0
+            } for w in self.workers_data}
     
             # Get current time in Spain
             self.current_datetime = self._get_spain_time()
@@ -263,28 +269,38 @@ class Scheduler:
         return date.weekday() in [4, 5, 6]  # 4=Friday, 5=Saturday, 6=Sunday
 
     def _has_three_consecutive_weekends(self, worker_id, date):
-        """Check if worker has worked more than three consecutive weekends (including holidays)"""
+        """
+        Check if assigning this date would result in more than 3 consecutive weekends.
+        Returns True if the worker would exceed 3 consecutive weekends, False otherwise.
+        """
         if not self._is_weekend_day(date):
             return False
 
-        weekends = self.worker_weekends[worker_id]
-        # Get Friday of current week or the pre-holiday date
+        # Get the current weekend's Friday date (or pre-holiday date)
         if self._is_pre_holiday(date):
             current_weekend = date
         elif self._is_holiday(date):
-            current_weekend = date - timedelta(days=1)  # Use the pre-holiday date
+            current_weekend = date - timedelta(days=1)
         else:
-            current_weekend = date - timedelta(days=date.weekday() - 4)
+            current_weekend = date - timedelta(days=date.weekday() - 4)  # Get to Friday
 
+        # Get all weekend dates for this worker and add current one if not present
+        weekends = sorted(self.worker_weekends[worker_id])
         if current_weekend not in weekends:
-            weekends.append(current_weekend)
+            weekends = sorted(weekends + [current_weekend])
 
-        # Sort weekends and check for more than three consecutive
-        weekends.sort()
-        if len(weekends) >= 4:  # Changed from 3 to 4 since we want to allow exactly 3
-            for i in range(len(weekends) - 3):  # Changed from -2 to -3
-                if (weekends[i + 3] - weekends[i]).days <= 21:  # Three weeks difference or less
-                    return True  # Return True only if it would be MORE than 3 consecutive weekends
+        # Count consecutive weekends ending with current_weekend
+        consecutive_count = 1
+        for i in range(len(weekends) - 1, -1, -1):  # Start from the end
+            if i > 0:  # Check if there's a previous weekend to compare
+                days_diff = abs((weekends[i] - weekends[i-1]).days)
+                if days_diff == 7:  # Check if weekends are consecutive
+                    consecutive_count += 1
+                    if consecutive_count > 3:  # If we would exceed 3 consecutive weekends
+                        return True
+                else:
+                    break  # Break the count if weekends are not consecutive
+    
         return False
 
     def _get_least_used_weekday(self, worker_id):
@@ -309,62 +325,69 @@ class Scheduler:
         """Find the most suitable worker for a given date and post"""
         logging.info(f"\nFinding best worker for {date.strftime('%Y-%m-%d')} post {post}")
         candidates = []
-    
+
         # First try: Normal assignment with all constraints
         for worker in self.workers_data:
             worker_id = worker['id']
-            logging.debug(f"Checking worker {worker_id}")
-        
-            # Check basic availability and non-skippable constraints
             if not self._can_assign_worker(worker_id, date):
-                logging.debug(f"Worker {worker_id} cannot be assigned (basic constraints)")
                 continue
-            
-            # Check incompatibility
-            if not self._check_incompatibility(worker_id, date):
-                logging.debug(f"Worker {worker_id} cannot be assigned (incompatibility)")
-                continue
-            
-            # Check gap constraint
-            if not self._check_gap_constraint(worker_id, date):
-                logging.debug(f"Worker {worker_id} cannot be assigned (gap constraint)")
-                continue
-        
             score = self._calculate_worker_score(worker, date, post)
             candidates.append((worker, score))
-            logging.debug(f"Worker {worker_id} is candidate with score {score}")
-    
+
         if not candidates:
-            logging.warning(f"No suitable candidates found for {date.strftime('%Y-%m-%d')} post {post}")
+            # Get worker with least constraint skips
+            min_skips = float('inf')
+            eligible_workers = []
         
-            # Second try: Check if we can skip incompatibility
             for worker in self.workers_data:
                 worker_id = worker['id']
-            
-                # Only proceed if basic constraints and gap constraint are met
-                if self._can_assign_worker(worker_id, date) and self._check_gap_constraint(worker_id, date):
-                    if not self._check_incompatibility(worker_id, date):
-                        if self._ask_permission(f"Can I skip the incompatibility constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
-                            logging.info(f"Assigning worker {worker_id} after skipping incompatibility constraint for this instance")
-                            return worker
-        
-            # Third try: Check if we can skip gap constraint
-            for worker in self.workers_data:
+                total_skips = (self.constraint_skips[worker_id]['incompatibility'] + 
+                             self.constraint_skips[worker_id]['gap'])
+                if total_skips < min_skips:
+                    min_skips = total_skips
+                    eligible_workers = [worker]
+                elif total_skips == min_skips:
+                    eligible_workers.append(worker)
+
+            # Try incompatibility skip first
+            for worker in eligible_workers:
                 worker_id = worker['id']
-            
-                # Only proceed if basic constraints and incompatibility are met
-                if self._can_assign_worker(worker_id, date) and self._check_incompatibility(worker_id, date):
-                    if not self._check_gap_constraint(worker_id, date):
-                        if self._ask_permission(f"Can I skip the 21-day gap constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
-                            logging.info(f"Assigning worker {worker_id} after skipping 21-day gap constraint for this instance")
-                            return worker
-        
-            logging.warning(f"Leaving shift unassigned for {date.strftime('%Y-%m-%d')}")
+                if (self._can_assign_worker_except_incompatibility(worker_id, date) and 
+                    not self._check_incompatibility(worker_id, date)):
+                
+                    # Check if this would exceed 2 incompatible workers
+                    if date in self.schedule:
+                        incompatible_count = sum(
+                            1 for w_id in self.schedule[date] 
+                            if next(w for w in self.workers_data if w['id'] == w_id).get('is_incompatible', False)
+                        )
+                        if incompatible_count >= 2:
+                            continue
+                
+                    if self._ask_permission(
+                        f"Can I skip the incompatibility constraint for worker {worker_id} "
+                        f"on {date.strftime('%Y-%m-%d')}? "
+                        f"(Current skips: {self.constraint_skips[worker_id]['incompatibility']})"
+                    ):
+                        self.constraint_skips[worker_id]['incompatibility'] += 1
+                        return worker
+
+            # Try gap constraint skip
+            for worker in eligible_workers:
+                worker_id = worker['id']
+                if (self._can_assign_worker_except_gap(worker_id, date) and 
+                    not self._check_gap_constraint(worker_id, date)):
+                    if self._ask_permission(
+                        f"Can I skip the gap constraint for worker {worker_id} "
+                        f"on {date.strftime('%Y-%m-%d')}? "
+                        f"(Current skips: {self.constraint_skips[worker_id]['gap']})"
+                    ):
+                        self.constraint_skips[worker_id]['gap'] += 1
+                        return worker
+
             return None
-    
-        best_worker = max(candidates, key=lambda x: x[1])[0]
-        logging.info(f"Selected worker {best_worker['id']} with score {max(candidates, key=lambda x: x[1])[1]}")
-        return best_worker
+
+        return max(candidates, key=lambda x: x[1])[0]
        
     # Add the debug method here
     def _print_debug_info(self, worker_id, date):
@@ -459,16 +482,24 @@ class Scheduler:
     def _check_incompatibility(self, worker_id, date):
         """Check only incompatibility constraints"""
         worker = next(w for w in self.workers_data if w['id'] == worker_id)
-    
+
         if date in self.schedule:
             assigned_workers = self.schedule[date]
         
+            # Count incompatible workers already assigned
+            incompatible_count = sum(
+                1 for w_id in assigned_workers 
+                if next(w for w in self.workers_data if w['id'] == w_id).get('is_incompatible', False)
+            )
+        
+            # Don't allow more than 2 incompatible workers
+            if incompatible_count >= 2:
+                return False
+            
             if worker.get('is_incompatible', False):
-                for assigned_worker_id in assigned_workers:
-                    assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
-                    if assigned_worker.get('is_incompatible', False):
-                        return False
-                    
+                if incompatible_count >= 2:
+                    return False
+                
             if 'incompatible_workers' in worker and worker['incompatible_workers']:
                 if any(w_id in worker['incompatible_workers'] for w_id in assigned_workers):
                     return False
