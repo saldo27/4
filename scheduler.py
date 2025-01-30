@@ -356,22 +356,36 @@ class Scheduler:
             logging.info(f"Selected worker {selected['id']} through normal assignment")
             return selected
 
-        # Only consider workers that pass basic availability
+        # If no candidates found through normal assignment, try constraint skipping
+        logging.info("No candidates found with normal constraints, trying constraint skipping")
+    
+        # Get workers eligible for constraint skipping
+        skip_candidates = []
         for worker in self.workers_data:
             worker_id = worker['id']
+        
+            # Only consider workers that pass basic availability
             if not self._check_basic_availability(worker_id, date):
                 continue
             
-            total_skips = len([skip for skip in self.skipped_constraints['incompatibility'] 
-                              if worker_id in skip[1]]) + \
-                         len([skip for skip in self.skipped_constraints['gap'] 
-                              if skip[1] == worker_id])
+            # Count total skips for this worker
+            incompatibility_skips = len([skip for skip in self.skipped_constraints['incompatibility'] 
+                                       if worker_id in skip[1]])
+            gap_skips = len([skip for skip in self.skipped_constraints['gap'] 
+                            if skip[1] == worker_id])
+            total_skips = incompatibility_skips + gap_skips
         
-            if total_skips < min_skips:
-                min_skips = total_skips
-                eligible_workers = [worker]
-            elif total_skips == min_skips:
-                eligible_workers.append(worker)
+            skip_candidates.append((worker, total_skips))
+    
+        if not skip_candidates:
+            logging.info("No workers available even for constraint skipping")
+            return None
+        
+        # Find workers with minimum skips
+        min_skips = min(skips for _, skips in skip_candidates)
+        eligible_workers = [worker for worker, skips in skip_candidates if skips == min_skips]
+    
+        logging.info(f"Found {len(eligible_workers)} workers with minimum skips ({min_skips})")
 
         # Try incompatibility skip first
         for worker in eligible_workers:
@@ -396,11 +410,13 @@ class Scheduler:
                     f"on {date_str}? "
                     f"(Current skips: {min_skips})"
                 ):
-                    self.skipped_constraints['incompatibility'].add((date_str, tuple(sorted([worker_id, assigned_id]))))
+                    # Record the skipped constraint
+                    for assigned_id in self.schedule.get(date, []):
+                        if next(w for w in self.workers_data if w['id'] == assigned_id).get('is_incompatible', False):
+                            worker_pair = tuple(sorted([worker_id, assigned_id]))
+                            self.skipped_constraints['incompatibility'].add((date_str, worker_pair))
                     return worker
-
-        return None
-
+        
         # Try gap constraint skip (only if basic availability is met)
         for worker in eligible_workers:
             worker_id = worker['id']
@@ -416,6 +432,7 @@ class Scheduler:
                     self.skipped_constraints['gap'].add((date_str, worker_id))
                     return worker
 
+        logging.info("No suitable workers found even after trying to skip constraints")
         return None
 
     def _record_constraint_skip(self, worker_id, date, constraint_type):
@@ -497,9 +514,9 @@ class Scheduler:
                days_between = abs((date - prev_date).days)
                if days_between < min_distance:
                    return False
-                # We can break after checking the closest previous assignment
-                if days_between > min_distance:
-                    break
+               # We can break after checking the closest previous assignment
+               if days_between > min_distance:
+                   break
         
         # Days off
         if worker.get('days_off'):
