@@ -495,8 +495,8 @@ class Scheduler:
         if assignments:
             for prev_date in reversed(assignments):
                days_between = abs((date - prev_date).days)
-                if days_between < min_distance:
-                    return False
+               if days_between < min_distance:
+                   return False
                 # We can break after checking the closest previous assignment
                 if days_between > min_distance:
                     break
