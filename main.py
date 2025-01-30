@@ -384,7 +384,7 @@ class CalendarViewScreen(Screen):
         # Add Summary button to header
         summary_btn = Button(text='Summary', size_hint_x=0.2)
         summary_btn.bind(on_press=self.show_month_summary)
-        header.add_widget(summary_btn
+        header.add_widget(summary_btn)
         def on_enter(self):
             app = App.get_running_app()
             self.schedule = app.schedule_config.get('schedule', {})
