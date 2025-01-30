@@ -333,13 +333,45 @@ class Scheduler:
         # First try: Normal assignment with all constraints
         for worker in self.workers_data:
             worker_id = worker['id']
-            if not self._can_assign_worker(worker_id, date):
+        
+            # Basic availability must always be respected
+            if not self._check_basic_availability(worker_id, date):
+                logging.debug(f"Worker {worker_id} fails basic availability check")
                 continue
+            
+            # Check other constraints
+            if not self._check_incompatibility(worker_id, date):
+                logging.debug(f"Worker {worker_id} fails incompatibility check")
+                continue
+            
+            if not self._check_gap_constraint(worker_id, date):
+                logging.debug(f"Worker {worker_id} fails gap constraint check")
+                continue
+            
             score = self._calculate_worker_score(worker, date, post)
             candidates.append((worker, score))
 
         if candidates:
-            return max(candidates, key=lambda x: x[1])[0]
+            selected = max(candidates, key=lambda x: x[1])[0]
+            logging.info(f"Selected worker {selected['id']} through normal assignment")
+            return selected
+
+        # Only consider workers that pass basic availability
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            if not self._check_basic_availability(worker_id, date):
+                continue
+            
+            total_skips = len([skip for skip in self.skipped_constraints['incompatibility'] 
+                              if worker_id in skip[1]]) + \
+                         len([skip for skip in self.skipped_constraints['gap'] 
+                              if skip[1] == worker_id])
+        
+            if total_skips < min_skips:
+                min_skips = total_skips
+                eligible_workers = [worker]
+            elif total_skips == min_skips:
+                eligible_workers.append(worker)
 
         # Try incompatibility skip first
         for worker in eligible_workers:
@@ -364,14 +396,12 @@ class Scheduler:
                     f"on {date_str}? "
                     f"(Current skips: {min_skips})"
                 ):
-                    # Record the skipped constraint
-                    for assigned_id in self.schedule.get(date, []):
-                        if next(w for w in self.workers_data if w['id'] == assigned_id).get('is_incompatible', False):
-                            worker_pair = tuple(sorted([worker_id, assigned_id]))
-                            self.skipped_constraints['incompatibility'].add((date_str, worker_pair))
+                    self.skipped_constraints['incompatibility'].add((date_str, tuple(sorted([worker_id, assigned_id]))))
                     return worker
 
-        # Try gap constraint skip
+        return None
+
+        # Try gap constraint skip (only if basic availability is met)
         for worker in eligible_workers:
             worker_id = worker['id']
             if (self._can_assign_worker_except_gap(worker_id, date) and 
@@ -456,6 +486,20 @@ class Scheduler:
         # Already assigned that day
         if date in self.worker_assignments[worker_id]:
             return False
+
+        # Check minimum gap between shifts (this should be a basic constraint)
+        work_percentage = float(worker.get('work_percentage', 100))
+        min_distance = max(2, int(4 / (work_percentage / 100)))
+    
+        assignments = sorted(self.worker_assignments[worker_id])
+        if assignments:
+            for prev_date in reversed(assignments):
+               days_between = abs((date - prev_date).days)
+                if days_between < min_distance:
+                    return False
+                # We can break after checking the closest previous assignment
+                if days_between > min_distance:
+                    break
         
         # Days off
         if worker.get('days_off'):
