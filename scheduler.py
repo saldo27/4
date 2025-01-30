@@ -622,7 +622,7 @@ class Scheduler:
                     if not self._was_constraint_skipped(date_str, worker_pair):
                         errors.append(f"Multiple incompatible workers {', '.join(map(str, incompatible_group))} assigned on {date}")
 
-        return errors, warningss
+        return errors, warnings
 
     def _cleanup_schedule(self):
         """Clean up any days that have too many assignments"""
