@@ -334,88 +334,81 @@ class WorkerDetailsScreen(Screen):
 
 class CalendarViewScreen(Screen):
     def __init__(self, **kwargs):
-            super(CalendarViewScreen, self).__init__(**kwargs)
-            self.layout = BoxLayout(orientation='vertical', padding=10, spacing=5)
-        
-            # Header with title and navigation
-            header = BoxLayout(orientation='horizontal', size_hint_y=0.1)
-            self.month_label = Label(text='', size_hint_x=0.4)  # Reduced size to accommodate summary button
-            prev_month = Button(text='<', size_hint_x=0.2)
-            next_month = Button(text='>', size_hint_x=0.2)
-            summary_btn = Button(text='Summary', size_hint_x=0.2)  # Add summary button
-        
-            prev_month.bind(on_press=self.previous_month)
-            next_month.bind(on_press=self.next_month)
-            summary_btn.bind(on_press=self.show_month_summary)  # Bind the summary button
-        
-            header.add_widget(prev_month)
-            header.add_widget(self.month_label)
-            header.add_widget(next_month)
-            header.add_widget(summary_btn)  # Add the summary button to header
-            self.layout.add_widget(header)
-        
-            # Days of week header
-            days_header = GridLayout(cols=7, size_hint_y=0.1)
-            for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']:
-                days_header.add_widget(Label(text=day))
-            self.layout.add_widget(days_header)
-        
-            # Calendar grid
-            self.calendar_grid = GridLayout(cols=7, size_hint_y=0.7)
-            self.layout.add_widget(self.calendar_grid)
-        
-            # Scroll view for details
-            details_scroll = ScrollView(size_hint_y=0.3)
-            self.details_layout = GridLayout(cols=1, size_hint_y=None)
-            self.details_layout.bind(minimum_height=self.details_layout.setter('height'))
-            details_scroll.add_widget(self.details_layout)
-            self.layout.add_widget(details_scroll)
-        
-            # Export buttons
-            button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
-            save_btn = Button(text='Save to JSON')
-            export_btn = Button(text='Export to TXT')
-            save_btn.bind(on_press=self.save_schedule)
-            export_btn.bind(on_press=self.export_schedule)
-            button_layout.add_widget(save_btn)
-            button_layout.add_widget(export_btn)
-            self.layout.add_widget(button_layout)
-        
-            self.add_widget(self.layout)
-            self.current_date = None
-            self.schedule = {}
-
-            # Add Summary button to header
-            summary_btn = Button(text='Summary', size_hint_x=0.2)
-            summary_btn.bind(on_press=self.show_month_summary)
-            header.add_widget(summary_btn)
-
-           # Add stats button to button layout
-            stats_btn = Button(text='Worker Stats')
-            stats_btn.bind(on_press=self.show_worker_stats)
-            button_layout.add_widget(stats_btn) 
-
-            # Add "Today" button
-            self.today_btn = Button(
-                text='Today',
-                size_hint_x=0.2
-            )
-            self.today_btn.bind(on_press=self.go_to_today)
-            header.add_widget(self.today_btn)
-
-             # Add year navigation
-            year_nav = BoxLayout(orientation='horizontal', size_hint_y=0.1)
-            prev_year = Button(text='<<', size_hint_x=0.2)
-            next_year = Button(text='>>', size_hint_x=0.2)
-            self.year_label = Label(text='', size_hint_x=0.6)
+        super(CalendarViewScreen, self).__init__(**kwargs)
+        self.layout = BoxLayout(orientation='vertical', padding=10, spacing=5)
     
-            prev_year.bind(on_press=self.previous_year)
-            next_year.bind(on_press=self.next_year)
+        # Header with title and navigation
+        header = BoxLayout(orientation='horizontal', size_hint_y=0.1)
+        self.month_label = Label(text='', size_hint_x=0.4)
+        prev_month = Button(text='<', size_hint_x=0.2)
+        next_month = Button(text='>', size_hint_x=0.2)
+        summary_btn = Button(text='Summary', size_hint_x=0.2)
     
-            year_nav.add_widget(prev_year)
-            year_nav.add_widget(self.year_label)
-            year_nav.add_widget(next_year)
-            self.layout.add_widget(year_nav)
+        prev_month.bind(on_press=self.previous_month)
+        next_month.bind(on_press=self.next_month)
+        summary_btn.bind(on_press=self.show_month_summary)
+    
+        header.add_widget(prev_month)
+        header.add_widget(self.month_label)
+        header.add_widget(next_month)
+        header.add_widget(summary_btn)
+        self.layout.add_widget(header)
+    
+        # Days of week header
+        days_header = GridLayout(cols=7, size_hint_y=0.1)
+        for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']:
+            days_header.add_widget(Label(text=day))
+        self.layout.add_widget(days_header)
+    
+        # Calendar grid
+        self.calendar_grid = GridLayout(cols=7, size_hint_y=0.7)
+        self.layout.add_widget(self.calendar_grid)
+    
+        # Scroll view for details
+        details_scroll = ScrollView(size_hint_y=0.3)
+        self.details_layout = GridLayout(cols=1, size_hint_y=None)
+        self.details_layout.bind(minimum_height=self.details_layout.setter('height'))
+        details_scroll.add_widget(self.details_layout)
+        self.layout.add_widget(details_scroll)
+    
+        # Export buttons
+        button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
+        save_btn = Button(text='Save to JSON')
+        export_btn = Button(text='Export to TXT')
+        stats_btn = Button(text='Worker Stats')
+    
+        save_btn.bind(on_press=self.save_schedule)
+        export_btn.bind(on_press=self.export_schedule)
+        stats_btn.bind(on_press=self.show_worker_stats)
+    
+        button_layout.add_widget(save_btn)
+        button_layout.add_widget(export_btn)
+        button_layout.add_widget(stats_btn)
+        self.layout.add_widget(button_layout)
+    
+        # Year navigation
+        year_nav = BoxLayout(orientation='horizontal', size_hint_y=0.1)
+        prev_year = Button(text='<<', size_hint_x=0.2)
+        next_year = Button(text='>>', size_hint_x=0.2)
+        self.year_label = Label(text='', size_hint_x=0.6)
+    
+        prev_year.bind(on_press=self.previous_year)
+        next_year.bind(on_press=self.next_year)
+    
+        year_nav.add_widget(prev_year)
+        year_nav.add_widget(self.year_label)
+        year_nav.add_widget(next_year)
+        self.layout.add_widget(year_nav)
+    
+        # Add Today button
+        today_btn = Button(text='Today', size_hint_x=0.2)
+        today_btn.bind(on_press=self.go_to_today)
+        header.add_widget(today_btn)
+    
+        self.add_widget(self.layout)
+        self.current_date = None
+        self.schedule = {}
+
     
     def show_worker_stats(self, instance):
         if not self.schedule:
@@ -685,136 +678,136 @@ class CalendarViewScreen(Screen):
                     f.write("\n")
 
     def show_month_summary(self, instance):
-            """Display a summary of the current month's schedule"""
-            try:
-                if not self.current_date:
-                    return
+        """Display a summary of the current month's schedule"""
+        try:
+            if not self.current_date:
+                return
+            
+            # Create the content layout
+            content = BoxLayout(orientation='vertical', padding=10, spacing=5)
+        
+            # Month header
+            month_label = Label(
+                text=f"Summary for {self.current_date.strftime('%B %Y')}",
+                size_hint_y=None,
+                height=40,
+                bold=True
+            )
+            content.add_widget(month_label)
+        
+            # Calculate statistics
+            month_stats = {
+                'total_shifts': 0,
+                'workers': {},
+                'weekend_shifts': 0,
+                'holiday_shifts': 0
+            }
+        
+            # Collect data for the current month
+            for date, workers in self.schedule.items():
+                if date.year == self.current_date.year and date.month == self.current_date.month:
+                    month_stats['total_shifts'] += len(workers)
                 
-                # Create the content layout
-                content = BoxLayout(orientation='vertical', padding=10, spacing=5)
-            
-                # Month header
-                month_label = Label(
-                    text=f"Summary for {self.current_date.strftime('%B %Y')}",
-                    size_hint_y=None,
-                    height=40,
-                    bold=True
-                )
-                content.add_widget(month_label)
-            
-                # Calculate statistics
-                month_stats = {
-                    'total_shifts': 0,
-                    'workers': {},
-                    'weekend_shifts': 0,
-                    'holiday_shifts': 0
-                }
-            
-                # Collect data for the current month
-                for date, workers in self.schedule.items():
-                    if date.year == self.current_date.year and date.month == self.current_date.month:
-                        month_stats['total_shifts'] += len(workers)
+                    # Count worker shifts
+                    for worker in workers:
+                        if worker not in month_stats['workers']:
+                            month_stats['workers'][worker] = {
+                                'total': 0,
+                                'weekends': 0,
+                                'holidays': 0
+                            }
+                        month_stats['workers'][worker]['total'] += 1
                     
-                        # Count worker shifts
-                        for worker in workers:
-                            if worker not in month_stats['workers']:
-                                month_stats['workers'][worker] = {
-                                    'total': 0,
-                                    'weekends': 0,
-                                    'holidays': 0
-                                }
-                            month_stats['workers'][worker]['total'] += 1
-                        
-                            # Count weekend shifts
-                            if date.weekday() >= 5:
-                                month_stats['weekend_shifts'] += 1
-                                month_stats['workers'][worker]['weekends'] += 1
-                        
-                            # Count holiday shifts
-                            app = App.get_running_app()
-                            if date in app.schedule_config.get('holidays', []):
-                                month_stats['holiday_shifts'] += 1
-                                month_stats['workers'][worker]['holidays'] += 1
-            
-                # Create scrollable view for statistics
-                scroll = ScrollView(size_hint_y=None, height=300)
-                stats_layout = GridLayout(
-                    cols=1,
-                    spacing=5,
-                    size_hint_y=None,
-                    padding=5
+                        # Count weekend shifts
+                        if date.weekday() >= 5:
+                            month_stats['weekend_shifts'] += 1
+                            month_stats['workers'][worker]['weekends'] += 1
+                    
+                        # Count holiday shifts
+                        app = App.get_running_app()
+                        if date in app.schedule_config.get('holidays', []):
+                            month_stats['holiday_shifts'] += 1
+                            month_stats['workers'][worker]['holidays'] += 1
+        
+            # Create scrollable view for statistics
+            scroll = ScrollView(size_hint_y=None, height=300)
+            stats_layout = GridLayout(
+                cols=1,
+                spacing=5,
+                size_hint_y=None,
+                padding=5
+            )
+            stats_layout.bind(minimum_height=stats_layout.setter('height'))
+        
+            # Add general statistics
+            stats_layout.add_widget(Label(
+                text=f"Total Shifts: {month_stats['total_shifts']}",
+                size_hint_y=None,
+                height=30
+            ))
+            stats_layout.add_widget(Label(
+                text=f"Weekend Shifts: {month_stats['weekend_shifts']}",
+                size_hint_y=None,
+                height=30
+            ))
+            stats_layout.add_widget(Label(
+                text=f"Holiday Shifts: {month_stats['holiday_shifts']}",
+                size_hint_y=None,
+                height=30
+            ))
+        
+            # Add separator
+            stats_layout.add_widget(Label(
+                text="Worker Details:",
+                size_hint_y=None,
+                height=40,
+                bold=True
+            ))
+        
+            # Add per-worker statistics
+            for worker, stats in sorted(month_stats['workers'].items()):
+                worker_stats = (
+                    f"Worker {worker}:\n"
+                    f"  Total: {stats['total']}\n"
+                    f"  Weekends: {stats['weekends']}\n"
+                    f"  Holidays: {stats['holidays']}"
                 )
-                stats_layout.bind(minimum_height=stats_layout.setter('height'))
-            
-                # Add general statistics
                 stats_layout.add_widget(Label(
-                    text=f"Total Shifts: {month_stats['total_shifts']}",
+                    text=worker_stats,
                     size_hint_y=None,
-                    height=30
+                    height=100,
+                    halign='left'
                 ))
-                stats_layout.add_widget(Label(
-                    text=f"Weekend Shifts: {month_stats['weekend_shifts']}",
-                    size_hint_y=None,
-                    height=30
-                ))
-                stats_layout.add_widget(Label(
-                    text=f"Holiday Shifts: {month_stats['holiday_shifts']}",
-                    size_hint_y=None,
-                    height=30
-                ))
+        
+            scroll.add_widget(stats_layout)
+            content.add_widget(scroll)
+        
+            # Add close button
+            close_button = Button(
+                text='Close',
+                size_hint_y=None,
+                height=40
+            )
+            content.add_widget(close_button)
+        
+            # Create and show popup
+            popup = Popup(
+                title='Monthly Summary',
+                content=content,
+                size_hint=(None, None),
+                size=(400, 500)
+            )
             
-                # Add separator
-                stats_layout.add_widget(Label(
-                    text="Worker Details:",
-                    size_hint_y=None,
-                    height=40,
-                    bold=True
-                ))
-            
-                # Add per-worker statistics
-                for worker, stats in sorted(month_stats['workers'].items()):
-                    worker_stats = (
-                        f"Worker {worker}:\n"
-                        f"  Total: {stats['total']}\n"
-                        f"  Weekends: {stats['weekends']}\n"
-                        f"  Holidays: {stats['holidays']}"
-                    )
-                    stats_layout.add_widget(Label(
-                        text=worker_stats,
-                        size_hint_y=None,
-                        height=100,
-                        halign='left'
-                    ))
-            
-                scroll.add_widget(stats_layout)
-                content.add_widget(scroll)
-            
-                # Add close button
-                close_button = Button(
-                    text='Close',
-                    size_hint_y=None,
-                    height=40
-                )
-                content.add_widget(close_button)
-            
-                # Create and show popup
-                popup = Popup(
-                    title='Monthly Summary',
-                    content=content,
-                    size_hint=(None, None),
-                    size=(400, 500)
-                )
-            
-                # Bind close button
-                close_button.bind(on_press=popup.dismiss)
-            
-                popup.open()
-            
-            except Exception as e:
-                popup = Popup(title='Error',
-                             content=Label(text=f'Failed to show summary: {str(e)}'),
-                             size_hint=(None, None), size=(400, 200))
-                popup.open()          
+            # Bind close button
+            close_button.bind(on_press=popup.dismiss)
+        
+            popup.open()
+        
+        except Exception as e:
+            popup = Popup(title='Error',
+                         content=Label(text=f'Failed to show summary: {str(e)}'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()          
               
 class ShiftManagerApp(App):
     def __init__(self, **kwargs):
