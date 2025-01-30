@@ -315,14 +315,24 @@ class Scheduler:
         logging.info(f"\nFinding best worker for {date.strftime('%Y-%m-%d')} post {post}")
         candidates = []
     
+        # First try: Normal assignment with all constraints
         for worker in self.workers_data:
             worker_id = worker['id']
             logging.debug(f"Checking worker {worker_id}")
         
-            can_assign = self._can_assign_worker(worker_id, date)
-        
-            if not can_assign:
-                logging.debug(f"Worker {worker_id} cannot be assigned to this date")
+            # Check basic availability and non-skippable constraints
+            if not self._can_assign_worker(worker_id, date):
+                logging.debug(f"Worker {worker_id} cannot be assigned (basic constraints)")
+                continue
+            
+            # Check incompatibility
+            if not self._check_incompatibility(worker_id, date):
+                logging.debug(f"Worker {worker_id} cannot be assigned (incompatibility)")
+                continue
+            
+            # Check gap constraint
+            if not self._check_gap_constraint(worker_id, date):
+                logging.debug(f"Worker {worker_id} cannot be assigned (gap constraint)")
                 continue
         
             score = self._calculate_worker_score(worker, date, post)
@@ -332,25 +342,27 @@ class Scheduler:
         if not candidates:
             logging.warning(f"No suitable candidates found for {date.strftime('%Y-%m-%d')} post {post}")
         
-            # Try to find a worker by checking constraints one by one
+            # Second try: Check if we can skip incompatibility
             for worker in self.workers_data:
                 worker_id = worker['id']
             
-                # Store the original state of constraints for this worker and date
-                original_incompatibility = not self._check_incompatibility(worker_id, date)
-                original_gap_violation = not self._check_gap_constraint(worker_id, date)
+                # Only proceed if basic constraints and gap constraint are met
+                if self._can_assign_worker(worker_id, date) and self._check_gap_constraint(worker_id, date):
+                    if not self._check_incompatibility(worker_id, date):
+                        if self._ask_permission(f"Can I skip the incompatibility constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
+                            logging.info(f"Assigning worker {worker_id} after skipping incompatibility constraint for this instance")
+                            return worker
+        
+            # Third try: Check if we can skip gap constraint
+            for worker in self.workers_data:
+                worker_id = worker['id']
             
-                # First try: Skip incompatibility for this specific instance
-                if original_incompatibility and self._can_assign_worker_except_incompatibility(worker_id, date):
-                    if self._ask_permission(f"Can I skip the incompatibility constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
-                        logging.info(f"Assigning worker {worker_id} after skipping incompatibility constraint for this instance")
-                        return worker
-            
-                # Second try: Skip 21-day gap for this specific instance
-                if original_gap_violation and self._can_assign_worker_except_gap(worker_id, date):
-                    if self._ask_permission(f"Can I skip the 21-day gap constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
-                        logging.info(f"Assigning worker {worker_id} after skipping 21-day gap constraint for this instance")
-                        return worker
+                # Only proceed if basic constraints and incompatibility are met
+                if self._can_assign_worker(worker_id, date) and self._check_incompatibility(worker_id, date):
+                    if not self._check_gap_constraint(worker_id, date):
+                        if self._ask_permission(f"Can I skip the 21-day gap constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
+                            logging.info(f"Assigning worker {worker_id} after skipping 21-day gap constraint for this instance")
+                            return worker
         
             logging.warning(f"Leaving shift unassigned for {date.strftime('%Y-%m-%d')}")
             return None
@@ -557,46 +569,41 @@ class Scheduler:
                 print(f"Warning: Invalid date range format '{date_range}' - {str(e)}")
         return ranges
                 
-    def validate_schedule(self):
+    def _validate_schedule(self):
         """Validate the generated schedule"""
-        logging.info("\nValidating schedule...")
         errors = []
         warnings = []
-
-        # Check each date in the schedule
-        for date, workers in self.schedule.items():
-            logging.info(f"\nChecking date: {date.strftime('%Y-%m-%d')}")
-            logging.info(f"Assigned workers: {workers}")
+    
+        for date in sorted(self.schedule.keys()):
+            assigned_workers = self.schedule[date]
+            logging.info(f"Checking date {date}")
+            logging.info(f"Assigned workers {assigned_workers}")
         
-            # Check number of shifts
-            if len(workers) > self.num_shifts:
-                error_msg = f"Too many workers ({len(workers)}) assigned on {date.strftime('%Y-%m-%d')}. Maximum is {self.num_shifts}"
-                logging.error(error_msg)
-                errors.append(error_msg)
-            elif len(workers) < self.num_shifts:
-                warning_msg = f"Too few workers ({len(workers)}) assigned on {date.strftime('%Y-%m-%d')}. Expected {self.num_shifts}"
-                logging.warning(warning_msg)
-                warnings.append(warning_msg)
+            # Check number of workers
+            if len(assigned_workers) < self.workers_per_day:
+                warnings.append(f"Too few workers ({len(assigned_workers)}) assigned on {date}. Expected {self.workers_per_day}")
         
-            # Check for duplicates
-            if len(workers) != len(set(workers)):
-                error_msg = f"Duplicate workers assigned on {date.strftime('%Y-%m-%d')}"
-                logging.error(error_msg)
-                errors.append(error_msg)
-            
-            # Check incompatibilities
-            incompatible_workers = []
-            for worker_id in workers:
+            # Check for incompatible workers
+            incompatible_groups = []
+            for i, worker_id in enumerate(assigned_workers):
                 worker = next(w for w in self.workers_data if w['id'] == worker_id)
-                if worker.get('is_incompatible', False):
-                    incompatible_workers.append(worker_id)
-        
-            if len(incompatible_workers) > 1:
-                error_msg = f"Multiple incompatible workers {', '.join(map(str, incompatible_workers))} assigned on {date.strftime('%Y-%m-%d')}"
-                logging.error(error_msg)
-                errors.append(error_msg)
-
-        logging.info(f"\nValidation complete. Found {len(errors)} errors and {len(warnings)} warnings.")
+            
+                # Check for incompatible workers
+                incompatible_group = [worker_id]
+                for other_id in assigned_workers[i+1:]:
+                    if (worker.get('is_incompatible', False) and 
+                        next(w for w in self.workers_data if w['id'] == other_id).get('is_incompatible', False)):
+                        incompatible_group.append(other_id)
+                    elif ('incompatible_workers' in worker and 
+                          other_id in worker['incompatible_workers']):
+                        incompatible_group.append(other_id)
+                    
+                if len(incompatible_group) > 1:
+                    incompatible_groups.append(incompatible_group)
+                
+            if incompatible_groups:
+                errors.append(f"Multiple incompatible workers {', '.join(map(str, incompatible_groups[0]))} assigned on {date}")
+            
         return errors, warnings
 
     def _cleanup_schedule(self):
