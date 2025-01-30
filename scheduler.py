@@ -64,11 +64,11 @@ class Scheduler:
             self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
 
-            # Add tracking for constraint skips
-            self.constraint_skips = {w['id']: {
-                'incompatibility': 0,
-                'gap': 0
-            } for w in self.workers_data}
+            # Add tracking for skipped constraints
+            self.skipped_constraints = {
+                'incompatibility': set(),  # Will store (date, (worker1, worker2)) tuples
+                'gap': set()              # Will store (date, worker_id) tuples
+            }}
     
             # Get current time in Spain
             self.current_datetime = self._get_spain_time()
@@ -349,27 +349,35 @@ class Scheduler:
                 elif total_skips == min_skips:
                     eligible_workers.append(worker)
 
-            # Try incompatibility skip first
+            # Try incompatibility skip
             for worker in eligible_workers:
                 worker_id = worker['id']
                 if (self._can_assign_worker_except_incompatibility(worker_id, date) and 
                     not self._check_incompatibility(worker_id, date)):
                 
-                    # Check if this would exceed 2 incompatible workers
+                    # Check the number of incompatible workers
+                    incompatible_workers = []
                     if date in self.schedule:
-                        incompatible_count = sum(
-                            1 for w_id in self.schedule[date] 
-                            if next(w for w in self.workers_data if w['id'] == w_id).get('is_incompatible', False)
-                        )
-                        if incompatible_count >= 2:
-                            continue
+                        for assigned_id in self.schedule[date]:
+                            assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_id)
+                            if assigned_worker.get('is_incompatible', False):
+                                incompatible_workers.append(assigned_id)
                 
+                    if len(incompatible_workers) >= 2:
+                        continue
+                
+                    date_str = date.strftime('%Y-%m-%d')
                     if self._ask_permission(
                         f"Can I skip the incompatibility constraint for worker {worker_id} "
-                        f"on {date.strftime('%Y-%m-%d')}? "
-                        f"(Current skips: {self.constraint_skips[worker_id]['incompatibility']})"
+                        f"on {date_str}? "
+                        f"(Current skips: {min_skips})"
                     ):
-                        self.constraint_skips[worker_id]['incompatibility'] += 1
+                        # Record the skipped constraint
+                        for assigned_id in self.schedule.get(date, []):
+                            if next(w for w in self.workers_data if w['id'] == assigned_id).get('is_incompatible', False):
+                                worker_pair = tuple(sorted([worker_id, assigned_id]))
+                                self.skipped_constraints['incompatibility'].add((date_str, worker_pair))
+                    
                         return worker
 
             # Try gap constraint skip
@@ -388,6 +396,10 @@ class Scheduler:
             return None
 
         return max(candidates, key=lambda x: x[1])[0]
+
+    def _was_constraint_skipped(self, date_str, worker_pair):
+        """Check if a constraint was skipped for these workers on this date"""
+        return (date_str, worker_pair) in self.skipped_constraints['incompatibility']
        
     # Add the debug method here
     def _print_debug_info(self, worker_id, date):
@@ -604,17 +616,16 @@ class Scheduler:
             assigned_workers = self.schedule[date]
             logging.info(f"Checking date {date}")
             logging.info(f"Assigned workers {assigned_workers}")
-    
+
             # Check number of workers
-            if len(assigned_workers) < self.num_shifts:  # Using self.num_shifts
-                warnings.append(f"Too few workers ({len(assigned_workers)}) assigned on {date}. Expected {self.num_shifts}")  # Using self.num_shifts
+            if len(assigned_workers) < self.num_shifts:
+                warnings.append(f"Too few workers ({len(assigned_workers)}) assigned on {date}. Expected {self.num_shifts}")
     
             # Check for incompatible workers
             incompatible_groups = []
             for i, worker_id in enumerate(assigned_workers):
                 worker = next(w for w in self.workers_data if w['id'] == worker_id)
-        
-                # Check for incompatible workers
+
                 incompatible_group = [worker_id]
                 for other_id in assigned_workers[i+1:]:
                     if (worker.get('is_incompatible', False) and 
@@ -623,14 +634,15 @@ class Scheduler:
                     elif ('incompatible_workers' in worker and 
                           other_id in worker['incompatible_workers']):
                         incompatible_group.append(other_id)
-                
-                if len(incompatible_group) > 1:
-                    incompatible_groups.append(incompatible_group)
             
-            if incompatible_groups:
-                errors.append(f"Multiple incompatible workers {', '.join(map(str, incompatible_groups[0]))} assigned on {date}")
-        
-        return errors, warnings
+                if len(incompatible_group) > 1:
+                    # Add to errors if we didn't get permission to skip constraint
+                    date_str = date.strftime('%Y-%m-%d')
+                    worker_pair = tuple(sorted(incompatible_group))
+                    if not self._was_constraint_skipped(date_str, worker_pair):
+                        errors.append(f"Multiple incompatible workers {', '.join(map(str, incompatible_group))} assigned on {date}")
+
+        return errors, warningss
 
     def _cleanup_schedule(self):
         """Clean up any days that have too many assignments"""
