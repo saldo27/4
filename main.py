@@ -676,6 +676,17 @@ class CalendarViewScreen(Screen):
                     for i, worker in enumerate(self.schedule[date]):
                         f.write(f"  Shift {i+1}: Worker {worker}\n")
                     f.write("\n")
+        
+            popup = Popup(title='Success',
+                         content=Label(text='Schedule exported to schedule.txt'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()
+        
+        except Exception as e:
+            popup = Popup(title='Error',
+                         content=Label(text=f'Failed to export: {str(e)}'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()
 
     def show_month_summary(self, instance):
         """Display a summary of the current month's schedule"""
