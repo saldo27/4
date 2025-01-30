@@ -64,12 +64,16 @@ class Scheduler:
             self.worker_weekdays = {w['id']: {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
 
-            # Add tracking for skipped constraints
+            # Add tracking for skipped constraints with counters
             self.skipped_constraints = {
                 'incompatibility': set(),  # Will store (date, (worker1, worker2)) tuples
                 'gap': set()              # Will store (date, worker_id) tuples
             }
-            
+            self.skip_counts = {w['id']: {
+                'incompatibility': 0,
+                'gap': 0
+            } for w in self.workers_data}
+    
             # Get current time in Spain
             self.current_datetime = self._get_spain_time()
             self.current_user = 'saldo27'
@@ -334,68 +338,67 @@ class Scheduler:
             score = self._calculate_worker_score(worker, date, post)
             candidates.append((worker, score))
 
-        if not candidates:
-            # Get worker with least constraint skips
-            min_skips = float('inf')
-            eligible_workers = []
+        if candidates:
+            return max(candidates, key=lambda x: x[1])[0]
+
+        # If no candidates found, try skipping constraints
+        # Get workers with least total constraint skips
+        min_total_skips = float('inf')
+        eligible_workers = []
         
             for worker in self.workers_data:
                 worker_id = worker['id']
-                total_skips = (self.constraint_skips[worker_id]['incompatibility'] + 
-                             self.constraint_skips[worker_id]['gap'])
+                total_skips = (self.skip_counts[worker_id]['incompatibility'] + 
+                      self.skip_counts[worker_id]['gap'])
+                
                 if total_skips < min_skips:
                     min_skips = total_skips
                     eligible_workers = [worker]
                 elif total_skips == min_skips:
                     eligible_workers.append(worker)
 
-            # Try incompatibility skip
-            for worker in eligible_workers:
-                worker_id = worker['id']
-                if (self._can_assign_worker_except_incompatibility(worker_id, date) and 
-                    not self._check_incompatibility(worker_id, date)):
+            # Try each constraint for eligible workers
+            for constraint_type in ['incompatibility', 'gap']:
+                for worker in eligible_workers:
+                    worker_id = worker['id']
+            
+                    if constraint_type == 'incompatibility':
+                        if not self._can_try_incompatibility_skip(worker_id, date):
+                            continue
                 
-                    # Check the number of incompatible workers
-                    incompatible_workers = []
-                    if date in self.schedule:
-                        for assigned_id in self.schedule[date]:
-                            assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_id)
-                            if assigned_worker.get('is_incompatible', False):
-                                incompatible_workers.append(assigned_id)
+                        skip_message = (f"Can I skip the incompatibility constraint for worker {worker_id} "
+                                     f"on {date.strftime('%Y-%m-%d')}? "
+                                     f"(Current skips: {self.skip_counts[worker_id]['incompatibility']})")
                 
-                    if len(incompatible_workers) >= 2:
-                        continue
+                    else:  # gap constraint
+                        if not self._can_try_gap_skip(worker_id, date):
+                            continue
                 
-                    date_str = date.strftime('%Y-%m-%d')
-                    if self._ask_permission(
-                        f"Can I skip the incompatibility constraint for worker {worker_id} "
-                        f"on {date_str}? "
-                        f"(Current skips: {min_skips})"
-                    ):
-                        # Record the skipped constraint
-                        for assigned_id in self.schedule.get(date, []):
-                            if next(w for w in self.workers_data if w['id'] == assigned_id).get('is_incompatible', False):
-                                worker_pair = tuple(sorted([worker_id, assigned_id]))
-                                self.skipped_constraints['incompatibility'].add((date_str, worker_pair))
-                    
+                    skip_message = (f"Can I skip the 21-day gap constraint for worker {worker_id} "
+                                  f"on {date.strftime('%Y-%m-%d')}? "
+                                  f"(Current skips: {self.skip_counts[worker_id]['gap']})")
+
+                    if self._ask_permission(skip_message):
+                        self._record_constraint_skip(worker_id, date, constraint_type)
                         return worker
 
-            # Try gap constraint skip
-            for worker in eligible_workers:
-                worker_id = worker['id']
-                if (self._can_assign_worker_except_gap(worker_id, date) and 
-                    not self._check_gap_constraint(worker_id, date)):
-                    if self._ask_permission(
-                        f"Can I skip the gap constraint for worker {worker_id} "
-                        f"on {date.strftime('%Y-%m-%d')}? "
-                        f"(Current skips: {self.constraint_skips[worker_id]['gap']})"
-                    ):
-                        self.constraint_skips[worker_id]['gap'] += 1
-                        return worker
+        return None
 
-            return None
-
-        return max(candidates, key=lambda x: x[1])[0]
+    def _record_constraint_skip(self, worker_id, date, constraint_type):
+        """Record that a constraint was skipped"""
+        date_str = date.strftime('%Y-%m-%d')
+    
+        if constraint_type == 'incompatibility':
+            # Find the incompatible worker(s) already assigned
+            for assigned_id in self.schedule.get(date, []):
+                if next(w for w in self.workers_data if w['id'] == assigned_id).get('is_incompatible', False):
+                    worker_pair = tuple(sorted([worker_id, assigned_id]))
+                    self.skipped_constraints['incompatibility'].add((date_str, worker_pair))
+        else:  # gap constraint
+            self.skipped_constraints['gap'].add((date_str, worker_id))
+    
+        # Update skip count for the worker
+        self.skip_counts[worker_id][constraint_type] += 1
 
     def _was_constraint_skipped(self, date_str, worker_pair):
         """Check if a constraint was skipped for these workers on this date"""
@@ -440,34 +443,7 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
             return False
-        
-    def _can_assign_worker_except_incompatibility(self, worker_id, date):
-        """Check if worker can be assigned ignoring incompatibility constraint"""
-        try:
-            if not self._check_basic_availability(worker_id, date):
-                return False
-            if not self._check_gap_constraint(worker_id, date):
-                return False
-            if not self._check_weekend_constraint(worker_id, date):
-                return False
-            return True
-        except Exception as e:
-            logging.error(f"Error checking worker availability: {str(e)}")
-            return False
-
-    def _can_assign_worker_except_gap(self, worker_id, date):
-        """Check if worker can be assigned ignoring gap constraint"""
-        try:
-            if not self._check_basic_availability(worker_id, date):
-                return False
-            if not self._check_incompatibility(worker_id, date):
-                return False
-            if not self._check_weekend_constraint(worker_id, date):
-                return False
-            return True
-        except Exception as e:
-            logging.error(f"Error checking worker availability: {str(e)}")
-            return False
+     
 
     def _check_basic_availability(self, worker_id, date):
         """Check basic availability constraints that should never be skipped"""
