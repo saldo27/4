@@ -263,10 +263,10 @@ class Scheduler:
         return date.weekday() in [4, 5, 6]  # 4=Friday, 5=Saturday, 6=Sunday
 
     def _has_three_consecutive_weekends(self, worker_id, date):
-        """Check if worker has worked three consecutive weekends (including holidays)"""
+        """Check if worker has worked more than three consecutive weekends (including holidays)"""
         if not self._is_weekend_day(date):
             return False
-    
+
         weekends = self.worker_weekends[worker_id]
         # Get Friday of current week or the pre-holiday date
         if self._is_pre_holiday(date):
@@ -275,16 +275,16 @@ class Scheduler:
             current_weekend = date - timedelta(days=1)  # Use the pre-holiday date
         else:
             current_weekend = date - timedelta(days=date.weekday() - 4)
-    
+
         if current_weekend not in weekends:
             weekends.append(current_weekend)
-    
-        # Sort weekends and check for three consecutive
+
+        # Sort weekends and check for more than three consecutive
         weekends.sort()
-        if len(weekends) >= 4:
-            for i in range(len(weekends) - 3):
+        if len(weekends) >= 4:  # Changed from 3 to 4 since we want to allow exactly 3
+            for i in range(len(weekends) - 3):  # Changed from -2 to -3
                 if (weekends[i + 3] - weekends[i]).days <= 21:  # Three weeks difference or less
-                    return True
+                    return True  # Return True only if it would be MORE than 3 consecutive weekends
         return False
 
     def _get_least_used_weekday(self, worker_id):
