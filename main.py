@@ -389,7 +389,112 @@ class CalendarViewScreen(Screen):
             summary_btn = Button(text='Summary', size_hint_x=0.2)
             summary_btn.bind(on_press=self.show_month_summary)
             header.add_widget(summary_btn)
-                                   
+
+           # Add stats button to button layout
+            stats_btn = Button(text='Worker Stats')
+            stats_btn.bind(on_press=self.show_worker_stats)
+            button_layout.add_widget(stats_btn) 
+
+            # Add "Today" button
+            self.today_btn = Button(
+                text='Today',
+                size_hint_x=0.2
+            )
+            self.today_btn.bind(on_press=self.go_to_today)
+            header.add_widget(self.today_btn)
+
+             # Add year navigation
+            year_nav = BoxLayout(orientation='horizontal', size_hint_y=0.1)
+            prev_year = Button(text='<<', size_hint_x=0.2)
+            next_year = Button(text='>>', size_hint_x=0.2)
+            self.year_label = Label(text='', size_hint_x=0.6)
+    
+            prev_year.bind(on_press=self.previous_year)
+            next_year.bind(on_press=self.next_year)
+    
+            year_nav.add_widget(prev_year)
+            year_nav.add_widget(self.year_label)
+            year_nav.add_widget(next_year)
+            self.layout.add_widget(year_nav)
+    
+    def show_worker_stats(self, instance):
+        if not self.schedule:
+            return
+        
+        stats = {}
+        for date, workers in self.schedule.items():
+            for worker in workers:
+                if worker not in stats:
+                    stats[worker] = {
+                        'total_shifts': 0,
+                        'weekends': 0,
+                        'holidays': 0
+                    }
+                stats[worker]['total_shifts'] += 1
+            
+                if date.weekday() >= 5:
+                    stats[worker]['weekends'] += 1
+                
+                app = App.get_running_app()
+                if date in app.schedule_config.get('holidays', []):
+                    stats[worker]['holidays'] += 1
+    
+        # Create stats popup
+        content = BoxLayout(orientation='vertical', padding=10)
+        content.add_widget(Label(
+            text='Worker Statistics',
+            size_hint_y=None,
+            height=40,
+            bold=True
+        ))
+    
+        for worker, data in sorted(stats.items()):
+            worker_stats = (
+                f"Worker {worker}:\n"
+                f"  Total Shifts: {data['total_shifts']}\n"
+                f"  Weekend Shifts: {data['weekends']}\n"
+                f"  Holiday Shifts: {data['holidays']}\n"
+            )
+            content.add_widget(Label(text=worker_stats))
+    
+        popup = Popup(
+            title='Worker Statistics',
+            content=content,
+            size_hint=(None, None),
+            size=(400, 600)
+        )
+        popup.open()
+        
+    def previous_year(self, instance):
+        if self.current_date:
+            self.current_date = self.current_date.replace(year=self.current_date.year - 1)
+            self.display_month(self.current_date)
+
+    def next_year(self, instance):
+        if self.current_date:
+            self.current_date = self.current_date.replace(year=self.current_date.year + 1)
+            self.display_month(self.current_date)
+    
+    def go_to_today(self, instance):
+        today = datetime.now()
+        if self.current_date:
+            self.current_date = self.current_date.replace(year=today.year, month=today.month)
+            self.display_month(self.current_date)
+            
+    def get_day_color(self, current_date):
+        app = App.get_running_app()
+        is_weekend = current_date.weekday() >= 5
+        is_holiday = current_date in app.schedule_config.get('holidays', [])
+        is_today = current_date.date() == datetime.now().date()
+    
+        if is_today:
+            return (0.2, 0.6, 1, 0.3)  # Light blue for today
+        elif is_holiday:
+            return (1, 0.8, 0.8, 0.3)  # Light red for holidays
+        elif is_weekend:
+            return (1, 0.9, 0.9, 0.3)  # Very light red for weekends
+        return (1, 1, 1, 1)  # White for regular days
+                               
     def on_enter(self):
             app = App.get_running_app()
             self.schedule = app.schedule_config.get('schedule', {})
@@ -423,9 +528,15 @@ class CalendarViewScreen(Screen):
             self.calendar_grid.add_widget(Label(text=''))
         
         # Add days of the month
-        for day in range(1, days_in_month + 1):
-            current = datetime(date.year, date.month, day)
-            cell = BoxLayout(orientation='vertical', spacing=2)
+            for day in range(1, days_in_month + 1):
+                current = datetime(date.year, date.month, day)
+                cell = BoxLayout(orientation='vertical', spacing=2)
+        
+            # Set background color
+            bg_color = self.get_day_color(current)
+            with cell.canvas.before:
+                Color(*bg_color)
+                Rectangle(pos=cell.pos, size=cell.size)
         
         # Add color coding for weekends and holidays
             app = App.get_running_app()
@@ -444,13 +555,17 @@ class CalendarViewScreen(Screen):
         # If there are workers scheduled for this day, show their IDs with shift numbers
         if current in self.schedule:
             workers = self.schedule[current]
-            workers_text = '\n'.join(f"Shift {i+1}: {w}" for i, w in enumerate(workers))
-            workers_label = Label(
-                text=workers_text,
-                font_size='10sp',
-                size_hint_y=0.8
+            workers_text = '\n'.join(f"S{i+1}: {w}" for i, w in enumerate(workers))
+        
+            # Add shift count indicator
+            shift_count = len(workers)
+            total_shifts = App.get_running_app().schedule_config.get('num_shifts', 0)
+            count_label = Label(
+                text=f'[{shift_count}/{total_shifts}]',
+                font_size='8sp',
+                color=(0.5, 0.5, 0.5, 1)
             )
-            cell.add_widget(workers_label)
+            cell.add_widget(count_label)
                 
         # Make the cell clickable and highlight it
             btn = Button(
