@@ -148,26 +148,21 @@ class Scheduler:
         
             # Validate final schedule
             logging.info("\nValidating final schedule...")
-            errors, warnings = self.validate_schedule()
-            
+            errors, warnings = self._validate_schedule()  # Changed from validate_schedule to _validate_schedule
+        
             if warnings:
-                logging.warning("\nSchedule warnings:")
+                logging.warning("Schedule warnings:")
                 for warning in warnings:
                     logging.warning(warning)
-                    
+                
             if errors:
-                logging.error("\nSchedule errors:")
-                for error in errors:
-                    logging.error(error)
                 raise ValueError("\n".join(errors))
-
-            logging.info("\nSchedule generation completed successfully!")
+            
             return self.schedule
-
+        
         except Exception as e:
             logging.error(f"Error generating schedule: {str(e)}")
             logging.error("Stack trace:", exc_info=True)
-            self.schedule = {}  # Reset schedule on error
             raise ValueError(f"Schedule generation failed: {str(e)}")
 
     def _assign_mandatory_guards(self):
