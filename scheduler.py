@@ -17,19 +17,37 @@ logging.basicConfig(
 
 class Scheduler:
     def _get_spain_time(self):
-        """Get current time in Spain using a time API"""
+        """Get current time in Spain using a time API with improved error handling and timeout"""
         try:
-            # Try to get time from WorldTimeAPI
-            response = requests.get('http://worldtimeapi.org/api/timezone/Europe/Madrid')
+            # Try to get time from WorldTimeAPI with a 5 second timeout
+            response = requests.get('http://worldtimeapi.org/api/timezone/Europe/Madrid', 
+                                  timeout=5,  # Add 5 second timeout
+                                  verify=True)  # Ensure SSL verification
+        
             if response.status_code == 200:
                 time_data = response.json()
                 return datetime.fromisoformat(time_data['datetime']).replace(tzinfo=None)
+            else:
+                logging.warning(f"WorldTimeAPI returned status code: {response.status_code}")
+            
+        except requests.Timeout:
+            logging.warning("WorldTimeAPI request timed out after 5 seconds")
+        except requests.RequestException as e:
+            logging.warning(f"Error connecting to WorldTimeAPI: {str(e)}")
         except Exception as e:
-            logging.warning(f"Could not fetch time from API: {str(e)}")
+            logging.warning(f"Unexpected error while fetching time: {str(e)}")
     
-        # Fallback: Use system time converted to Spain time
-        return datetime.now(ZoneInfo('Europe/Madrid')).replace(tzinfo=None)
-    
+        # Improved fallback: Use system time converted to Spain time
+        try:
+            spain_tz = ZoneInfo('Europe/Madrid')
+            current_time = datetime.now(spain_tz)
+            logging.info(f"Using system time (converted to Spain timezone): {current_time}")
+            return current_time.replace(tzinfo=None)
+        except Exception as e:
+            logging.error(f"Error in fallback time calculation: {str(e)}")
+            # Ultimate fallback: just use UTC time
+            return datetime.utcnow()
+        
     def __init__(self, config):
         try:
             self.config = config
@@ -314,20 +332,24 @@ class Scheduler:
         if not candidates:
             logging.warning(f"No suitable candidates found for {date.strftime('%Y-%m-%d')} post {post}")
         
-            # Ask for permission to skip constraints in order
+            # Try to find a worker by checking constraints one by one
             for worker in self.workers_data:
                 worker_id = worker['id']
             
-                if not self._can_assign_worker(worker_id, date, skip_incompatibility=True):
+                # Store the original state of constraints for this worker and date
+                original_incompatibility = not self._check_incompatibility(worker_id, date)
+                original_gap_violation = not self._check_gap_constraint(worker_id, date)
+            
+                # First try: Skip incompatibility for this specific instance
+                if original_incompatibility and self._can_assign_worker_except_incompatibility(worker_id, date):
                     if self._ask_permission(f"Can I skip the incompatibility constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
+                        logging.info(f"Assigning worker {worker_id} after skipping incompatibility constraint for this instance")
                         return worker
             
-                if not self._can_assign_worker(worker_id, date, skip_gap=True):
+                # Second try: Skip 21-day gap for this specific instance
+                if original_gap_violation and self._can_assign_worker_except_gap(worker_id, date):
                     if self._ask_permission(f"Can I skip the 21-day gap constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
-                        return worker
-            
-                if not self._can_assign_worker(worker_id, date, skip_weekend_limit=True):
-                    if self._ask_permission(f"Can I skip the weekend limit constraint for worker {worker_id} on {date.strftime('%Y-%m-%d')}?"):
+                        logging.info(f"Assigning worker {worker_id} after skipping 21-day gap constraint for this instance")
                         return worker
         
             logging.warning(f"Leaving shift unassigned for {date.strftime('%Y-%m-%d')}")
@@ -349,79 +371,20 @@ class Scheduler:
                 if 'incompatible_workers' in worker and worker['incompatible_workers']:
                     print(f"Worker {w_id} incompatible with: {worker['incompatible_workers']}")
 
-    def _can_assign_worker(self, worker_id, date, skip_incompatibility=False, skip_gap=False, skip_weekend_limit=False):
+    def _can_assign_worker(self, worker_id, date):
+        """Check if a worker can be assigned to a date.
+        Only includes basic availability, weekend rule, and weekday balance checks."""
         try:
-            worker = next(w for w in self.workers_data if w['id'] == worker_id)
-
-            # Check 1: Already assigned that day
-            if date in self.worker_assignments[worker_id]:
-                logging.debug(f"Worker {worker_id} already assigned on this date")
+            # First check basic availability
+            if not self._check_basic_availability(worker_id, date):
                 return False
 
-            # Check 2: Days off
-            if worker.get('days_off'):
-                off_periods = self._parse_date_ranges(worker['days_off'])
-                for start, end in off_periods:
-                    if start <= date <= end:
-                        logging.debug(f"Worker {worker_id} is off on this date")
-                        return False
-
-            # Check 3: Work periods
-            if worker.get('work_periods'):
-                work_periods = self._parse_date_ranges(worker['work_periods'])
-                if not any(start <= date <= end for start, end in work_periods):
-                    logging.debug(f"Worker {worker_id} not available on this date (outside work periods)")
-                    return False
-
-            # Check 4: Worker incompatibility
-            if not skip_incompatibility:
-                if date in self.schedule:
-                    assigned_workers = self.schedule[date]
-
-                    if worker.get('is_incompatible', False):
-                        for assigned_worker_id in assigned_workers:
-                            assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
-                            if assigned_worker.get('is_incompatible', False):
-                                logging.debug(f"Cannot assign worker {worker_id}: Both workers marked as incompatible")
-                                return False
-
-                    if 'incompatible_workers' in worker and worker['incompatible_workers']:
-                        for assigned_worker_id in assigned_workers:
-                            if assigned_worker_id in worker['incompatible_workers']:
-                                logging.debug(f"Cannot assign worker {worker_id}: Incompatible with {assigned_worker_id}")
-                                return False
-
-                    for assigned_worker_id in assigned_workers:
-                        assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
-                        if assigned_worker.get('is_incompatible', False) and worker.get('is_incompatible', False):
-                            logging.debug(f"Cannot assign worker {worker_id}: Both workers marked as incompatible")
-                            return False
-                        if 'incompatible_workers' in assigned_worker and assigned_worker['incompatible_workers']:
-                            if worker_id in assigned_worker['incompatible_workers']:
-                                logging.debug(f"Cannot assign worker {worker_id}: Worker {assigned_worker_id} marked them as incompatible")
-                                return False
-
-            # Check 5: Minimum distance between assignments
-            if not skip_gap:
-                work_percentage = float(worker.get('work_percentage', 100))
-                min_distance = max(2, int(4 / (work_percentage / 100)))
-                assignments = sorted(self.worker_assignments[worker_id])
-
-                if assignments:
-                    for prev_date in reversed(assignments):
-                        days_between = abs((date - prev_date).days)
-                        if days_between < min_distance:
-                            logging.debug(f"Worker {worker_id} - too close to previous assignment ({days_between} days)")
-                            return False
-                        if days_between in [7, 14, 21]:
-                            logging.debug(f"Worker {worker_id} - prohibited interval ({days_between} days)")
-                            return False
+            worker = next(w for w in self.workers_data if w['id'] == worker_id)
 
             # Check 6: Weekend rule
-            if not skip_weekend_limit:
-                if self._has_three_consecutive_weekends(worker_id, date):
-                    logging.debug(f"Worker {worker_id} would exceed three consecutive weekends")
-                    return False
+            if self._has_three_consecutive_weekends(worker_id, date):
+                logging.debug(f"Worker {worker_id} would exceed three consecutive weekends")
+                return False
 
             # Check 7: Weekday balance
             weekday = date.weekday()
@@ -430,13 +393,96 @@ class Scheduler:
                 logging.debug(f"Worker {worker_id} should work on {min_weekday} first")
                 return False
 
-            logging.debug(f"Worker {worker_id} can be assigned to this date")
             return True
 
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
             return False
         
+    def _can_assign_worker_except_incompatibility(self, worker_id, date):
+        """Check if worker can be assigned ignoring incompatibility constraint"""
+        try:
+            if not self._check_basic_availability(worker_id, date):
+                return False
+            if not self._check_gap_constraint(worker_id, date):
+                return False
+            if not self._check_weekend_constraint(worker_id, date):
+                return False
+            return True
+        except Exception as e:
+            logging.error(f"Error checking worker availability: {str(e)}")
+            return False
+
+    def _can_assign_worker_except_gap(self, worker_id, date):
+        """Check if worker can be assigned ignoring gap constraint"""
+        try:
+            if not self._check_basic_availability(worker_id, date):
+                return False
+            if not self._check_incompatibility(worker_id, date):
+                return False
+            if not self._check_weekend_constraint(worker_id, date):
+                return False
+            return True
+        except Exception as e:
+            logging.error(f"Error checking worker availability: {str(e)}")
+            return False
+
+    def _check_basic_availability(self, worker_id, date):
+        """Check basic availability constraints that should never be skipped"""
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+    
+        # Already assigned that day
+        if date in self.worker_assignments[worker_id]:
+            return False
+        
+        # Days off
+        if worker.get('days_off'):
+            off_periods = self._parse_date_ranges(worker['days_off'])
+            if any(start <= date <= end for start, end in off_periods):
+                return False
+            
+        # Work periods
+        if worker.get('work_periods'):
+            work_periods = self._parse_date_ranges(worker['work_periods'])
+            if not any(start <= date <= end for start, end in work_periods):
+                return False
+            
+        return True
+
+    def _check_incompatibility(self, worker_id, date):
+        """Check only incompatibility constraints"""
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+    
+        if date in self.schedule:
+            assigned_workers = self.schedule[date]
+        
+            if worker.get('is_incompatible', False):
+                for assigned_worker_id in assigned_workers:
+                    assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
+                    if assigned_worker.get('is_incompatible', False):
+                        return False
+                    
+            if 'incompatible_workers' in worker and worker['incompatible_workers']:
+                if any(w_id in worker['incompatible_workers'] for w_id in assigned_workers):
+                    return False
+                
+        return True
+
+    def _check_gap_constraint(self, worker_id, date):
+        """Check only the 21-day gap constraint"""
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+        work_percentage = float(worker.get('work_percentage', 100))
+        min_distance = max(2, int(4 / (work_percentage / 100)))
+        assignments = sorted(self.worker_assignments[worker_id])
+    
+        if assignments:
+            for prev_date in reversed(assignments):
+                days_between = abs((date - prev_date).days)
+                if days_between < min_distance or days_between in [7, 14, 21]:
+                    return False
+                
+        return True
+    
     def _calculate_worker_score(self, worker, date, post):
         """Calculate a score for a worker based on various factors"""
         score = 0.0
