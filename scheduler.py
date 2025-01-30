@@ -341,46 +341,50 @@ class Scheduler:
         if candidates:
             return max(candidates, key=lambda x: x[1])[0]
 
-        # If no candidates found, try skipping constraints
-        # Get workers with least total constraint skips
-        min_total_skips = float('inf')
-        eligible_workers = []
-        
-            for worker in self.workers_data:
-                worker_id = worker['id']
-                total_skips = (self.skip_counts[worker_id]['incompatibility'] + 
-                      self.skip_counts[worker_id]['gap'])
-                
-                if total_skips < min_skips:
-                    min_skips = total_skips
-                    eligible_workers = [worker]
-                elif total_skips == min_skips:
-                    eligible_workers.append(worker)
-
-            # Try each constraint for eligible workers
-            for constraint_type in ['incompatibility', 'gap']:
-                for worker in eligible_workers:
-                    worker_id = worker['id']
+        # Try incompatibility skip first
+        for worker in eligible_workers:
+            worker_id = worker['id']
+            if (self._can_assign_worker_except_incompatibility(worker_id, date) and 
+                not self._check_incompatibility(worker_id, date)):
             
-                    if constraint_type == 'incompatibility':
-                        if not self._can_try_incompatibility_skip(worker_id, date):
-                            continue
-                
-                        skip_message = (f"Can I skip the incompatibility constraint for worker {worker_id} "
-                                     f"on {date.strftime('%Y-%m-%d')}? "
-                                     f"(Current skips: {self.skip_counts[worker_id]['incompatibility']})")
-                
-                    else:  # gap constraint
-                        if not self._can_try_gap_skip(worker_id, date):
-                            continue
-                
-                    skip_message = (f"Can I skip the 21-day gap constraint for worker {worker_id} "
-                                  f"on {date.strftime('%Y-%m-%d')}? "
-                                  f"(Current skips: {self.skip_counts[worker_id]['gap']})")
+                # Check number of incompatible workers
+                incompatible_count = 0
+                if date in self.schedule:
+                    incompatible_count = sum(
+                        1 for w_id in self.schedule[date]
+                        if next(w for w in self.workers_data if w['id'] == w_id).get('is_incompatible', False)
+                    )
+            
+                if incompatible_count >= 2:
+                    continue
+            
+                date_str = date.strftime('%Y-%m-%d')
+                if self._ask_permission(
+                    f"Can I skip the incompatibility constraint for worker {worker_id} "
+                    f"on {date_str}? "
+                    f"(Current skips: {min_skips})"
+                ):
+                    # Record the skipped constraint
+                    for assigned_id in self.schedule.get(date, []):
+                        if next(w for w in self.workers_data if w['id'] == assigned_id).get('is_incompatible', False):
+                            worker_pair = tuple(sorted([worker_id, assigned_id]))
+                            self.skipped_constraints['incompatibility'].add((date_str, worker_pair))
+                    return worker
 
-                    if self._ask_permission(skip_message):
-                        self._record_constraint_skip(worker_id, date, constraint_type)
-                        return worker
+        # Try gap constraint skip
+        for worker in eligible_workers:
+            worker_id = worker['id']
+            if (self._can_assign_worker_except_gap(worker_id, date) and 
+                not self._check_gap_constraint(worker_id, date)):
+            
+                date_str = date.strftime('%Y-%m-%d')
+                if self._ask_permission(
+                    f"Can I skip the gap constraint for worker {worker_id} "
+                    f"on {date_str}? "
+                    f"(Current skips: {min_skips})"
+                ):
+                    self.skipped_constraints['gap'].add((date_str, worker_id))
+                    return worker
 
         return None
 
