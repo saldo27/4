@@ -8,8 +8,9 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.popup import Popup
-from kivy.graphics import Color, Line
+from kivy.graphics import Color, Line, Rectangle
 from datetime import datetime, timedelta
+
 import json
 import logging
 logging.basicConfig(
