@@ -575,8 +575,8 @@ class Scheduler:
             logging.info(f"Assigned workers {assigned_workers}")
     
             # Check number of workers
-            if len(assigned_workers) < self.num_shifts:  # Changed from self.required_workers to self.num_shifts
-                warnings.append(f"Too few workers ({len(assigned_workers)}) assigned on {date}. Expected {self.num_shifts}")
+            if len(assigned_workers) < self.num_shifts:  # Using self.num_shifts
+                warnings.append(f"Too few workers ({len(assigned_workers)}) assigned on {date}. Expected {self.num_shifts}")  # Using self.num_shifts
     
             # Check for incompatible workers
             incompatible_groups = []
