@@ -160,6 +160,78 @@ class Scheduler:
                 return False, "three consecutive weekends"
 
         return True, ""
+    
+    def _assign_mandatory_guards(self):
+        """
+        Assign all mandatory guards first
+        Mandatory guards take precedence over all other constraints
+        """
+        logging.info("Processing mandatory guards...")
+
+        # Sort workers by number of mandatory days to handle conflicts
+        workers_with_mandatory = [
+            (w, self._parse_dates(w.get('mandatory_days', ''))) 
+            for w in self.workers_data
+        ]
+        workers_with_mandatory.sort(key=lambda x: len(x[1]), reverse=True)
+
+        for worker, mandatory_dates in workers_with_mandatory:
+            if not mandatory_dates:
+                continue
+
+            worker_id = worker['id']
+            for date in mandatory_dates:
+                if self.start_date <= date <= self.end_date:
+                    if date not in self.schedule:
+                        self.schedule[date] = []
+                
+                    if (worker_id not in self.schedule[date] and 
+                        len(self.schedule[date]) < self.num_shifts):
+                        # Force assignment for mandatory days
+                        self.schedule[date].append(worker_id)
+                        self.worker_assignments[worker_id].append(date)
+                    
+                        # Update tracking data
+                        post = len(self.schedule[date]) - 1
+                        self.worker_posts[worker_id].add(post)
+                    
+                        # Update weekday tracking
+                        effective_weekday = self._get_effective_weekday(date)
+                        self.worker_weekdays[worker_id][effective_weekday] += 1
+                    
+                        # Update weekend tracking if applicable
+                        if self._is_weekend_day(date):
+                            weekend_start = self._get_weekend_start(date)
+                            if weekend_start not in self.worker_weekends[worker_id]:
+                                self.worker_weekends[worker_id].append(weekend_start)
+                    
+                        logging.info(
+                            f"Assigned mandatory guard: Worker {worker_id} on "
+                            f"{date.strftime('%Y-%m-%d')} (post {post})"
+                        )
+                    else:
+                        logging.warning(
+                            f"Could not assign mandatory guard for Worker {worker_id} on "
+                            f"{date.strftime('%Y-%m-%d')} - slot unavailable"
+                        )
+
+    def _get_weekend_start(self, date):
+        """Get the start date (Friday) of the weekend containing this date"""
+        if self._is_pre_holiday(date):
+            return date
+        elif self._is_holiday(date):
+            return date - timedelta(days=1)
+        else:
+            # Regular weekend - get to Friday
+            return date - timedelta(days=date.weekday() - 4)
+
+    def _get_effective_weekday(self, date):
+        """Get the effective weekday, treating holidays as Sundays and pre-holidays as Fridays"""
+        if self._is_holiday(date):
+            return 6  # Sunday
+        if self._is_pre_holiday(date):
+            return 4  # Friday
+        return date.weekday()
 
     def _is_worker_unavailable(self, worker_id, date):
         """Check if worker is unavailable on date"""
