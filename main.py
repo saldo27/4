@@ -695,6 +695,26 @@ class CalendarViewScreen(Screen):
         """Display summary of the schedule"""
         print("\nSchedule Summary:")
         print("-" * 40)
+    
+        # Show existing summary statistics
+        for worker in scheduler.workers_data:
+            worker_id = worker['id']
+            total_shifts = len(scheduler.worker_assignments[worker_id])
+            weekend_shifts = len(scheduler.worker_weekends[worker_id])
+            print(f"Worker {worker_id}:")
+            print(f"  Total shifts: {total_shifts}")
+            print(f"  Weekend shifts: {weekend_shifts}")
+            print(f"  Work percentage: {worker.get('work_percentage', 100)}%")
+            print()
+    
+        # Export statistics
+        try:
+            report_file = scheduler.export_stats(format='txt')
+            print(f"\nDetailed statistics have been exported to: {report_file}")
+        except Exception as e:
+            print(f"\nWarning: Could not export statistics: {str(e)}")
+        finally:
+            print("\nSummary display completed.")
 
     def show_month_summary(self, instance):
         """Display a summary of the current month's schedule"""
@@ -821,12 +841,6 @@ class CalendarViewScreen(Screen):
             close_button.bind(on_press=popup.dismiss)
         
             popup.open()
-            
-        try:
-            report_file = scheduler.export_stats(format='txt')
-            print(f"\nDetailed statistics have been exported to: {report_file}")
-        except Exception as e:
-            print(f"\nWarning: Could not export statistics: {str(e)}")
         
         except Exception as e:
             popup = Popup(title='Error',
