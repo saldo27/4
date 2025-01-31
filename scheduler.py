@@ -643,53 +643,50 @@ class Scheduler:
         if worker.get('mandatory_days'):
             mandatory_dates = self._parse_dates(worker['mandatory_days'])
             if date in mandatory_dates:
-                score += 1000  # Highest priority
+                score += 1000
 
-        # Factor 2: Gap since last assignment
+        # Factor 2: Distance from target shifts (highest non-mandatory priority)
+        current_shifts = len(self.worker_assignments[worker_id])
+        shift_difference = worker['target_shifts'] - current_shifts
+        score += shift_difference * 30  # Increased weight
+
+        # Factor 3: Monthly balance
+        month_shifts = sum(1 for d in self.worker_assignments[worker_id]
+                          if d.year == date.year and d.month == date.month)
+        target_month_shifts = worker['target_shifts'] / ((self.end_date.year * 12 + self.end_date.month) -
+                                                        (self.start_date.year * 12 + self.start_date.month) + 1)
+        monthly_balance = target_month_shifts - month_shifts
+        score += monthly_balance * 20
+
+        # Factor 4: Gap since last assignment
         assignments = sorted(self.worker_assignments[worker_id])
         if assignments:
             last_assignment = assignments[-1]
             days_since_last = abs((date - last_assignment).days)
             # Prefer longer gaps but avoid getting too close to 7, 14, 21 days
             if days_since_last not in [6, 7, 8, 13, 14, 15, 20, 21, 22]:
-                score += days_since_last * 15  # Significant weight for gap length
+                score += days_since_last * 10  # Reduced weight
+        else:
+            # If worker has no assignments yet, give them a bonus
+            score += 50  # Fixed bonus for workers with no assignments
 
-        # Factor 3: Distance from target shifts
-        current_shifts = len(self.worker_assignments[worker_id])
-        shift_difference = worker['target_shifts'] - current_shifts
-        score += shift_difference * 25  # High weight for balancing total shifts
-
-        # Factor 4: Monthly balance
-        month_shifts = sum(1 for d in self.worker_assignments[worker_id]
-                          if d.year == date.year and d.month == date.month)
-        target_month_shifts = worker['target_shifts'] / ((self.end_date.year * 12 + self.end_date.month) -
-                                                        (self.start_date.year * 12 + self.start_date.month) + 1)
-        monthly_balance = target_month_shifts - month_shifts
-        score += monthly_balance * 20  # Good weight for monthly distribution
-
-        # Factor 5: Post rotation balance
+        # Factor 5: Post rotation balance (less important)
         if self._is_balanced_post_rotation(worker_id, post):
-            score += 15  # Moderate weight for post rotation
+            score += 10
 
-        # Factor 6: Weekday balance
+        # Factor 6: Weekday balance (less important)
         if date.weekday() == self._get_least_used_weekday(worker_id):
-            score += 20  # Good weight for weekday distribution
+            score += 10
 
-        # Factor 7: Weekend distribution
+        # Factor 7: Weekend distribution (penalty)
         if self._is_weekend_day(date):
             weekend_count = len(self.worker_weekends[worker_id])
-            score -= weekend_count * 10  # Penalty for accumulated weekend shifts
+            score -= weekend_count * 5
 
-        # Factor 8: Work percentage consideration
-        work_percentage = float(worker.get('work_percentage', 100))
-        if work_percentage < 100:
-            # Slightly prefer full-time workers for better schedule stability
-            score -= (100 - work_percentage) * 0.5
-
-        logging.debug(f"Score calculation for Worker {worker_id} on {date}:")
-        logging.debug(f"- Days since last assignment: {days_since_last if assignments else 'N/A'}")
-        logging.debug(f"- Current vs target shifts: {current_shifts}/{worker['target_shifts']}")
-        logging.debug(f"- Monthly balance: {monthly_balance:.2f}")
+        logging.debug(f"Score breakdown for Worker {worker_id} on {date}:")
+        logging.debug(f"- Current shifts: {current_shifts}/{worker['target_shifts']} -> {shift_difference * 30} points")
+        logging.debug(f"- Monthly balance: {monthly_balance:.2f} -> {monthly_balance * 20} points")
+        logging.debug(f"- Gap bonus: {50 if not assignments else days_since_last * 10 if days_since_last not in [6,7,8,13,14,15,20,21,22] else 0} points")
         logging.debug(f"- Final score: {score}")
 
         return score
