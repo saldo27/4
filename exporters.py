@@ -1,4 +1,4 @@
-om fpdf import FPDF
+from fpdf import FPDF
 import csv
 from datetime import datetime
 import calendar
