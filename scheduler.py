@@ -211,6 +211,99 @@ class Scheduler:
 
         return True
 
+    def _is_balanced_post_rotation(self, worker_id, post_number):
+        """
+        Check if assigning this post maintains balanced rotation
+        A worker should work in all positions before repeating
+        """
+        posts = self.worker_posts[worker_id]
+        if len(posts) < self.num_shifts:
+            # Worker hasn't worked all posts yet, should work in new position
+            return post_number not in posts
+        else:
+            # Worker has worked all posts, check distribution
+            post_counts = {i: 0 for i in range(self.num_shifts)}
+            for assigned_date in self.worker_assignments[worker_id]:
+                if assigned_date in self.schedule:
+                    post = self.schedule[assigned_date].index(worker_id)
+                    post_counts[post] += 1
+        
+            # Check if current post has minimum count
+            current_count = post_counts.get(post_number, 0)
+            min_count = min(post_counts.values())
+            return current_count <= min_count
+
+    def _check_weekday_balance(self, worker_id, date):
+        """
+        Check if assigning this date maintains weekday balance
+        Worker should complete Monday-Sunday cycle before repeating days
+        """
+        weekday = date.weekday()
+        weekdays = self.worker_weekdays[worker_id]
+    
+        # Get the last 7 assignments to check for a complete cycle
+        recent_assignments = sorted(self.worker_assignments[worker_id])[-7:]
+        recent_days = {d.weekday() for d in recent_assignments}
+    
+        if len(recent_days) < 7:
+            # Still completing first cycle, check if day was already used
+            return weekday not in recent_days
+        else:
+            # After first cycle, check if this weekday has minimum count
+            min_count = min(weekdays.values())
+            return weekdays[weekday] <= min_count
+
+    def _has_three_consecutive_weekends(self, worker_id, date):
+        """
+        Check if assigning this date would result in more than 3 consecutive weekends.
+        Includes holidays and pre-holiday days in the weekend check.
+        """
+        if not self._is_weekend_day(date):
+            return False
+
+        def get_weekend_start(d):
+            """Get the start date of the weekend containing this date"""
+            if self._is_pre_holiday(d):
+                return d
+            elif self._is_holiday(d):
+                return d - timedelta(days=1)
+            else:
+                # Regular weekend - get to Friday
+                return d - timedelta(days=d.weekday() - 4)
+
+        # Get current weekend's start date
+        current_weekend = get_weekend_start(date)
+    
+        # Get all weekend dates for this worker
+        weekends = sorted(self.worker_weekends[worker_id])
+        if current_weekend not in weekends:
+            weekends = sorted(weekends + [current_weekend])
+
+        # Count consecutive weekends
+        consecutive_count = 1
+        for i in range(len(weekends) - 1, -1, -1):
+            if i > 0:
+                days_diff = abs((weekends[i] - weekends[i-1]).days)
+                if days_diff == 7:  # Consecutive weekends
+                    consecutive_count += 1
+                    if consecutive_count > 3:
+                        logging.debug(f"Worker {worker_id} would exceed 3 consecutive weekends")
+                        return True
+                else:
+                    break  # Break if weekends not consecutive
+
+        return False
+
+    def _is_weekend_day(self, date):
+        """
+        Check if date is a weekend day, holiday, or pre-holiday
+        """
+        if self._is_holiday(date):
+            return True
+        if self._is_pre_holiday(date):
+            return True
+        return date.weekday() in [4, 5, 6]  # Friday = 4, Saturday = 5, Sunday = 6
+
     def _find_best_worker(self, date, post):
         """Find the best worker using the new assignment strategy"""
         logging.info(f"Finding worker for {date.strftime('%Y-%m-%d')} post {post}")
@@ -275,10 +368,9 @@ class Scheduler:
         return candidates
 
     def _calculate_worker_score(self, worker, date, post):
-        """Calculate assignment score for a worker"""
+        """Modified score calculation to consider weekday balance"""
         score = 0
         worker_id = worker['id']
-        work_percentage = float(worker.get('work_percentage', 100))
 
         # Mandatory days (highest priority)
         if worker.get('mandatory_days'):
@@ -316,6 +408,10 @@ class Scheduler:
             score += 10
         if date.weekday() == self._get_least_used_weekday(worker_id):
             score += 10
+            
+       # Increase weight of weekday balance
+        if self._check_weekday_balance(worker_id, date):
+            score += 25  # Increased from 10 to give more importance 
 
         # Weekend penalty
         if self._is_weekend_day(date):
@@ -422,7 +518,7 @@ class Scheduler:
         }
 
     def _validate_final_schedule(self):
-        """Validate the final schedule"""
+        """Enhanced validation including all constraints"""
         errors = []
         warnings = []
 
@@ -453,7 +549,41 @@ class Scheduler:
                                 f"Unauthorized incompatible workers {worker_id} and {other_id} "
                                 f"on {date.strftime('%Y-%m-%d')}"
                             )
+        # Check rotation constraints for each worker
+        for worker in self.workers_data:
+            worker_id = worker['id']
+        
+            # Check post rotation
+            post_counts = {i: 0 for i in range(self.num_shifts)}
+            for date in self.worker_assignments[worker_id]:
+                if date in self.schedule:
+                    post = self.schedule[date].index(worker_id)
+                    post_counts[post] += 1
+        
+            max_diff = max(post_counts.values()) - min(post_counts.values())
+            if max_diff > 1:
+                warnings.append(f"Worker {worker_id} post rotation imbalance: {post_counts}")
 
+            # Check weekday distribution
+            weekday_counts = self.worker_weekdays[worker_id]
+            max_weekday_diff = max(weekday_counts.values()) - min(weekday_counts.values())
+            if max_weekday_diff > 1:
+                warnings.append(f"Worker {worker_id} weekday imbalance: {weekday_counts}")
+
+            # Check consecutive weekends
+            weekends = sorted(self.worker_weekends[worker_id])
+            consecutive_count = 1
+            max_consecutive = 1
+            for i in range(1, len(weekends)):
+                if (weekends[i] - weekends[i-1]).days == 7:
+                    consecutive_count += 1
+                    max_consecutive = max(max_consecutive, consecutive_count)
+                else:
+                    consecutive_count = 1
+        
+            if max_consecutive > 3:
+                errors.append(f"Worker {worker_id} has {max_consecutive} consecutive weekends")
+                
         # Check worker assignments
         for worker in self.workers_data:
             worker_id = worker['id']
