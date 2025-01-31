@@ -56,10 +56,16 @@ class Scheduler:
 
             self._log_initialization()
 
+            # Add max_shifts_per_worker calculation
+            total_days = (self.end_date - self.start_date).days + 1
+            total_shifts = total_days * self.num_shifts
+            num_workers = len(self.workers_data)
+            self.max_shifts_per_worker = (total_shifts // num_workers) + 2  # Add some flexibility
+
         except Exception as e:
             logging.error(f"Initialization error: {str(e)}")
             raise SchedulerError(f"Failed to initialize scheduler: {str(e)}")
-
+    
     def _log_initialization(self):
         """Log initialization parameters"""
         logging.info("Scheduler initialized with:")
@@ -376,6 +382,65 @@ class Scheduler:
             return True
         return date.weekday() in [4, 5, 6]  # Friday = 4, Saturday = 5, Sunday = 6
 
+    def _is_holiday(self, date):
+        """Check if a date is a holiday"""
+        return date in self.holidays
+
+    def _is_pre_holiday(self, date):
+        """Check if a date is the day before a holiday"""
+        next_day = date + timedelta(days=1)
+        return next_day in self.holidays
+
+    def _calculate_target_shifts(self):
+        """Calculate target number of shifts for each worker based on their percentage"""
+        total_days = (self.end_date - self.start_date).days + 1
+        total_shifts = total_days * self.num_shifts
+        total_percentage = sum(float(w.get('work_percentage', 100)) for w in self.workers_data)
+
+        for worker in self.workers_data:
+            percentage = float(worker.get('work_percentage', 100))
+            target = (percentage / total_percentage) * total_shifts
+            worker['target_shifts'] = round(target)
+            logging.info(f"Worker {worker['id']} - Target shifts: {worker['target_shifts']} ({percentage}%)")
+
+    def _assign_day_shifts(self, date):
+        """Assign all shifts for a specific day"""
+        logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
+    
+        if date not in self.schedule:
+            self.schedule[date] = []
+    
+        # Calculate how many shifts still need to be assigned
+        remaining_shifts = self.num_shifts - len(self.schedule[date])
+    
+        for post in range(remaining_shifts):
+            logging.info(f"Finding worker for shift {post + 1}/{self.num_shifts}")
+            best_worker = self._find_best_worker(date, post)
+        
+            if best_worker:
+                worker_id = best_worker['id']
+                if len(self.schedule[date]) < self.num_shifts:  # Double-check before adding
+                    self.schedule[date].append(worker_id)
+                    self.worker_assignments[worker_id].append(date)
+                
+                    # Update tracking data
+                    self.worker_posts[worker_id].add(post)
+                    effective_weekday = self._get_effective_weekday(date)
+                    self.worker_weekdays[worker_id][effective_weekday] += 1
+                
+                    if self._is_weekend_day(date):
+                        weekend_start = self._get_weekend_start(date)
+                        if weekend_start not in self.worker_weekends[worker_id]:
+                            self.worker_weekends[worker_id].append(weekend_start)
+                
+                    logging.info(f"Assigned worker {worker_id} to shift {post + 1}")
+                else:
+                    logging.warning(f"Maximum shifts ({self.num_shifts}) reached for {date.strftime('%Y-%m-%d')}")
+                    break
+            else:
+                logging.error(f"Could not find suitable worker for shift {post + 1}")
+                break
+        
     def _find_best_worker(self, date, post):
         """Find the best worker using the new assignment strategy"""
         logging.info(f"Finding worker for {date.strftime('%Y-%m-%d')} post {post}")
