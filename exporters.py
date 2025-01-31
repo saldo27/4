@@ -3,75 +3,120 @@ import csv
 from datetime import datetime
 import calendar
 
-class PDFExporter:
-    @staticmethod
-    def create_monthly_calendar(schedule, year, month, filename):
-        pdf = FPDF(orientation='L', format='A4')
-        pdf.add_page()
-        
-        # Add title
-        pdf.set_font('Arial', 'B', 16)
-        month_name = calendar.month_name[month]
-        pdf.cell(0, 10, f'Guard Schedule - {month_name} {year}', 0, 1, 'C')
-        
-        # Add metadata
-        pdf.set_font('Arial', '', 10)
-        pdf.cell(0, 10, f'Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}', 0, 1, 'R')
-        
-        # Create calendar grid
-        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        cell_width = 37
-        cell_height = 20
-        
-        # Add day headers
-        pdf.set_font('Arial', 'B', 10)
-        for day in days:
-            pdf.cell(cell_width, 10, day, 1, 0, 'C')
-        pdf.ln()
-        
-        # Add calendar days
-        cal = calendar.monthcalendar(year, month)
-        pdf.set_font('Arial', '', 8)
-        
-        for week in cal:
-            max_height = cell_height
-            for day in week:
-                if day == 0:
-                    pdf.cell(cell_width, max_height, '', 1)
-                else:
-                    date = datetime(year, month, day)
-                    content = f"{day}\n"
-                    if date in schedule:
-                        content += "\n".join(schedule[date])
-                    pdf.multi_cell(cell_width, 5, content, 1)
-                    pdf.set_xy(pdf.get_x() + cell_width, pdf.get_y() - max_height)
-            pdf.ln(max_height)
-        
-        pdf.output(filename)
+class StatsExporter:
+    def __init__(self, scheduler):
+        self.scheduler = scheduler
 
-class CSVHandler:
-    @staticmethod
-    def export_schedule(schedule, filename):
-        with open(filename, 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(['Date', 'Day', 'Month', 'Year', 'Guards'])
+    def gather_worker_statistics(self):
+        """Gather comprehensive statistics for all workers"""
+        stats = {}
+    
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            assignments = self.worker_assignments[worker_id]
+        
+            # Basic stats
+            stats[worker_id] = {
+                'worker_id': worker_id,
+                'work_percentage': worker.get('work_percentage', 100),
+                'total_shifts': len(assignments),
+                'target_shifts': worker.get('target_shifts', 0),
             
-            for date in sorted(schedule.keys()):
-                writer.writerow([
-                    date.strftime('%Y-%m-%d'),
-                    date.day,
-                    date.month,
-                    date.year,
-                    ';'.join(schedule[date])
-                ])
+                # Shifts by type
+                'weekend_shifts': len(self.worker_weekends[worker_id]),
+                'weekday_shifts': len(assignments) - len(self.worker_weekends[worker_id]),
+            
+                # Monthly distribution
+                'monthly_distribution': {},
+            
+                # Shifts by weekday
+                'weekday_distribution': {i: 0 for i in range(7)},  # 0-6 for Monday-Sunday
+            
+                # Gaps analysis
+                'average_gap': 0,
+                'min_gap': float('inf'),
+                'max_gap': 0
+            }
+        
+            # Calculate monthly distribution
+            for date in sorted(assignments):
+                month_key = f"{date.year}-{date.month:02d}"
+                stats[worker_id]['monthly_distribution'][month_key] = \
+                    stats[worker_id]['monthly_distribution'].get(month_key, 0) + 1
+                stats[worker_id]['weekday_distribution'][date.weekday()] += 1
+        
+            # Calculate gaps
+            if len(assignments) > 1:
+                sorted_dates = sorted(assignments)
+                gaps = [(sorted_dates[i+1] - sorted_dates[i]).days 
+                       for i in range(len(sorted_dates)-1)]
+                stats[worker_id]['average_gap'] = sum(gaps) / len(gaps)
+                stats[worker_id]['min_gap'] = min(gaps)
+                stats[worker_id]['max_gap'] = max(gaps)
+            
+        return stats
 
-    @staticmethod
-    def import_schedule(filename):
-        schedule = {}
-        with open(filename, 'r') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                date = datetime.strptime(row['Date'], '%Y-%m-%d')
-                guards = row['Guards'].split(';')
-                schedule[date] = guards
-        return schedule
+    def export_worker_stats(self, format='txt'):
+        """Export worker statistics to file
+        Args:
+            format (str): 'txt' or 'pdf'
+        Returns:
+            str: Path to the generated file
+        """
+        stats = self.gather_worker_statistics()
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+        if format.lower() == 'txt':
+            filename = f'worker_stats_{timestamp}.txt'
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write("=== Worker Statistics Report ===\n")
+                f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            
+                for worker_id, worker_stats in stats.items():
+                    f.write(f"\nWorker {worker_id}\n")
+                    f.write("="* 20 + "\n")
+                    f.write(f"Work Percentage: {worker_stats['work_percentage']}%\n")
+                    f.write(f"Total Shifts: {worker_stats['total_shifts']}")
+                    f.write(f" (Target: {worker_stats['target_shifts']})\n")
+                    f.write(f"Weekend Shifts: {worker_stats['weekend_shifts']}\n")
+                    f.write(f"Weekday Shifts: {worker_stats['weekday_shifts']}\n\n")
+                
+                    f.write("Monthly Distribution:\n")
+                    for month, count in worker_stats['monthly_distribution'].items():
+                        f.write(f"  {month}: {count} shifts\n")
+                
+                    f.write("\nWeekday Distribution:\n")
+                    days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 
+                           'Friday', 'Saturday', 'Sunday']
+                    for day_num, count in worker_stats['weekday_distribution'].items():
+                        f.write(f"  {days[day_num]}: {count} shifts\n")
+                
+                    if worker_stats['total_shifts'] > 1:
+                        f.write("\nGaps Analysis:\n")
+                        f.write(f"  Average gap: {worker_stats['average_gap']:.1f} days\n")
+                        f.write(f"  Minimum gap: {worker_stats['min_gap']} days\n")
+                        f.write(f"  Maximum gap: {worker_stats['max_gap']} days\n")
+                
+                    f.write("\n" + "-"*50 + "\n")
+    
+        elif format.lower() == 'pdf':
+            try:
+                from reportlab.lib import colors
+                from reportlab.lib.pagesizes import letter
+                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+                from reportlab.lib.styles import getSampleStyleSheet
+            
+                filename = f'worker_stats_{timestamp}.pdf'
+                doc = SimpleDocTemplate(filename, pagesize=letter)
+                elements = []
+                styles = getSampleStyleSheet()
+            
+                # Add content to PDF
+                # ... (PDF generation code would go here)
+            # We can implement this part if you want to use PDF format
+            
+            except ImportError:
+                raise ImportError("reportlab is required for PDF export. "
+                                "Install it with: pip install reportlab")
+    
+        return filename
