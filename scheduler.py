@@ -610,60 +610,87 @@ class Scheduler:
     
         assignments = sorted(self.worker_assignments[worker_id])
         if assignments:
-            for prev_date in assignments:  # Changed from reversed to check all assignments
+            for prev_date in assignments:
                 days_between = abs((date - prev_date).days)
+                logging.debug(f"Worker {worker_id}: Gap of {days_between} days from {prev_date} to {date}")
                 if days_between < min_distance:
+                    logging.debug(f"Worker {worker_id}: Gap {days_between} is less than minimum {min_distance}")
                     return False
         
         # Days off
         if worker.get('days_off'):
             off_periods = self._parse_date_ranges(worker['days_off'])
             if any(start <= date <= end for start, end in off_periods):
+                logging.debug(f"Worker {worker_id} has day off on {date}")
                 return False
             
         # Work periods
         if worker.get('work_periods'):
             work_periods = self._parse_date_ranges(worker['work_periods'])
             if not any(start <= date <= end for start, end in work_periods):
+                logging.debug(f"Worker {worker_id} not in work period on {date}")
                 return False
-            
+    
+        logging.debug(f"Worker {worker_id} passes all basic availability checks for {date}")
         return True
      
     def _calculate_worker_score(self, worker, date, post):
         """Calculate a score for a worker based on various factors"""
         score = 0.0
+        worker_id = worker['id']
 
         # Factor 1: Mandatory days (highest priority)
         if worker.get('mandatory_days'):
             mandatory_dates = self._parse_dates(worker['mandatory_days'])
             if date in mandatory_dates:
-                score += 1000
+                score += 1000  # Highest priority
 
-        # Factor 2: Distance from target shifts
-        current_shifts = len(self.worker_assignments[worker['id']])
+        # Factor 2: Gap since last assignment
+        assignments = sorted(self.worker_assignments[worker_id])
+        if assignments:
+            last_assignment = assignments[-1]
+            days_since_last = abs((date - last_assignment).days)
+            # Prefer longer gaps but avoid getting too close to 7, 14, 21 days
+            if days_since_last not in [6, 7, 8, 13, 14, 15, 20, 21, 22]:
+                score += days_since_last * 15  # Significant weight for gap length
+
+        # Factor 3: Distance from target shifts
+        current_shifts = len(self.worker_assignments[worker_id])
         shift_difference = worker['target_shifts'] - current_shifts
-        score += shift_difference * 25
+        score += shift_difference * 25  # High weight for balancing total shifts
 
-        # Factor 3: Monthly balance
-        month_shifts = sum(1 for d in self.worker_assignments[worker['id']]
+        # Factor 4: Monthly balance
+        month_shifts = sum(1 for d in self.worker_assignments[worker_id]
                           if d.year == date.year and d.month == date.month)
         target_month_shifts = worker['target_shifts'] / ((self.end_date.year * 12 + self.end_date.month) -
                                                         (self.start_date.year * 12 + self.start_date.month) + 1)
         monthly_balance = target_month_shifts - month_shifts
-        score += monthly_balance * 25
+        score += monthly_balance * 20  # Good weight for monthly distribution
 
-        # Factor 4: Post rotation balance
-        if self._is_balanced_post_rotation(worker['id'], post):
-            score += 15
+        # Factor 5: Post rotation balance
+        if self._is_balanced_post_rotation(worker_id, post):
+            score += 15  # Moderate weight for post rotation
 
-        # Factor 5: Weekday balance
-        if date.weekday() == self._get_least_used_weekday(worker['id']):
-            score += 20
+        # Factor 6: Weekday balance
+        if date.weekday() == self._get_least_used_weekday(worker_id):
+            score += 20  # Good weight for weekday distribution
 
-        # Factor 6: Weekend distribution
+        # Factor 7: Weekend distribution
         if self._is_weekend_day(date):
-            weekend_count = len(self.worker_weekends[worker['id']])
-            score -= weekend_count * 5  # Penalize workers with more weekend assignments
+            weekend_count = len(self.worker_weekends[worker_id])
+            score -= weekend_count * 10  # Penalty for accumulated weekend shifts
+
+        # Factor 8: Work percentage consideration
+        work_percentage = float(worker.get('work_percentage', 100))
+        if work_percentage < 100:
+            # Slightly prefer full-time workers for better schedule stability
+            score -= (100 - work_percentage) * 0.5
+
+        logging.debug(f"Score calculation for Worker {worker_id} on {date}:")
+        logging.debug(f"- Days since last assignment: {days_since_last if assignments else 'N/A'}")
+        logging.debug(f"- Current vs target shifts: {current_shifts}/{worker['target_shifts']}")
+        logging.debug(f"- Monthly balance: {monthly_balance:.2f}")
+        logging.debug(f"- Final score: {score}")
 
         return score
 
