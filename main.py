@@ -10,6 +10,8 @@ from kivy.uix.checkbox import CheckBox
 from kivy.uix.popup import Popup
 from kivy.graphics import Color, Line, Rectangle
 from datetime import datetime, timedelta
+from scheduler import Scheduler
+from exporters import StatsExporter
 
 import json
 import logging
@@ -689,6 +691,11 @@ class CalendarViewScreen(Screen):
                          size_hint=(None, None), size=(400, 200))
             popup.open()
 
+    def show_summary(scheduler):
+        """Display summary of the schedule"""
+        print("\nSchedule Summary:")
+        print("-" * 40)
+
     def show_month_summary(self, instance):
         """Display a summary of the current month's schedule"""
         try:
@@ -814,12 +821,20 @@ class CalendarViewScreen(Screen):
             close_button.bind(on_press=popup.dismiss)
         
             popup.open()
+            
+        try:
+            report_file = scheduler.export_stats(format='txt')
+            print(f"\nDetailed statistics have been exported to: {report_file}")
+        except Exception as e:
+            print(f"\nWarning: Could not export statistics: {str(e)}")
         
         except Exception as e:
             popup = Popup(title='Error',
                          content=Label(text=f'Failed to show summary: {str(e)}'),
                          size_hint=(None, None), size=(400, 200))
-            popup.open()          
+            popup.open()
+
+
               
 class ShiftManagerApp(App):
     def __init__(self, **kwargs):
