@@ -677,6 +677,57 @@ class Scheduler:
             'avg_gap': sum(gaps) / len(gaps)
         }
 
+    def _cleanup_schedule(self):
+        """Clean up the schedule by removing incomplete or invalid assignments"""
+        logging.info("Cleaning up schedule...")
+        dates_to_remove = []
+
+        for date, assignments in self.schedule.items():
+            # Check if the day has all required shifts filled
+            if len(assignments) < self.num_shifts:
+                logging.warning(f"Incomplete assignments for {date.strftime('%Y-%m-%d')}")
+                dates_to_remove.append(date)
+            
+                # Remove these assignments from worker records
+                for worker_id in assignments:
+                    # Remove from worker assignments
+                    if date in self.worker_assignments[worker_id]:
+                        self.worker_assignments[worker_id].remove(date)
+                
+                    # Update weekday counts
+                    effective_weekday = self._get_effective_weekday(date)
+                    self.worker_weekdays[worker_id][effective_weekday] = max(
+                        0, self.worker_weekdays[worker_id][effective_weekday] - 1
+                    )
+                
+                    # Update weekend tracking if applicable
+                    if self._is_weekend_day(date):
+                        weekend_start = self._get_weekend_start(date)
+                        if weekend_start in self.worker_weekends[worker_id]:
+                            # Only remove if there are no other assignments on this weekend
+                            other_weekend_assignments = [
+                                d for d in self.worker_assignments[worker_id]
+                                if (self._is_weekend_day(d) and 
+                                    self._get_weekend_start(d) == weekend_start)
+                            ]
+                            if not other_weekend_assignments:
+                                self.worker_weekends[worker_id].remove(weekend_start)
+
+        # Remove incomplete days from schedule
+        for date in dates_to_remove:
+            del self.schedule[date]
+            logging.info(f"Removed incomplete schedule for {date.strftime('%Y-%m-%D')}")
+
+        # Recalculate posts for each worker
+        for worker_id in self.worker_posts.keys():
+            self.worker_posts[worker_id] = set()
+            for date in self.worker_assignments[worker_id]:
+                if date in self.schedule:
+                    post = self.schedule[date].index(worker_id)
+                    self.worker_posts[worker_id].add(post)
+
+        logging.info(f"Schedule cleanup complete. Removed {len(dates_to_remove)} incomplete days.")
+
     def _validate_final_schedule(self):
         """Enhanced validation including all constraints"""
         errors = []
