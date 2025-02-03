@@ -395,13 +395,20 @@ class Scheduler:
         """Calculate target number of shifts for each worker based on their percentage"""
         total_days = (self.end_date - self.start_date).days + 1
         total_shifts = total_days * self.num_shifts
-        total_percentage = sum(float(w.get('work_percentage', 100)) for w in self.workers_data)
+    
+        # Convert work_percentage to float when summing
+        total_percentage = sum(float(str(w.get('work_percentage', 100)).strip()) for w in self.workers_data)
 
         for worker in self.workers_data:
-            percentage = float(worker.get('work_percentage', 100))
-            target = (percentage / total_percentage) * total_shifts
-            worker['target_shifts'] = round(target)
-            logging.info(f"Worker {worker['id']} - Target shifts: {worker['target_shifts']} ({percentage}%)")
+            try:
+                # Ensure work_percentage is properly converted to float
+                percentage = float(str(worker.get('work_percentage', 100)).strip())
+                target = (percentage / total_percentage) * total_shifts
+                worker['target_shifts'] = round(target)
+                logging.info(f"Worker {worker['id']} - Target shifts: {worker['target_shifts']} ({percentage}%)")
+            except (ValueError, TypeError) as e:
+                logging.error(f"Error processing work percentage for worker {worker.get('id')}: {str(e)}")
+                raise SchedulerError(f"Invalid work percentage for worker {worker.get('id')}")
 
     def _assign_day_shifts(self, date):
         """Assign all shifts for a specific day"""
@@ -790,3 +797,4 @@ class Scheduler:
             'constraint_skips': self.constraint_skips[worker_id],
             'stats': self._analyze_gaps(worker_id)
         }
+
