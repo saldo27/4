@@ -228,22 +228,30 @@ class WorkerDetailsScreen(Screen):
 
         self.add_widget(self.layout)
 
-    def validate_dates(self, date_str):
+    def validate_dates(self, date_str, allow_ranges=True):
+        """
+        Validate date strings
+        date_str: The string containing the dates
+        allow_ranges: Whether to allow date ranges with hyphen (True for work periods/days off, False for mandatory days)
+        """
         if not date_str:
             return True
         try:
             for period in date_str.split(';'):
                 period = period.strip()
-                if '-' in period:
+                if '-' in period and allow_ranges:
                     start, end = period.split('-')
                     datetime.strptime(start.strip(), '%d-%m-%Y')
                     datetime.strptime(end.strip(), '%d-%m-%Y')
                 else:
-                    datetime.strptime(period, '%d-%m-%Y')
+                    if not allow_ranges and '-' in period and period.count('-') > 2:
+                        # For mandatory days, only allow DD-MM-YYYY format
+                        return False
+                    datetime.strptime(period.strip(), '%d-%m-%Y')
             return True
-        except:
+        except ValueError:
             return False
-
+        
     def save_and_continue(self, instance):
         if not self.worker_id.text.strip():
             self.show_error("Worker ID is required")
@@ -254,20 +262,23 @@ class WorkerDetailsScreen(Screen):
             if not (0 < work_percentage <= 100):
                 self.show_error("Work percentage must be between 0 and 100")
                 return
-        except:
+        except ValueError:
             self.show_error("Invalid work percentage")
             return
 
-        if not self.validate_dates(self.work_periods.text):
-            self.show_error("Invalid work periods format")
+        # Validate work periods (allowing ranges)
+        if not self.validate_dates(self.work_periods.text, allow_ranges=True):
+            self.show_error("Invalid work periods format.\nFormat: DD-MM-YYYY or DD-MM-YYYY - DD-MM-YYYY\nSeparate multiple entries with semicolons")
             return
 
-        if not self.validate_dates(self.mandatory_days.text):
-            self.show_error("Invalid mandatory days format")
+        # Validate mandatory days (not allowing ranges)
+        if not self.validate_dates(self.mandatory_days.text, allow_ranges=False):
+            self.show_error("Invalid mandatory days format.\nFormat: DD-MM-YYYY\nSeparate multiple days with semicolons")
             return
 
-        if not self.validate_dates(self.days_off.text):
-            self.show_error("Invalid days off format")
+        # Validate days off (allowing ranges)
+        if not self.validate_dates(self.days_off.text, allow_ranges=True):
+            self.show_error("Invalid days off format.\nFormat: DD-MM-YYYY or DD-MM-YYYY - DD-MM-YYYY\nSeparate multiple entries with semicolons")
             return
 
         app = App.get_running_app()
