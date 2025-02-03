@@ -452,14 +452,20 @@ class Scheduler:
         """Find the best worker using the new assignment strategy"""
         logging.info(f"Finding worker for {date.strftime('%Y-%m-%d')} post {post}")
         
-        # Try 1: Normal assignment
+        # Try 1: Balance-focused assignment
+        balanced_worker = self._try_balance_assignment(date, post)
+        if balanced_worker:
+            logging.info(f"Balance-focused assignment: Selected worker {balanced_worker['id']}")
+            return balanced_worker
+
+        # Try 2: Normal assignment
         candidates = self._get_candidates(date, post)
         if candidates:
             selected = max(candidates, key=lambda x: x[1])[0]
             logging.info(f"Normal assignment: Selected worker {selected['id']}")
             return selected
 
-        # Try 2: Part-time workers with reduced gap
+        # Try 3: Part-time workers with reduced gap
         candidates = self._get_candidates(date, post, try_part_time=True)
         if candidates:
             selected = max(candidates, key=lambda x: x[1])[0]
@@ -467,7 +473,7 @@ class Scheduler:
             self.constraint_skips[selected['id']]['reduced_gap'].append(date)
             return selected
 
-        # Try 3: Skip constraints
+        # Try 4: Skip constraints
         candidates = self._get_candidates(date, post, skip_constraints=True)
         if candidates:
             selected = max(candidates, key=lambda x: x[1])[0]
@@ -568,10 +574,29 @@ class Scheduler:
         if self._is_balanced_post_rotation(worker_id, post):
             score += 10
 
-        # Weekday balance
+        # Post rotation balance (increased weight)
+        post_counts = {i: 0 for i in range(self.num_shifts)}
+        for assigned_date in self.worker_assignments[worker_id]:
+            if assigned_date in self.schedule:
+                assigned_post = self.schedule[assigned_date].index(worker_id)
+                post_counts[assigned_post] += 1
+    
+        min_post_count = min(post_counts.values())
+        if post_counts.get(post, 0) == min_post_count:
+            score += 40  # New bonus for balanced post assignment
+        else:
+            # Penalty for unbalanced posts
+            score -= (post_counts.get(post, 0) - min_post_count) * 15
+
+        ## Weekday balance (increased weight)
+        weekday = date.weekday()
         weekday_counts = self.worker_weekdays[worker_id]
-        if weekday_counts[date.weekday()] == min(weekday_counts.values()):
-            score += 25  # Prefer days that have been used least
+        min_weekday_count = min(weekday_counts.values())
+        if weekday_counts[weekday] == min_weekday_count:
+            score += 50  # Increased from 25
+        else:
+            # Penalty for unbalanced weekdays
+            score -= (weekday_counts[weekday] - min_weekday_count) * 20
 
         # Weekend penalty
         if self._is_weekend_day(date):
@@ -579,6 +604,47 @@ class Scheduler:
             score -= weekend_count * 5
 
         return score
+
+    def _try_balance_assignment(self, date, post):
+        """Try to find a worker that would improve balance"""
+        candidates = []
+    
+        for worker in self.workers_data:
+            worker_id = worker['id']
+        
+            # Skip if worker is unavailable
+            if not self._check_constraints(worker_id, date, skip_constraints=False)[0]:
+                continue
+            
+            # Calculate imbalance scores
+            weekday_imbalance = self._calculate_weekday_imbalance(worker_id, date)
+            post_imbalance = self._calculate_post_imbalance(worker_id, post)
+        
+            # Lower score is better
+            total_imbalance = weekday_imbalance + post_imbalance
+            candidates.append((worker, total_imbalance))
+    
+        if candidates:
+            # Return worker with lowest imbalance
+            return min(candidates, key=lambda x: x[1])[0]
+        return None
+
+    def _calculate_weekday_imbalance(self, worker_id, date):
+        """Calculate how much this assignment would affect weekday balance"""
+        weekday = date.weekday()
+        counts = self.worker_weekdays[worker_id].copy()
+        counts[weekday] += 1
+        return max(counts.values()) - min(counts.values())
+
+    def _calculate_post_imbalance(self, worker_id, post):
+        """Calculate how much this assignment would affect post balance"""
+        post_counts = {i: 0 for i in range(self.num_shifts)}
+        for assigned_date in self.worker_assignments[worker_id]:
+            if assigned_date in self.schedule:
+                assigned_post = self.schedule[assigned_date].index(worker_id)
+                post_counts[assigned_post] += 1
+        post_counts[post] += 1
+        return max(post_counts.values()) - min(post_counts.values())
 
     def _parse_dates(self, date_str):
         """Parse semicolon-separated dates"""
@@ -676,7 +742,6 @@ class Scheduler:
             'max_gap': max(gaps),
             'avg_gap': sum(gaps) / len(gaps)
         }
-
     def _cleanup_schedule(self):
         """Clean up the schedule by removing incomplete or invalid assignments"""
         logging.info("Cleaning up schedule...")
@@ -772,13 +837,13 @@ class Scheduler:
                     post_counts[post] += 1
         
             max_diff = max(post_counts.values()) - min(post_counts.values())
-            if max_diff > 1:
+            if max_diff > 2:
                 warnings.append(f"Worker {worker_id} post rotation imbalance: {post_counts}")
 
             # Check weekday distribution
             weekday_counts = self.worker_weekdays[worker_id]
             max_weekday_diff = max(weekday_counts.values()) - min(weekday_counts.values())
-            if max_weekday_diff > 1:
+            if max_weekday_diff > 2:
                 warnings.append(f"Worker {worker_id} weekday imbalance: {weekday_counts}")
 
             # Check consecutive weekends
