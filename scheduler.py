@@ -510,6 +510,20 @@ class Scheduler:
             logging.debug(f"Worker {worker_id} added as candidate with score {score}")
 
         return candidates
+    
+    def _get_least_used_weekday(self, worker_id):
+        """
+        Get the weekday that has been used least often for this worker
+        Returns the weekday number (0-6 for Monday-Sunday)
+        """
+        weekdays = self.worker_weekdays[worker_id]
+        min_count = min(weekdays.values())
+        # If there are multiple weekdays with the same minimum count,
+        # prefer the earliest one in the week
+        for weekday in range(7):  # 0-6 for Monday-Sunday
+            if weekdays[weekday] == min_count:
+                return weekday
+        return 0  # Fallback to Monday if something goes wrong
 
     def _calculate_worker_score(self, worker, date, post):
         """Modified score calculation to consider weekday balance"""
@@ -550,15 +564,14 @@ class Scheduler:
         if work_percentage < 100:
             score += 15
 
-        # Post rotation and weekday balance
+        # Post rotation
         if self._is_balanced_post_rotation(worker_id, post):
             score += 10
-        if date.weekday() == self._get_least_used_weekday(worker_id):
-            score += 10
-        
-        # Increase weight of weekday balance
-        if self._check_weekday_balance(worker_id, date):
-            score += 25  # Increased from 10 to give more importance 
+
+        # Weekday balance
+        weekday_counts = self.worker_weekdays[worker_id]
+        if weekday_counts[date.weekday()] == min(weekday_counts.values()):
+            score += 25  # Prefer days that have been used least
 
         # Weekend penalty
         if self._is_weekend_day(date):
