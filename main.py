@@ -239,12 +239,12 @@ class WorkerDetailsScreen(Screen):
         try:
             for period in date_str.split(';'):
                 period = period.strip()
-                if '-' in period and allow_ranges:
-                    start, end = period.split('-')
-                    datetime.strptime(start.strip(), '%d-%m-%Y')
-                    datetime.strptime(end.strip(), '%d-%m-%Y')
+                if ' - ' in period and allow_ranges:  # Note the spaces around the hyphen
+                    start_str, end_str = period.split(' - ')  # Split on ' - ' with spaces
+                    datetime.strptime(start_str.strip(), '%d-%m-%Y')
+                    datetime.strptime(end_str.strip(), '%d-%m-%Y')
                 else:
-                    if not allow_ranges and '-' in period and period.count('-') > 2:
+                    if not allow_ranges and period.count('-') > 2:
                         # For mandatory days, only allow DD-MM-YYYY format
                         return False
                     datetime.strptime(period.strip(), '%d-%m-%Y')
