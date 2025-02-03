@@ -515,6 +515,9 @@ class Scheduler:
         """Modified score calculation to consider weekday balance"""
         score = 0
         worker_id = worker['id']
+    
+        # Get work_percentage first
+        work_percentage = float(worker.get('work_percentage', 100))
 
         # Mandatory days (highest priority)
         if worker.get('mandatory_days'):
@@ -552,8 +555,8 @@ class Scheduler:
             score += 10
         if date.weekday() == self._get_least_used_weekday(worker_id):
             score += 10
-            
-       # Increase weight of weekday balance
+        
+        # Increase weight of weekday balance
         if self._check_weekday_balance(worker_id, date):
             score += 25  # Increased from 10 to give more importance 
 
@@ -797,4 +800,3 @@ class Scheduler:
             'constraint_skips': self.constraint_skips[worker_id],
             'stats': self._analyze_gaps(worker_id)
         }
-
