@@ -12,6 +12,7 @@ from kivy.graphics import Color, Line, Rectangle
 from datetime import datetime, timedelta
 from scheduler import Scheduler
 from exporters import StatsExporter
+from pdf_exporter import PDFExporter
 
 import json
 import logging
@@ -388,15 +389,18 @@ class CalendarViewScreen(Screen):
         # Export buttons
         button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
         save_btn = Button(text='Save to JSON')
-        export_btn = Button(text='Export to TXT')
+        export_txt_btn = Button(text='Export to TXT')
+        export_pdf_btn = Button(text='Export to PDF')  # New button
         stats_btn = Button(text='Worker Stats')
-    
+
         save_btn.bind(on_press=self.save_schedule)
-        export_btn.bind(on_press=self.export_schedule)
+        export_txt_btn.bind(on_press=self.export_schedule)
+        export_pdf_btn.bind(on_press=self.export_to_pdf)  # New binding
         stats_btn.bind(on_press=self.show_worker_stats)
-    
+
         button_layout.add_widget(save_btn)
-        button_layout.add_widget(export_btn)
+        button_layout.add_widget(export_txt_btn)
+        button_layout.add_widget(export_pdf_btn)  # Add new button
         button_layout.add_widget(stats_btn)
         self.layout.add_widget(button_layout)
     
@@ -422,7 +426,6 @@ class CalendarViewScreen(Screen):
         self.add_widget(self.layout)
         self.current_date = None
         self.schedule = {}
-
     
     def show_worker_stats(self, instance):
         if not self.schedule:
@@ -859,7 +862,91 @@ class CalendarViewScreen(Screen):
                          size_hint=(None, None), size=(400, 200))
             popup.open()
 
-
+    def export_to_pdf(self, instance):
+        try:
+            app = App.get_running_app()
+            exporter = PDFExporter(app.schedule_config)
+        
+            # Create content for export options
+            content = BoxLayout(orientation='vertical', spacing=10, padding=10)
+        
+            # Add radio buttons for export type
+            export_type = BoxLayout(orientation='vertical', spacing=5)
+            export_type.add_widget(Label(text='Export Type:'))
+        
+            radio_monthly = CheckBox(group='export_type', active=True)
+            radio_stats = CheckBox(group='export_type')
+        
+            type_1 = BoxLayout()
+            type_1.add_widget(radio_monthly)
+            type_1.add_widget(Label(text='Monthly Calendar'))
+        
+            type_2 = BoxLayout()
+            type_2.add_widget(radio_stats)
+            type_2.add_widget(Label(text='Worker Statistics'))
+        
+            export_type.add_widget(type_1)
+            export_type.add_widget(type_2)
+            content.add_widget(export_type)
+        
+            # Add export button
+            export_btn = Button(
+                text='Export',
+                size_hint_y=None,
+                height=40
+            )
+            content.add_widget(export_btn)
+        
+            # Create popup
+            popup = Popup(
+                title='Export to PDF',
+                content=content,
+                size_hint=(None, None),
+                size=(300, 200)
+            )
+        
+            # Define export action
+            def do_export(btn):
+                try:
+                    if radio_monthly.active:
+                        # Export current month
+                        filename = exporter.export_monthly_calendar(
+                            self.current_date.year,
+                            self.current_date.month
+                        )
+                    else:
+                        # Export worker statistics
+                        filename = exporter.export_worker_statistics()
+                
+                    success_popup = Popup(
+                        title='Success',
+                        content=Label(text=f'Exported to {filename}'),
+                        size_hint=(None, None),
+                        size=(400, 200)
+                    )
+                    popup.dismiss()
+                    success_popup.open()
+                
+                except Exception as e:
+                    error_popup = Popup(
+                        title='Error',
+                        content=Label(text=f'Export failed: {str(e)}'),
+                        size_hint=(None, None),
+                        size=(400, 200)
+                    )
+                    error_popup.open()
+        
+            export_btn.bind(on_press=do_export)
+            popup.open()
+        
+        except Exception as e:
+            popup = Popup(
+                title='Error',
+                content=Label(text=f'Export failed: {str(e)}'),
+                size_hint=(None, None),
+                size=(400, 200)
+            )
+            popup.open()
               
 class ShiftManagerApp(App):
     def __init__(self, **kwargs):
