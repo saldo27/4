@@ -86,17 +86,20 @@ class SetupScreen(Screen):
         """Parse and validate holiday dates"""
         if not holidays_str.strip():
             return []
-        
+    
         holidays = []
         try:
             for date_str in holidays_str.split(';'):
                 date_str = date_str.strip()
-                if date_str:
-                    holiday_date = datetime.strptime(date_str, '%d-%m-%Y')
-                    holidays.append(holiday_date)
+                if date_str:  # Only process non-empty strings
+                    try:
+                        holiday_date = datetime.strptime(date_str.strip(), '%d-%m-%Y')
+                        holidays.append(holiday_date)
+                    except ValueError as e:
+                        raise ValueError(f"Invalid date format for '{date_str}'. Use DD-MM-YYYY")
             return sorted(holidays)
-        except ValueError as e:
-            raise ValueError(f"Invalid holiday date format: {str(e)}")
+        except Exception as e:
+            raise ValueError(f"Error parsing holidays: {str(e)}")
         
     def validate_and_continue(self, instance):
         try:
