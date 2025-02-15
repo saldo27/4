@@ -532,76 +532,69 @@ class Scheduler:
         return 0  # Fallback to Monday if something goes wrong
 
     def _calculate_worker_score(self, worker, date, post):
-        """Modified score calculation to consider weekday balance"""
+        """Modified score calculation to ensure better shift distribution"""
         score = 0
         worker_id = worker['id']
+
+        # Get current number of shifts and target
+        current_shifts = len(self.worker_assignments[worker_id])
+        target_shifts = worker['target_shifts']
     
-        # Get work_percentage first
+        # Highest priority: Workers who haven't been assigned any shifts
+        if current_shifts == 0:
+            score += 500  # Very high priority for workers with no shifts
+    
+        # High priority: Workers who are significantly below their target
+        shift_difference = target_shifts - current_shifts
+        if shift_difference > 0:
+            # Exponential score increase for workers further below target
+            score += (shift_difference * shift_difference) * 50
+        else:
+            # Significant penalty for workers who are at or above target
+            score -= (abs(shift_difference) * 100)
+
+        # Additional scoring components (with adjusted weights)
         work_percentage = float(worker.get('work_percentage', 100))
 
-        # Mandatory days (highest priority)
+        # Mandatory days (still high priority)
         if worker.get('mandatory_days'):
             mandatory_dates = self._parse_dates(worker['mandatory_days'])
             if date in mandatory_dates:
                 score += 1000
 
-        # Target shifts balance
-        current_shifts = len(self.worker_assignments[worker_id])
-        shift_difference = worker['target_shifts'] - current_shifts
-        score += shift_difference * 30
-
-        # Monthly balance
+        # Monthly balance (reduced weight)
         month_shifts = sum(1 for d in self.worker_assignments[worker_id]
                           if d.year == date.year and d.month == date.month)
         target_month_shifts = worker['target_shifts'] / self._get_schedule_months()
         monthly_balance = target_month_shifts - month_shifts
-        score += monthly_balance * 20
+        score += monthly_balance * 10
 
-        # Gap since last assignment
+        # Gap since last assignment (reduced weight)
         assignments = sorted(self.worker_assignments[worker_id])
         if assignments:
             days_since_last = abs((date - assignments[-1]).days)
             if days_since_last not in [6, 7, 8, 13, 14, 15, 20, 21, 22]:
-                score += days_since_last * 10
+                score += days_since_last * 5
         else:
-            score += 50
+            score += 25
 
-        # Part-time worker preference
-        if work_percentage < 100:
-            score += 15
-
-        # Post rotation
+        # Post rotation (reduced weight)
         if self._is_balanced_post_rotation(worker_id, post):
-            score += 10
+            score += 5
 
-        # Post rotation balance (increased weight)
-        post_counts = {i: 0 for i in range(self.num_shifts)}
-        for assigned_date in self.worker_assignments[worker_id]:
-            if assigned_date in self.schedule:
-                assigned_post = self.schedule[assigned_date].index(worker_id)
-                post_counts[assigned_post] += 1
-    
-        min_post_count = min(post_counts.values())
-        if post_counts.get(post, 0) == min_post_count:
-            score += 40  # New bonus for balanced post assignment
-        else:
-            # Penalty for unbalanced posts
-            score -= (post_counts.get(post, 0) - min_post_count) * 15
-
-        ## Weekday balance (increased weight)
+        # Weekday balance (reduced weight)
         weekday = date.weekday()
         weekday_counts = self.worker_weekdays[worker_id]
         min_weekday_count = min(weekday_counts.values())
         if weekday_counts[weekday] == min_weekday_count:
-            score += 50  # Increased from 25
+            score += 25
         else:
-            # Penalty for unbalanced weekdays
-            score -= (weekday_counts[weekday] - min_weekday_count) * 20
+            score -= (weekday_counts[weekday] - min_weekday_count) * 10
 
-        # Weekend penalty
+        # Weekend penalty (increased weight)
         if self._is_weekend_day(date):
             weekend_count = len(self.worker_weekends[worker_id])
-            score -= weekend_count * 5
+            score -= weekend_count * 15
 
         return score
 
