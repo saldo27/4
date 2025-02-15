@@ -516,93 +516,136 @@ class CalendarViewScreen(Screen):
                 self.current_date = min(self.schedule.keys())
                 self.display_month(self.current_date)
 
-    def display_month(self, date):  # <-- Correct indentation
+    def display_month(self, date):
         self.calendar_grid.clear_widgets()
         self.details_layout.clear_widgets()
-        
+    
         # Update month label
         self.month_label.text = date.strftime('%B %Y')
-        
+    
         # Calculate the first day of the month
         first_day = datetime(date.year, date.month, 1)
-        
+    
         # Calculate number of days in the month
         if date.month == 12:
             next_month = datetime(date.year + 1, 1, 1)
         else:
             next_month = datetime(date.year, date.month + 1, 1)
         days_in_month = (next_month - first_day).days
-        
+    
         # Calculate the weekday of the first day (0 = Monday, 6 = Sunday)
         first_weekday = first_day.weekday()
-        
+    
         # Add empty cells for days before the first of the month
         for _ in range(first_weekday):
-            self.calendar_grid.add_widget(Label(text=''))
-        
+            empty_cell = Label(text='')
+            self.calendar_grid.add_widget(empty_cell)
+    
         # Add days of the month
-            for day in range(1, days_in_month + 1):
-                current = datetime(date.year, date.month, day)
-                cell = BoxLayout(orientation='vertical', spacing=2)
+        for day in range(1, days_in_month + 1):
+            current = datetime(date.year, date.month, day)
         
+            # Create a BoxLayout for the cell with vertical orientation
+            cell = BoxLayout(
+                orientation='vertical',
+                spacing=2,
+                padding=[2, 2],  # Add padding inside cells
+                size_hint_y=None,
+                height=120  # Increase cell height
+            )
+
             # Set background color
             bg_color = self.get_day_color(current)
             with cell.canvas.before:
                 Color(*bg_color)
                 Rectangle(pos=cell.pos, size=cell.size)
-        
-        # Add color coding for weekends and holidays
+            
+                # Add border
+                Color(0.7, 0.7, 0.7, 1)  # Gray border
+                Line(rectangle=(cell.x, cell.y, cell.width, cell.height))
+
+            # Day number with special formatting for weekends/holidays
             app = App.get_running_app()
             is_weekend = current.weekday() >= 5
             is_holiday = current in app.schedule_config.get('holidays', [])
         
-        # Day number with special formatting for weekends/holidays
-        day_label = Label(
-            text=str(day),
-            size_hint_y=0.2,
-            bold=True,
-            color=(1, 0, 0, 1) if is_weekend or is_holiday else (0, 0, 0, 1)
-        )
-        cell.add_widget(day_label)
-            
-        # If there are workers scheduled for this day, show their IDs with shift numbers
-        if current in self.schedule:
-            workers = self.schedule[current]
-            workers_text = '\n'.join(f"S{i+1}: {w}" for i, w in enumerate(workers))
+            # Create header box for day number
+            header_box = BoxLayout(
+                orientation='horizontal',
+                size_hint_y=None,
+                height=20
+            )
         
-            # Add shift count indicator
-            shift_count = len(workers)
-            total_shifts = App.get_running_app().schedule_config.get('num_shifts', 0)
-            count_label = Label(
-                text=f'[{shift_count}/{total_shifts}]',
-                font_size='8sp',
-                color=(0.5, 0.5, 0.5, 1)
+            day_label = Label(
+                text=str(day),
+                bold=True,
+                color=(1, 0, 0, 1) if is_weekend or is_holiday else (0, 0, 0, 1),
+                size_hint_x=0.3
             )
-            cell.add_widget(count_label)
-                
-        # Make the cell clickable and highlight it
-            btn = Button(
-            size_hint=(1, 1),
-            background_color=(0.8, 0.9, 1, 0.3),
-            background_normal=''
-            )
-            btn.bind(on_press=lambda x, d=current: self.show_details(d))
-               
-        # Add the button as a background
-            cell.bind(size=btn.setter('size'), pos=btn.setter('pos'))
-            cell.add_widget(btn)
+            header_box.add_widget(day_label)
+        
+            # Add shift count if there are workers
+            if current in self.schedule:
+                shift_count = len(self.schedule[current])
+                total_shifts = App.get_running_app().schedule_config.get('num_shifts', 0)
+                count_label = Label(
+                    text=f'[{shift_count}/{total_shifts}]',
+                    color=(0.4, 0.4, 0.4, 1),
+                    size_hint_x=0.7,
+                    halign='right'
+                )
+                header_box.add_widget(count_label)
+        
+            cell.add_widget(header_box)
+        
+            # Add worker information
+            if current in self.schedule:
+                workers = self.schedule[current]
+                content_box = BoxLayout(
+                    orientation='vertical',
+                    padding=[5, 2],
+                    spacing=2
+                )
             
-        # Add a border to make the cell more visible
-        with cell.canvas.before:
-            Color(0.8, 0.8, 0.8, 1)  # Light gray color for borders
-            Line(rectangle=(cell.x, cell.y, cell.width, cell.height))
+                for i, worker_id in enumerate(workers):
+                    worker_label = Label(
+                        text=f'S{i+1}: {worker_id}',
+                        color=(0, 0, 0, 1),  # Black text
+                        font_size='13sp',     # Adjusted font size
+                        size_hint_y=None,
+                        height=20,
+                        halign='left',
+                        valign='middle'
+                    )
+                    worker_label.bind(size=worker_label.setter('text_size'))
+                    content_box.add_widget(worker_label)
+            
+                cell.add_widget(content_box)
+            
+                # Make the cell clickable
+                btn = Button(
+                    background_color=(0.95, 0.95, 0.95, 0.3),
+                    background_normal=''
+                )
+                btn.bind(on_press=lambda x, d=current: self.show_details(d))
+                cell.bind(size=btn.setter('size'), pos=btn.setter('pos'))
+            
+                # Add the button at the beginning of the cell's widgets
+                cell.add_widget(btn)
             
             self.calendar_grid.add_widget(cell)
-        
+    
         # Fill remaining cells
         remaining_cells = 42 - (first_weekday + days_in_month)  # 42 = 6 rows * 7 days
         for _ in range(remaining_cells):
-            self.calendar_grid.add_widget(Label(text=''))
+            empty_cell = Label(text='')
+            self.calendar_grid.add_widget(empty_cell)
+
+        # Update the calendar grid's properties
+        self.calendar_grid.rows = 6  # Fixed number of rows
+        self.calendar_grid.cols = 7  # Fixed number of columns
+        self.calendar_grid.spacing = [2, 2]  # Add spacing between cells
+        self.calendar_grid.padding = [5, 5]  # Add padding around the grid
 
     def show_details(self, date):
         self.details_layout.clear_widgets()
