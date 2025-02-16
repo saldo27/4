@@ -123,7 +123,7 @@ class Scheduler:
             
                 remaining_shifts = self.num_shifts - len(self.schedule.get(current_date, []))
                 for _ in range(remaining_shifts):
-                    best_worker = self._find_best_worker_strict_target(current_date)
+                    best_worker = self._find_best_worker(current_date)
                     if best_worker:
                         if current_date not in self.schedule:
                             self.schedule[current_date] = []
