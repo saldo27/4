@@ -123,7 +123,7 @@ class Scheduler:
                 self._assign_day_shifts(current_date)
                 current_date += timedelta(days=1)
 
-        s    elf._cleanup_schedule()
+            self._cleanup_schedule()
             self._validate_final_schedule()
         
             return self.schedule
