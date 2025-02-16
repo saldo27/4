@@ -458,9 +458,9 @@ class Scheduler:
                 break
         
     def _find_best_worker(self, date, post):
-        """Find the best worker using the new assignment strategy"""
+        """Find the best worker using the current assignment strategy"""
         logging.info(f"Finding worker for {date.strftime('%Y-%m-%d')} post {post}")
-        
+    
         # Try 1: Balance-focused assignment
         balanced_worker = self._try_balance_assignment(date, post)
         if balanced_worker:
@@ -541,7 +541,7 @@ class Scheduler:
         return 0  # Fallback to Monday if something goes wrong
 
     def _calculate_worker_score(self, worker, date, post):
-        """Score calculation with target-based distribution"""
+        """Comprehensive score calculation with strict target enforcement"""
         score = 0
         worker_id = worker['id']
 
@@ -550,19 +550,21 @@ class Scheduler:
         target_shifts = worker['target_shifts']
         shift_difference = target_shifts - current_shifts
 
-        # Prevent excessive assignments
+        # STRICT TARGET ENFORCEMENT: Never exceed target + 1
         if current_shifts >= target_shifts + 1:
-            return -10000  # Prevent exceeding target + 1
+            return float('-inf')  # Completely prevent exceeding target + 1
 
-        # Prioritize workers below target
+        # Target-based priority (with strict ±1 enforcement)
         if shift_difference > 1:
-            score += 2000 + (shift_difference * 100)
+            score += 5000 + (shift_difference * 100)  # High priority for under-assigned
         elif shift_difference == 1:
-            score += 1000
+            score += 2000  # Needs exactly one more shift
         elif shift_difference == 0:
-            score += 100
+            score += 1000  # At target
+        elif shift_difference == -1:
+            score += 500   # One over target (still allowed but lower priority)
         else:
-            score -= 500  # Penalty for being over target
+            return float('-inf')  # Prevent any assignment more than 1 away from target
 
         # Gap considerations (minimum gap enforcement)
         assignments = sorted(self.worker_assignments[worker_id])
@@ -585,20 +587,28 @@ class Scheduler:
         weekday_counts = self.worker_weekdays[worker_id]
         min_weekday_count = min(weekday_counts.values())
         if weekday_counts[weekday] == min_weekday_count:
-            score += 25
+            score += 50
         else:
             score -= (weekday_counts[weekday] - min_weekday_count) * 10
         
-        # Weekend balance
+        # Weekend handling
         if self._is_weekend_day(date):
             weekend_count = len(self.worker_weekends[worker_id])
             score -= weekend_count * 15
+        
+            # Check consecutive weekends
+            if self._has_three_consecutive_weekends(worker_id, date):
+                score -= 1000
 
         # Post rotation (minor factor)
         if self._is_balanced_post_rotation(worker_id, post):
-            score += 5
-
-        return score
+            score += 15
+            
+        # Part-time worker consideration
+        work_percentage = float(worker.get('work_percentage', 100))
+        if work_percentage < 100:
+            score += 35
+            return score
 
     def _try_balance_assignment(self, date, post):
         """Try to find a worker that would improve balance"""
