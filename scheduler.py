@@ -101,7 +101,7 @@ class Scheduler:
             return datetime.utcnow()
 
     def generate_schedule(self):
-        """Generate schedule with strict target enforcement"""
+        """Generate the complete schedule"""
         logging.info("=== Starting schedule generation ===")
         try:
             self._reset_schedule()
@@ -114,26 +114,15 @@ class Scheduler:
             logging.info("Step 2: Assigning mandatory days...")
             self._assign_mandatory_guards()
         
-            # Step 3: Regular assignments with strict target control
+            # Step 3: Proceed with regular shift assignments
             logging.info("Step 3: Proceeding with regular shift assignments...")
             current_date = self.start_date
             while current_date <= self.end_date:
-                if current_date not in self.schedule:
-                    self.schedule[current_date] = []
-            
-                remaining_shifts = self.num_shifts - len(self.schedule.get(current_date, []))
-                for _ in range(remaining_shifts):
-                    best_worker = self._find_best_worker(current_date)
-                    if best_worker:
-                        if current_date not in self.schedule:
-                            self.schedule[current_date] = []
-                        self.schedule[current_date].append(best_worker['id'])
-                        self.worker_assignments[best_worker['id']].append(current_date)
-            
+                self._assign_day_shifts(current_date)  # This method handles post assignment
                 current_date += timedelta(days=1)
 
-            # Step 4: Validate shift distribution
-            self._validate_shift_distribution()
+            self._cleanup_schedule()
+            self._validate_final_schedule()
         
             return self.schedule
 
@@ -440,8 +429,8 @@ class Scheduler:
     
         for post in range(remaining_shifts):
             logging.info(f"Finding worker for shift {post + 1}/{self.num_shifts}")
-            best_worker = self._find_best_worker(date, post)
-        
+            best_worker = self._find_best_worker(date, post)  # Correct call with both arguments
+    
             if best_worker:
                 worker_id = best_worker['id']
                 if len(self.schedule[date]) < self.num_shifts:  # Double-check before adding
