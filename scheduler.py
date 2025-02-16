@@ -101,22 +101,31 @@ class Scheduler:
             return datetime.utcnow()
 
     def generate_schedule(self):
-        """Generate the complete schedule"""
+        """Generate the complete schedule with correct order of operations"""
         logging.info("=== Starting schedule generation ===")
         try:
             self._reset_schedule()
-            self._assign_mandatory_guards()
+        
+            # Step 1: Calculate target shifts FIRST
+            logging.info("Step 1: Calculating target shifts...")
             self._calculate_target_shifts()
-            
+        
+            # Step 2: Assign mandatory days
+            logging.info("Step 2: Assigning mandatory days...")
+            self._assign_mandatory_guards()
+        
+            # Step 3: Proceed with regular assignments
+            logging.info("Step 3: Proceeding with regular shift assignments...")
             current_date = self.start_date
             while current_date <= self.end_date:
-                logging.info(f"\nProcessing date: {current_date.strftime('%Y-%m-%d')}")
+                if current_date not in self.schedule:
+                    self.schedule[current_date] = []
                 self._assign_day_shifts(current_date)
                 current_date += timedelta(days=1)
 
-            self._cleanup_schedule()
+        s    elf._cleanup_schedule()
             self._validate_final_schedule()
-            
+        
             return self.schedule
 
         except Exception as e:
@@ -395,7 +404,7 @@ class Scheduler:
         """Calculate target number of shifts for each worker based on their percentage"""
         total_days = (self.end_date - self.start_date).days + 1
         total_shifts = total_days * self.num_shifts
-    
+
         # Convert work_percentage to float when summing
         total_percentage = sum(float(str(w.get('work_percentage', 100)).strip()) for w in self.workers_data)
 
@@ -532,57 +541,46 @@ class Scheduler:
         return 0  # Fallback to Monday if something goes wrong
 
     def _calculate_worker_score(self, worker, date, post):
-        """Modified score calculation to ensure better shift distribution"""
+        """Score calculation with target-based distribution"""
         score = 0
         worker_id = worker['id']
 
         # Get current number of shifts and target
         current_shifts = len(self.worker_assignments[worker_id])
         target_shifts = worker['target_shifts']
-    
-        # Highest priority: Workers who haven't been assigned any shifts
-        if current_shifts == 0:
-            score += 500  # Very high priority for workers with no shifts
-    
-        # High priority: Workers who are significantly below their target
         shift_difference = target_shifts - current_shifts
-        if shift_difference > 0:
-            # Exponential score increase for workers further below target
-            score += (shift_difference * shift_difference) * 50
+
+        # Prevent excessive assignments
+        if current_shifts >= target_shifts + 1:
+            return -10000  # Prevent exceeding target + 1
+
+        # Prioritize workers below target
+        if shift_difference > 1:
+            score += 2000 + (shift_difference * 100)
+        elif shift_difference == 1:
+            score += 1000
+        elif shift_difference == 0:
+            score += 100
         else:
-            # Significant penalty for workers who are at or above target
-            score -= (abs(shift_difference) * 100)
+            score -= 500  # Penalty for being over target
 
-        # Additional scoring components (with adjusted weights)
-        work_percentage = float(worker.get('work_percentage', 100))
-
-        # Mandatory days (still high priority)
-        if worker.get('mandatory_days'):
-            mandatory_dates = self._parse_dates(worker['mandatory_days'])
-            if date in mandatory_dates:
-                score += 1000
-
+        # Gap considerations (minimum gap enforcement)
+        assignments = sorted(self.worker_assignments[worker_id])
+        if assignments:
+            days_since_last = abs((date - assignments[-1]).days)
+            if days_since_last < 3:  # Strict minimum gap
+                return -5000
+            if days_since_last not in [6, 7, 8, 13, 14, 15, 20, 21, 22]:
+                score += days_since_last * 2
+                
         # Monthly balance (reduced weight)
         month_shifts = sum(1 for d in self.worker_assignments[worker_id]
                           if d.year == date.year and d.month == date.month)
         target_month_shifts = worker['target_shifts'] / self._get_schedule_months()
         monthly_balance = target_month_shifts - month_shifts
         score += monthly_balance * 10
-
-        # Gap since last assignment (reduced weight)
-        assignments = sorted(self.worker_assignments[worker_id])
-        if assignments:
-            days_since_last = abs((date - assignments[-1]).days)
-            if days_since_last not in [6, 7, 8, 13, 14, 15, 20, 21, 22]:
-                score += days_since_last * 5
-        else:
-            score += 25
-
-        # Post rotation (reduced weight)
-        if self._is_balanced_post_rotation(worker_id, post):
-            score += 5
-
-        # Weekday balance (reduced weight)
+        
+        # Weekday balance 
         weekday = date.weekday()
         weekday_counts = self.worker_weekdays[worker_id]
         min_weekday_count = min(weekday_counts.values())
@@ -590,11 +588,15 @@ class Scheduler:
             score += 25
         else:
             score -= (weekday_counts[weekday] - min_weekday_count) * 10
-
-        # Weekend penalty (increased weight)
+        
+        # Weekend balance
         if self._is_weekend_day(date):
             weekend_count = len(self.worker_weekends[worker_id])
             score -= weekend_count * 15
+
+        # Post rotation (minor factor)
+        if self._is_balanced_post_rotation(worker_id, post):
+            score += 5
 
         return score
 
