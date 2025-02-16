@@ -101,12 +101,12 @@ class Scheduler:
             return datetime.utcnow()
 
     def generate_schedule(self):
-        """Generate the complete schedule with correct order of operations"""
+        """Generate schedule with strict target enforcement"""
         logging.info("=== Starting schedule generation ===")
         try:
             self._reset_schedule()
         
-            # Step 1: Calculate target shifts FIRST
+            # Step 1: Calculate target shifts
             logging.info("Step 1: Calculating target shifts...")
             self._calculate_target_shifts()
         
@@ -114,17 +114,26 @@ class Scheduler:
             logging.info("Step 2: Assigning mandatory days...")
             self._assign_mandatory_guards()
         
-            # Step 3: Proceed with regular assignments
+            # Step 3: Regular assignments with strict target control
             logging.info("Step 3: Proceeding with regular shift assignments...")
             current_date = self.start_date
             while current_date <= self.end_date:
                 if current_date not in self.schedule:
-                    self.schedule[current_date] = []
-                self._assign_day_shifts(current_date)
+                self.schedule[current_date] = []
+            
+                remaining_shifts = self.num_shifts - len(self.schedule.get(current_date, []))
+                for _ in range(remaining_shifts):
+                    best_worker = self._find_best_worker_strict_target(current_date)
+                    if best_worker:
+                        if current_date not in self.schedule:
+                            self.schedule[current_date] = []
+                        self.schedule[current_date].append(best_worker['id'])
+                        self.worker_assignments[best_worker['id']].append(current_date)
+            
                 current_date += timedelta(days=1)
 
-            self._cleanup_schedule()
-            self._validate_final_schedule()
+            # Step 4: Validate shift distribution
+            self._validate_shift_distribution()
         
             return self.schedule
 
