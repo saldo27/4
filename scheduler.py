@@ -119,7 +119,7 @@ class Scheduler:
             current_date = self.start_date
             while current_date <= self.end_date:
                 if current_date not in self.schedule:
-                self.schedule[current_date] = []
+                    self.schedule[current_date] = []
             
                 remaining_shifts = self.num_shifts - len(self.schedule.get(current_date, []))
                 for _ in range(remaining_shifts):
