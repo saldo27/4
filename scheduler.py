@@ -455,7 +455,7 @@ class Scheduler:
                 logging.error(f"Could not find suitable worker for shift {post + 1}")
                 break
         
-    def _find_best_worker(self, date, post):
+   def _find_best_worker(self, date, post):
         """Find the best worker using the current assignment strategy"""
         logging.info(f"Finding worker for {date.strftime('%Y-%m-%d')} post {post}")
     
@@ -468,24 +468,33 @@ class Scheduler:
         # Try 2: Normal assignment
         candidates = self._get_candidates(date, post)
         if candidates:
-            selected = max(candidates, key=lambda x: x[1])[0]
-            logging.info(f"Normal assignment: Selected worker {selected['id']}")
-            return selected
+            try:
+                selected = max(candidates, key=lambda x: x[1])[0]
+                logging.info(f"Normal assignment: Selected worker {selected['id']}")
+                return selected
+            except (ValueError, TypeError) as e:
+                logging.warning(f"Error selecting from candidates: {str(e)}")
 
         # Try 3: Part-time workers with reduced gap
         candidates = self._get_candidates(date, post, try_part_time=True)
         if candidates:
-            selected = max(candidates, key=lambda x: x[1])[0]
-            logging.info(f"Part-time assignment: Selected worker {selected['id']}")
-            self.constraint_skips[selected['id']]['reduced_gap'].append(date)
-            return selected
+            try:
+                selected = max(candidates, key=lambda x: x[1])[0]
+                logging.info(f"Part-time assignment: Selected worker {selected['id']}")
+                self.constraint_skips[selected['id']]['reduced_gap'].append(date)
+                return selected
+            except (ValueError, TypeError) as e:
+                logging.warning(f"Error selecting from part-time candidates: {str(e)}")
 
         # Try 4: Skip constraints
         candidates = self._get_candidates(date, post, skip_constraints=True)
         if candidates:
-            selected = max(candidates, key=lambda x: x[1])[0]
-            logging.info(f"Constraint skip: Selected worker {selected['id']}")
-            return selected
+            try:
+                selected = max(candidates, key=lambda x: x[1])[0]
+                logging.info(f"Constraint skip: Selected worker {selected['id']}")
+                return selected
+            except (ValueError, TypeError) as e:
+                logging.warning(f"Error selecting from constraint-skip candidates: {str(e)}")
 
         logging.error(f"No valid workers found for {date}")
         return None
@@ -493,7 +502,7 @@ class Scheduler:
     def _get_candidates(self, date, post, skip_constraints=False, try_part_time=False):
         """Get suitable candidates with their scores"""
         candidates = []
-        
+    
         for worker in self.workers_data:
             worker_id = worker['id']
             work_percentage = float(worker.get('work_percentage', 100))
@@ -513,14 +522,16 @@ class Scheduler:
                 skip_constraints=skip_constraints,
                 try_part_time=try_part_time
             )
-            
+        
             if not passed:
                 logging.debug(f"Worker {worker_id} skipped: {reason}")
                 continue
 
             score = self._calculate_worker_score(worker, date, post)
-            candidates.append((worker, score))
-            logging.debug(f"Worker {worker_id} added as candidate with score {score}")
+            # Only add candidate if score is not None or -inf
+            if score is not None and score != float('-inf'):
+                candidates.append((worker, score))
+                logging.debug(f"Worker {worker_id} added as candidate with score {score}")
 
         return candidates
     
@@ -540,73 +551,86 @@ class Scheduler:
 
     def _calculate_worker_score(self, worker, date, post):
         """Comprehensive score calculation with strict target enforcement"""
-        score = 0
-        worker_id = worker['id']
+        try:
+            score = 0
+            worker_id = worker['id']
 
-        # Get current number of shifts and target
-        current_shifts = len(self.worker_assignments[worker_id])
-        target_shifts = worker['target_shifts']
-        shift_difference = target_shifts - current_shifts
+            # Get current number of shifts and target
+            current_shifts = len(self.worker_assignments[worker_id])
+            target_shifts = worker['target_shifts']
+            shift_difference = target_shifts - current_shifts
 
-        # STRICT TARGET ENFORCEMENT: Never exceed target + 1
-        if current_shifts >= target_shifts + 1:
-            return float('-inf')  # Completely prevent exceeding target + 1
+            # STRICT TARGET ENFORCEMENT: Never exceed target + 1
+            if current_shifts >= target_shifts + 1:
+                return float('-inf')
 
-        # Target-based priority (with strict ±1 enforcement)
-        if shift_difference > 1:
-            score += 5000 + (shift_difference * 100)  # High priority for under-assigned
-        elif shift_difference == 1:
-            score += 2000  # Needs exactly one more shift
-        elif shift_difference == 0:
-            score += 1000  # At target
-        elif shift_difference == -1:
-            score += 500   # One over target (still allowed but lower priority)
-        else:
-            return float('-inf')  # Prevent any assignment more than 1 away from target
+            # Target-based priority (with strict ±1 enforcement)
+            if shift_difference > 1:
+                score += 5000 + (shift_difference * 100)  # High priority for under-assigned
+            elif shift_difference == 1:
+                score += 2000  # Needs exactly one more shift
+            elif shift_difference == 0:
+                score += 1000  # At target
+            elif shift_difference == -1:
+                score += 500   # One over target (still allowed but lower priority)
+            else:
+                return float('-inf')
 
-        # Gap considerations (minimum gap enforcement)
-        assignments = sorted(self.worker_assignments[worker_id])
-        if assignments:
-            days_since_last = abs((date - assignments[-1]).days)
-            if days_since_last < 3:  # Strict minimum gap
-                return -5000
-            if days_since_last not in [6, 7, 8, 13, 14, 15, 20, 21, 22]:
-                score += days_since_last * 2
-                
-        # Monthly balance (reduced weight)
-        month_shifts = sum(1 for d in self.worker_assignments[worker_id]
-                          if d.year == date.year and d.month == date.month)
-        target_month_shifts = worker['target_shifts'] / self._get_schedule_months()
-        monthly_balance = target_month_shifts - month_shifts
-        score += monthly_balance * 10
-        
-        # Weekday balance 
-        weekday = date.weekday()
-        weekday_counts = self.worker_weekdays[worker_id]
-        min_weekday_count = min(weekday_counts.values())
-        if weekday_counts[weekday] == min_weekday_count:
-            score += 50
-        else:
-            score -= (weekday_counts[weekday] - min_weekday_count) * 10
-        
-        # Weekend handling
-        if self._is_weekend_day(date):
-            weekend_count = len(self.worker_weekends[worker_id])
-            score -= weekend_count * 15
-        
-            # Check consecutive weekends
-            if self._has_three_consecutive_weekends(worker_id, date):
-                score -= 1000
+            # Gap considerations (minimum gap enforcement)
+            assignments = sorted(self.worker_assignments[worker_id])
+            if assignments:
+                days_since_last = abs((date - assignments[-1]).days)
+                if days_since_last < 3:  # Strict minimum gap
+                    return float('-inf')
+                if days_since_last not in [6, 7, 8, 13, 14, 15, 20, 21, 22]:
+                    score += days_since_last * 2
 
-        # Post rotation (minor factor)
-        if self._is_balanced_post_rotation(worker_id, post):
-            score += 15
+            # Monthly balance
+            month_shifts = sum(1 for d in self.worker_assignments[worker_id]
+                              if d.year == date.year and d.month == date.month)
+            target_month_shifts = worker['target_shifts'] / self._get_schedule_months()
+            monthly_balance = target_month_shifts - month_shifts
+            score += monthly_balance * 10
+
+            # Post rotation balance
+            if self._is_balanced_post_rotation(worker_id, post):
+                score += 40
+            else:
+                post_counts = {i: 0 for i in range(self.num_shifts)}
+                for assigned_date in self.worker_assignments[worker_id]:
+                    if assigned_date in self.schedule:
+                        assigned_post = self.schedule[assigned_date].index(worker_id)
+                        post_counts[assigned_post] += 1
+                min_post_count = min(post_counts.values())
+                score -= (post_counts.get(post, 0) - min_post_count) * 15
+
+            # Weekday balance
+            weekday = date.weekday()
+            weekday_counts = self.worker_weekdays[worker_id]
+            min_weekday_count = min(weekday_counts.values())
+            if weekday_counts[weekday] == min_weekday_count:
+                score += 50
+            else:
+                score -= (weekday_counts[weekday] - min_weekday_count) * 20
+
+            # Weekend handling
+            if self._is_weekend_day(date):
+                weekend_count = len(self.worker_weekends[worker_id])
+                score -= weekend_count * 15
             
-        # Part-time worker consideration
-        work_percentage = float(worker.get('work_percentage', 100))
-        if work_percentage < 100:
-            score += 35
+                if self._has_three_consecutive_weekends(worker_id, date):
+                    score -= 1000
+
+            # Part-time worker consideration
+            work_percentage = float(worker.get('work_percentage', 100))
+            if work_percentage < 100:
+                score += 15
+
             return score
+
+        except Exception as e:
+            logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
+            return None
 
     def _try_balance_assignment(self, date, post):
         """Try to find a worker that would improve balance"""
