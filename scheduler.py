@@ -517,109 +517,106 @@ class Scheduler:
     def _calculate_worker_score(self, worker, date, post):
         """
         Calculate a score for assigning a worker to a shift on a specific date and post.
-    
-        Higher scores indicate better assignments. The scoring system considers:
-        1. Target shifts remaining
-        2. Work percentage (part-time vs full-time)
-        3. Post rotation balance
-        4. Weekday balance
-        5. Weekend and holiday distribution
+        Implements a more lenient scoring system that prioritizes completing shifts over perfect balance.
     
         Args:
-            worker (dict): Worker data including id, work_percentage, and target_shifts
-            date (datetime): The date of the shift
-            post (int): The post number for the shift
-    
+            worker (dict): Worker data including id, target_shifts, work_percentage
+            date (datetime): The date to assign
+            post (int): The post number (0-based)
+        
         Returns:
-            float: Score for this assignment, higher is better
-                float('-inf') for invalid assignments
-                None if there was an error calculating the score
+            float: Score for this assignment (higher is better)
+                  float('-inf') for invalid assignments
+                  None if error occurs
         """
         try:
-            score = 0
             worker_id = worker['id']
+            score = 0
         
-            # --- Target Shifts Score ---
+            # --- Basic Constraints Check ---
+            if self._is_worker_unavailable(worker_id, date):
+                return float('-inf')
+            
+            # --- Target Shifts Priority (Highest Weight) ---
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = worker.get('target_shifts', 0)
             shift_difference = target_shifts - current_shifts
         
-            if shift_difference > 5:
-                score += 10000  # High priority for workers far below target
+            # More aggressive scoring for shifts remaining
+            if shift_difference > 10:
+                score += 15000  # High priority for workers far below target
+            elif shift_difference > 5:
+                score += 12000
             elif shift_difference > 0:
-                score += 5000   # Good priority for workers below target
+                score += 10000
             elif shift_difference == 0:
-                score += 1000   # Acceptable for workers at target
-            elif shift_difference > -3:
-                score += 500    # Allow slight over-assignment
+                score += 5000
+            elif shift_difference > -3:  # Allow slight over-assignment
+                score += 2000
             else:
                 return float('-inf')  # Too many shifts already
-        
-            # --- Work Percentage Consideration ---
+            
+            # --- Work Percentage Adjustment ---
             work_percentage = float(worker.get('work_percentage', 100))
-            target_with_percentage = target_shifts * (work_percentage / 100)
-        
             if work_percentage < 100:
-                if current_shifts < target_with_percentage:
-                    score += 2000  # Prioritize part-time workers below their adjusted target
-                else:
-                    score -= 1000  # Deprioritize part-time workers above their adjusted target
-        
-            # --- Post Rotation Score ---
+                # Prioritize part-time workers when they're below their adjusted target
+                adjusted_target = (target_shifts * work_percentage) / 100
+                if current_shifts < adjusted_target:
+                    score += 8000
+                
+            # --- Post Rotation (Medium Weight) ---
             post_counts = {i: 0 for i in range(self.num_shifts)}
             for assigned_date in self.worker_assignments[worker_id]:
                 if assigned_date in self.schedule:
                     assigned_post = self.schedule[assigned_date].index(worker_id)
                     post_counts[assigned_post] += 1
-        
+                
             current_post_count = post_counts.get(post, 0)
             min_post_count = min(post_counts.values()) if post_counts else 0
         
+            # More lenient post rotation scoring
             if current_post_count <= min_post_count:
-                score += 2000  # Encourage balanced post rotation
+                score += 3000
             elif current_post_count <= min_post_count + 1:
-                score += 1000  # Allow slight imbalance
+                score += 2000
             elif current_post_count <= min_post_count + 2:
-                score += 0     # Neutral for larger imbalance
-            else:
-                score -= 1000  # Discourage excessive imbalance
-        
-            # --- Weekday Balance Score ---
+                score += 1000
+            
+            # --- Weekday Balance (Lower Weight) ---
             weekday = date.weekday()
             weekdays = self.worker_weekdays[worker_id]
             current_weekday_count = weekdays[weekday]
             min_weekday_count = min(weekdays.values())
         
+            # Much more lenient weekday balance scoring
             if current_weekday_count <= min_weekday_count:
-                score += 2000  # Encourage balanced weekday distribution
-            elif current_weekday_count <= min_weekday_count + 1:
-                score += 1000  # Allow slight imbalance
+                score += 2000
             elif current_weekday_count <= min_weekday_count + 2:
-                score += 0     # Neutral for larger imbalance
-            else:
-                score -= 1000  # Discourage excessive imbalance
-        
-            # --- Weekend and Holiday Distribution ---
+                score += 1000
+            elif current_weekday_count <= min_weekday_count + 3:
+                score += 500
+            # No penalty for higher imbalance, just lower priority
+            
+            # --- Weekend/Holiday Distribution (Low Weight) ---
             is_weekend = self._is_weekend_day(date)
             is_holiday = self._is_holiday(date)
-            weekend_count = len(self.worker_weekends[worker_id])
-            expected_weekends = (current_shifts / 7) * 2  # Approximate expected weekend shifts
         
             if is_weekend or is_holiday:
+                weekend_count = len(self.worker_weekends[worker_id])
+                expected_weekends = (current_shifts / 7) * 2  # Approximate
+            
                 if weekend_count < expected_weekends:
-                    score += 1500  # Encourage fair weekend/holiday distribution
+                    score += 1000
                 elif weekend_count < expected_weekends + 2:
-                    score += 500   # Allow slight over-assignment of weekends/holidays
-                else:
-                    score -= 500   # Discourage excessive weekend/holiday assignments
-        
-            # --- Recent Assignment Penalty ---
+                    score += 500
+                
+            # --- Recent Assignment Consideration ---
             recent_assignments = sorted(self.worker_assignments[worker_id])
             if recent_assignments:
                 days_since_last = (date - recent_assignments[-1]).days
-                if days_since_last > 5:
-                    score += 1000  # Prefer workers who haven't worked recently
-        
+                if days_since_last >= 3:  # Prefer workers who haven't worked recently
+                    score += 1000
+                
             return score
         
         except Exception as e:
