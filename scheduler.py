@@ -455,7 +455,7 @@ class Scheduler:
                 logging.error(f"Could not find suitable worker for shift {post + 1}")
                 break
         
-   def _find_best_worker(self, date, post):
+    def _find_best_worker(self, date, post):
         """Find the best worker using the current assignment strategy"""
         logging.info(f"Finding worker for {date.strftime('%Y-%m-%d')} post {post}")
     
@@ -550,7 +550,7 @@ class Scheduler:
         return 0  # Fallback to Monday if something goes wrong
 
     def _calculate_worker_score(self, worker, date, post):
-        """Comprehensive score calculation with strict target enforcement"""
+        """Enhanced score calculation integrating existing balance methods"""
         try:
             score = 0
             worker_id = worker['id']
@@ -564,17 +564,42 @@ class Scheduler:
             if current_shifts >= target_shifts + 1:
                 return float('-inf')
 
-            # Target-based priority (with strict ±1 enforcement)
+            # Target-based priority with stronger enforcement
             if shift_difference > 1:
-                score += 5000 + (shift_difference * 100)  # High priority for under-assigned
+                score += 5000 + (shift_difference * 200)  # High priority for under-assigned
             elif shift_difference == 1:
                 score += 2000  # Needs exactly one more shift
             elif shift_difference == 0:
                 score += 1000  # At target
             elif shift_difference == -1:
-                score += 500   # One over target (still allowed but lower priority)
+                score += 100   # Reduced priority when one over target
             else:
                 return float('-inf')
+
+            # INTEGRATE POST ROTATION BALANCE
+            if self._is_balanced_post_rotation(worker_id, post):
+                score += 400  # Significant bonus for balanced post rotation
+            else:
+                post_counts = {i: 0 for i in range(self.num_shifts)}
+                for assigned_date in self.worker_assignments[worker_id]:
+                    if assigned_date in self.schedule:
+                        assigned_post = self.schedule[assigned_date].index(worker_id)
+                        post_counts[assigned_post] += 1
+            
+                current_count = post_counts.get(post, 0)
+                min_count = min(post_counts.values())
+                if current_count > min_count:
+                    score -= ((current_count - min_count) * 300)  # Strong penalty for imbalance
+
+            # INTEGRATE WEEKDAY BALANCE
+            if self._check_weekday_balance(worker_id, date):
+                score += 350  # Significant bonus for balanced weekday
+            else:
+                weekday = date.weekday()
+                weekdays = self.worker_weekdays[worker_id]
+                min_count = min(weekdays.values())
+                if weekdays[weekday] > min_count:
+                    score -= ((weekdays[weekday] - min_count) * 250)  # Strong penalty for imbalance
 
             # Gap considerations (minimum gap enforcement)
             assignments = sorted(self.worker_assignments[worker_id])
@@ -585,41 +610,13 @@ class Scheduler:
                 if days_since_last not in [6, 7, 8, 13, 14, 15, 20, 21, 22]:
                     score += days_since_last * 2
 
-            # Monthly balance
-            month_shifts = sum(1 for d in self.worker_assignments[worker_id]
-                              if d.year == date.year and d.month == date.month)
-            target_month_shifts = worker['target_shifts'] / self._get_schedule_months()
-            monthly_balance = target_month_shifts - month_shifts
-            score += monthly_balance * 10
-
-            # Post rotation balance
-            if self._is_balanced_post_rotation(worker_id, post):
-                score += 40
-            else:
-                post_counts = {i: 0 for i in range(self.num_shifts)}
-                for assigned_date in self.worker_assignments[worker_id]:
-                    if assigned_date in self.schedule:
-                        assigned_post = self.schedule[assigned_date].index(worker_id)
-                        post_counts[assigned_post] += 1
-                min_post_count = min(post_counts.values())
-                score -= (post_counts.get(post, 0) - min_post_count) * 15
-
-            # Weekday balance
-            weekday = date.weekday()
-            weekday_counts = self.worker_weekdays[worker_id]
-            min_weekday_count = min(weekday_counts.values())
-            if weekday_counts[weekday] == min_weekday_count:
-                score += 50
-            else:
-                score -= (weekday_counts[weekday] - min_weekday_count) * 20
-
             # Weekend handling
             if self._is_weekend_day(date):
                 weekend_count = len(self.worker_weekends[worker_id])
-                score -= weekend_count * 15
+                score -= weekend_count * 20
             
                 if self._has_three_consecutive_weekends(worker_id, date):
-                    score -= 1000
+                    return float('-inf')  # Prevent three consecutive weekends
 
             # Part-time worker consideration
             work_percentage = float(worker.get('work_percentage', 100))
@@ -631,7 +628,7 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
             return None
-
+    
     def _try_balance_assignment(self, date, post):
         """Try to find a worker that would improve balance"""
         candidates = []
