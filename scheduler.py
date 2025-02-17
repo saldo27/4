@@ -246,6 +246,42 @@ class Scheduler:
             return 4  # Friday
         return date.weekday()
 
+    def _can_work(self, worker_id, date):
+        """
+        Check if a worker can work on a given date.
+        Returns True if all basic constraints are met, False otherwise.
+        """
+        try:
+            # Check if worker is already assigned that day
+            if date in self.schedule and worker_id in self.schedule[date]:
+                return False
+
+            # Check minimum rest period (3 days)
+            assignments = self.worker_assignments[worker_id]
+            for assigned_date in assignments:
+                days_between = abs((date - assigned_date).days)
+                if days_between < 3:
+                    return False
+
+            # Check for mandatory assignments
+            if date in self.mandatory_assignments:
+                if worker_id in self.mandatory_assignments[date]:
+                    return True
+                if len(self.mandatory_assignments[date]) > 0:
+                    return False
+
+            # Check for unavailable dates
+            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+            if worker and 'unavailable_dates' in worker:
+                if date in worker['unavailable_dates']:
+                    return False
+
+            return True
+
+        except Exception as e:
+            logging.error(f"Error in _can_work for worker {worker_id}: {str(e)}")
+            return False
+
     def _is_worker_unavailable(self, worker_id, date):
         """Check if worker is unavailable on date"""
         worker = next(w for w in self.workers_data if w['id'] == worker_id)
