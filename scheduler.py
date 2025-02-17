@@ -296,32 +296,10 @@ class Scheduler:
 
         return True
 
-    def _is_balanced_post_rotation(self, worker_id, post_number):
-        """
-        Check if assigning this post maintains balanced rotation
-        A worker should work in all positions before repeating
-        """
-        posts = self.worker_posts[worker_id]
-        if len(posts) < self.num_shifts:
-            # Worker hasn't worked all posts yet, should work in new position
-            return post_number not in posts
-        else:
-            # Worker has worked all posts, check distribution
-            post_counts = {i: 0 for i in range(self.num_shifts)}
-            for assigned_date in self.worker_assignments[worker_id]:
-                if assigned_date in self.schedule:
-                    post = self.schedule[assigned_date].index(worker_id)
-                    post_counts[post] += 1
-        
-            # Check if current post has minimum count
-            current_count = post_counts.get(post_number, 0)
-            min_count = min(post_counts.values())
-            return current_count <= min_count
-
     def _check_weekday_balance(self, worker_id, date):
         """
         Check if assigning this date maintains weekday balance
-        Worker should complete Monday-Sunday cycle before repeating days
+        More lenient version that allows some imbalance
         """
         weekday = date.weekday()
         weekdays = self.worker_weekdays[worker_id]
@@ -331,12 +309,42 @@ class Scheduler:
         recent_days = {d.weekday() for d in recent_assignments}
     
         if len(recent_days) < 7:
-            # Still completing first cycle, check if day was already used
-            return weekday not in recent_days
+            # Still completing first cycle, be more lenient
+            max_same_weekday = 2  # Allow up to 2 shifts on same weekday during first cycle
+            current_count = sum(1 for d in recent_assignments if d.weekday() == weekday)
+            return current_count < max_same_weekday
         else:
-            # After first cycle, check if this weekday has minimum count
+            # After first cycle, allow more variation
             min_count = min(weekdays.values())
-            return weekdays[weekday] <= min_count
+            max_count = max(weekdays.values())
+            current_count = weekdays[weekday]
+        
+            # Allow up to 2 shifts difference between min and max
+            return (current_count - min_count) <= 2
+
+    def _is_balanced_post_rotation(self, worker_id, post_number):
+        """
+        More lenient version of post rotation balance
+        Allow some imbalance while maintaining basic rotation
+        """
+        posts = self.worker_posts[worker_id]
+    
+        if len(posts) < self.num_shifts:
+            # Worker hasn't worked all posts yet
+            # Allow repeating a post if no other option
+            return True
+        else:
+            # Worker has worked all posts, check distribution
+            post_counts = {i: 0 for i in range(self.num_shifts)}
+            for assigned_date in self.worker_assignments[worker_id]:
+                if assigned_date in self.schedule:
+                    post = self.schedule[assigned_date].index(worker_id)
+                    post_counts[post] += 1
+        
+            # Allow up to 2 shifts difference between posts
+            current_count = post_counts.get(post_number, 0)
+            min_count = min(post_counts.values())
+            return (current_count - min_count) <= 2
 
     def _has_three_consecutive_weekends(self, worker_id, date):
         """
@@ -537,15 +545,19 @@ class Scheduler:
             target_shifts = worker['target_shifts']
             shift_difference = target_shifts - current_shifts
 
-            # Prioritize workers far from their target
-            if shift_difference > 1:
-                score += 8000 + (shift_difference * 500)  # Highest priority
-            elif shift_difference == 1:
-                score += 4000  # High priority
+           # Prioritize target shifts more strongly
+            current_shifts = len(self.worker_assignments[worker_id])
+            target_shifts = worker['target_shifts']
+            shift_difference = target_shifts - current_shifts
+        
+            if shift_difference > 5:  # Increased threshold
+                score += 10000
+            elif shift_difference > 0:
+                score += 5000
             elif shift_difference == 0:
-                score += 2000  # Medium priority
-            elif shift_difference == -1:
-                score += 1000  # Low priority
+                score += 1000
+            elif shift_difference > -3:  # Allow slight over-assignment
+                score += 500
             else:
                 return float('-inf')
     
