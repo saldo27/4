@@ -418,7 +418,7 @@ class Scheduler:
                 raise SchedulerError(f"Invalid work percentage for worker {worker.get('id')}")
 
     def _assign_day_shifts(self, date):
-        """Assign all shifts for a specific day with strict balance validation"""
+        """Assign shifts using established constraint checking methods"""
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
     
         if date not in self.schedule:
@@ -433,14 +433,13 @@ class Scheduler:
             for worker in self.workers_data:
                 worker_id = worker['id']
             
-                # Check basic constraints using existing methods
-                if (date in self.schedule and worker_id in self.schedule[date] or
-                    self._is_worker_unavailable(worker_id, date) or
-                    not self._check_gap_constraint(worker_id, date, 3) or
-                    not self._check_incompatibility(worker_id, date)):
-                    continue
-                    
-                if not self._validate_assignment(worker_id, date, post):
+                # Check basic constraints first
+                if any([
+                    date in self.schedule and worker_id in self.schedule[date],
+                    self._is_worker_unavailable(worker_id, date),
+                    not self._check_gap_constraint(worker_id, date, 3),
+                    not self._check_incompatibility(worker_id, date)
+                ]):
                     continue
                     
                 score = self._calculate_worker_score(worker, date, post)
@@ -456,50 +455,6 @@ class Scheduler:
             else:
                 logging.error(f"Could not find suitable worker for shift {post + 1}")
                 break
-        
-    def _find_best_worker(self, date, post):
-        """Find the best worker using the current assignment strategy"""
-        logging.info(f"Finding worker for {date.strftime('%Y-%m-%d')} post {post}")
-    
-        # Try 1: Balance-focused assignment
-        balanced_worker = self._try_balance_assignment(date, post)
-        if balanced_worker:
-            logging.info(f"Balance-focused assignment: Selected worker {balanced_worker['id']}")
-            return balanced_worker
-
-        # Try 2: Normal assignment
-        candidates = self._get_candidates(date, post)
-        if candidates:
-            try:
-                selected = max(candidates, key=lambda x: x[1])[0]
-                logging.info(f"Normal assignment: Selected worker {selected['id']}")
-                return selected
-            except (ValueError, TypeError) as e:
-                logging.warning(f"Error selecting from candidates: {str(e)}")
-
-        # Try 3: Part-time workers with reduced gap
-        candidates = self._get_candidates(date, post, try_part_time=True)
-        if candidates:
-            try:
-                selected = max(candidates, key=lambda x: x[1])[0]
-                logging.info(f"Part-time assignment: Selected worker {selected['id']}")
-                self.constraint_skips[selected['id']]['reduced_gap'].append(date)
-                return selected
-            except (ValueError, TypeError) as e:
-                logging.warning(f"Error selecting from part-time candidates: {str(e)}")
-
-        # Try 4: Skip constraints
-        candidates = self._get_candidates(date, post, skip_constraints=True)
-        if candidates:
-            try:
-                selected = max(candidates, key=lambda x: x[1])[0]
-                logging.info(f"Constraint skip: Selected worker {selected['id']}")
-                return selected
-            except (ValueError, TypeError) as e:
-                logging.warning(f"Error selecting from constraint-skip candidates: {str(e)}")
-
-        logging.error(f"No valid workers found for {date}")
-        return None
 
     def _get_candidates(self, date, post, skip_constraints=False, try_part_time=False):
         """Get suitable candidates with their scores"""
