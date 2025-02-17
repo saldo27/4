@@ -702,27 +702,35 @@ class Scheduler:
     def _assign_day_shifts(self, date):
         """Assign all shifts for a specific day with strict balance validation"""
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
-    
+
         if date not in self.schedule:
             self.schedule[date] = []
-    
+
         remaining_shifts = self.num_shifts - len(self.schedule[date])
-    
+
         for post in range(remaining_shifts):
             best_worker = None
             best_score = float('-inf')
-        
+    
             for worker in self.workers_data:
-                if self._can_work(worker['id'], date):
-                    # Check if assignment would create imbalance
-                    if not self._validate_assignment(worker['id'], date, post):
-                        continue
-                    
-                    score = self._calculate_worker_score(worker, date, post)
-                    if score is not None and score > best_score:
-                        best_worker = worker
-                        best_score = score
-        
+                worker_id = worker['id']
+            
+                # Check if worker can work using existing methods
+                if (date in self.schedule and worker_id in self.schedule[date] or
+                    self._is_worker_unavailable(worker_id, date) or
+                    not self._check_gap_constraint(worker_id, date, 3) or
+                    not self._check_incompatibility(worker_id, date)):
+                    continue
+                
+                # Check if assignment would create imbalance
+                if not self._validate_assignment(worker_id, date, post):
+                    continue
+                
+                score = self._calculate_worker_score(worker, date, post)
+                if score is not None and score > best_score:
+                    best_worker = worker
+                    best_score = score
+    
             if best_worker:
                 worker_id = best_worker['id']
                 self.schedule[date].append(worker_id)
