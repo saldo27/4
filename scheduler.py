@@ -246,42 +246,6 @@ class Scheduler:
             return 4  # Friday
         return date.weekday()
 
-    def _can_work(self, worker_id, date):
-        """
-        Check if a worker can work on a given date.
-        Returns True if all basic constraints are met, False otherwise.
-        """
-        try:
-            # Check if worker is already assigned that day
-            if date in self.schedule and worker_id in self.schedule[date]:
-                return False
-
-            # Check minimum rest period (3 days)
-            assignments = self.worker_assignments[worker_id]
-            for assigned_date in assignments:
-                days_between = abs((date - assigned_date).days)
-                if days_between < 3:
-                    return False
-
-            # Check for mandatory assignments
-            if date in self.mandatory_assignments:
-                if worker_id in self.mandatory_assignments[date]:
-                    return True
-                if len(self.mandatory_assignments[date]) > 0:
-                    return False
-
-            # Check for unavailable dates
-            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
-            if worker and 'unavailable_dates' in worker:
-                if date in worker['unavailable_dates']:
-                    return False
-
-            return True
-
-        except Exception as e:
-            logging.error(f"Error in _can_work for worker {worker_id}: {str(e)}")
-            return False
-
     def _is_worker_unavailable(self, worker_id, date):
         """Check if worker is unavailable on date"""
         worker = next(w for w in self.workers_data if w['id'] == worker_id)
@@ -454,39 +418,41 @@ class Scheduler:
                 raise SchedulerError(f"Invalid work percentage for worker {worker.get('id')}")
 
     def _assign_day_shifts(self, date):
-        """Assign all shifts for a specific day"""
+        """Assign all shifts for a specific day with strict balance validation"""
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
     
         if date not in self.schedule:
             self.schedule[date] = []
     
-        # Calculate how many shifts still need to be assigned
         remaining_shifts = self.num_shifts - len(self.schedule[date])
     
         for post in range(remaining_shifts):
-            logging.info(f"Finding worker for shift {post + 1}/{self.num_shifts}")
-            best_worker = self._find_best_worker(date, post)  # Correct call with both arguments
-    
+            best_worker = None
+            best_score = float('-inf')
+        
+            for worker in self.workers_data:
+                worker_id = worker['id']
+            
+                # Check basic constraints using existing methods
+                if (date in self.schedule and worker_id in self.schedule[date] or
+                    self._is_worker_unavailable(worker_id, date) or
+                    not self._check_gap_constraint(worker_id, date, 3) or
+                    not self._check_incompatibility(worker_id, date)):
+                    continue
+                    
+                if not self._validate_assignment(worker_id, date, post):
+                    continue
+                    
+                score = self._calculate_worker_score(worker, date, post)
+                if score is not None and score > best_score:
+                    best_worker = worker
+                    best_score = score
+        
             if best_worker:
                 worker_id = best_worker['id']
-                if len(self.schedule[date]) < self.num_shifts:  # Double-check before adding
-                    self.schedule[date].append(worker_id)
-                    self.worker_assignments[worker_id].append(date)
-                
-                    # Update tracking data
-                    self.worker_posts[worker_id].add(post)
-                    effective_weekday = self._get_effective_weekday(date)
-                    self.worker_weekdays[worker_id][effective_weekday] += 1
-                
-                    if self._is_weekend_day(date):
-                        weekend_start = self._get_weekend_start(date)
-                        if weekend_start not in self.worker_weekends[worker_id]:
-                            self.worker_weekends[worker_id].append(weekend_start)
-                
-                    logging.info(f"Assigned worker {worker_id} to shift {post + 1}")
-                else:
-                    logging.warning(f"Maximum shifts ({self.num_shifts}) reached for {date.strftime('%Y-%m-%d')}")
-                    break
+                self.schedule[date].append(worker_id)
+                self.worker_assignments[worker_id].append(date)
+                self._update_tracking_data(worker_id, date, post)
             else:
                 logging.error(f"Could not find suitable worker for shift {post + 1}")
                 break
