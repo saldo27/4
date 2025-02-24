@@ -405,9 +405,7 @@ class Scheduler:
                         self._update_tracking_data(worker_id, date, post)
 
     def _assign_day_shifts(self, date):
-        """
-        Modified assignment method that keeps partial assignments
-        """
+        """Modified assignment method that considers weekday balance"""
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
 
         if date not in self.schedule:
@@ -416,24 +414,26 @@ class Scheduler:
         remaining_shifts = self.num_shifts - len(self.schedule[date])
 
         for post in range(remaining_shifts):
-            best_worker = None
-            best_score = float('-inf')
-
+            candidates = []
+        
             for worker in self.workers_data:
                 if self._can_assign_worker(worker['id'], date, post):
+                    balance_score = self._get_weekday_balance_score(worker['id'], date)
                     score = self._calculate_worker_score(worker, date, post)
-                    if score is not None and score > best_score:
-                        best_worker = worker
-                        best_score = score
-    
-            if best_worker:
+                
+                    if score > float('-inf') and balance_score > 0:
+                        candidates.append((worker, score * balance_score))
+
+            if candidates:
+                # Select worker with best combined score
+                best_worker = max(candidates, key=lambda x: x[1])[0]
                 worker_id = best_worker['id']
                 self.schedule[date].append(worker_id)
                 self.worker_assignments[worker_id].add(date)
                 self._update_tracking_data(worker_id, date, post)
             else:
                 logging.error(f"Could not find suitable worker for shift {post + 1}")
-
+                
     def _get_candidates(self, date, post, skip_constraints=False, try_part_time=False):
         """Get suitable candidates with their scores"""
         candidates = []
@@ -462,7 +462,7 @@ class Scheduler:
                 logging.debug(f"Worker {worker_id} skipped: {reason}")
                 continue
 
-            score = self._calculate_worker_score(worker, date, post)
+            score = self._ore(worker, date, post)
             # Only add candidate if score is not None or -inf
             if score is not None and score != float('-inf'):
                 candidates.append((worker, score))
@@ -493,6 +493,27 @@ class Scheduler:
                 )
                 # Lower score for workers with more weekend assignments
                 score -= weekend_assignments * 300
+
+            # Weekday Balance Check - STRICT
+            weekday = date.weekday()
+            weekday_counts = self.worker_weekdays[worker_id].copy()
+            weekday_counts[weekday] += 1  # Simulate adding this assignment
+        
+            max_weekday = max(weekday_counts.values())
+            min_weekday = min(weekday_counts.values())
+        
+            # If this assignment would create more than 1 day difference, reject it
+            if (max_weekday - min_weekday) > 1:
+                return float('-inf')
+
+            # Favor assignments that improve balance
+            current_max = max(self.worker_weekdays[worker_id].values())
+            current_min = min(self.worker_weekdays[worker_id].values())
+            current_imbalance = current_max - current_min
+            new_imbalance = max_weekday - min_weekday
+        
+            if new_imbalance < current_imbalance:
+                score += 2000  # High bonus for improving balance
         
             # --- Hard Constraints ---
             if (self._is_worker_unavailable(worker_id, date) or
@@ -1118,8 +1139,8 @@ class Scheduler:
             # Calculate maximum difference
             max_count = max(weekday_counts.values())
             min_count = min(weekday_counts.values())
-            
-            # Allow maximum 1 shift difference between weekdays
+        
+            # Strictly enforce maximum 1 shift difference between weekdays
             if max_count - min_count > 1:
                 logging.debug(f"Weekday balance violated for worker {worker_id}: {weekday_counts}")
                 return False
@@ -1129,6 +1150,31 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking weekday balance for worker {worker_id}: {str(e)}")
             return True
+
+    def _get_weekday_balance_score(self, worker_id, date):
+        """Calculate how well this assignment would maintain weekday balance"""
+        weekday = date.weekday()
+        weekday_counts = self.worker_weekdays[worker_id].copy()
+        weekday_counts[weekday] += 1
+    
+        # Calculate current and new imbalance
+        current_max = max(self.worker_weekdays[worker_id].values())
+        current_min = min(self.worker_weekdays[worker_id].values())
+        current_imbalance = current_max - current_min
+    
+        new_max = max(weekday_counts.values())
+        new_min = min(weekday_counts.values())
+        new_imbalance = new_max - new_min
+    
+        # Return a score based on how it affects balance
+        if new_imbalance < current_imbalance:
+            return 3  # Improves balance
+        elif new_imbalance == current_imbalance:
+            return 2  # Maintains balance
+        elif new_imbalance <= 1:
+            return 1  # Acceptable imbalance
+        else:
+            return 0  # Unacceptable imbalance
 
     def _check_post_rotation(self, worker_id, post):
         """
