@@ -517,7 +517,7 @@ class Scheduler:
 
     def _calculate_worker_score(self, worker, date, post):
         """
-        Revised scoring system with strict shift count and weekday balance
+        Improved scoring system with stricter balance requirements
         """
         try:
             worker_id = worker['id']
@@ -527,46 +527,30 @@ class Scheduler:
             if (self._is_worker_unavailable(worker_id, date) or
                 date in self.schedule and worker_id in self.schedule[date]):
                 return float('-inf')
-            
+        
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = worker.get('target_shifts', 0)
         
-            # Strict enforcement of target shifts
-            if current_shifts >= target_shifts:
-                return float('-inf')  # Never exceed target
-            
-            # --- Weekday Balance Check ---
-            if not self._check_weekday_balance(worker_id, date):
-                return float('-inf')  # Enforce weekday balance strictly
-            
             # --- Target Progress Score ---
             shift_difference = target_shifts - current_shifts
-            progress_ratio = current_shifts / target_shifts if target_shifts > 0 else 0
         
-            # Prioritize workers furthest from their targets
-            if progress_ratio < 0.5:  # Less than 50% complete
+            if shift_difference <= 0:
+                return float('-inf')  # Never exceed target
+        
+            # Calculate progress percentage
+            progress = (current_shifts / target_shifts) * 100 if target_shifts > 0 else 0
+        
+            # More granular progress scoring
+            if progress < 60:
+                score += 25000  # High priority for workers below 60%
+            elif progress < 80:
                 score += 20000
-            elif progress_ratio < 0.75:  # 50-75% complete
+            elif progress < 90:
                 score += 15000
-            elif progress_ratio < 0.9:  # 75-90% complete
+            elif progress < 100:
                 score += 10000
-            else:  # 90-100% complete
-                score += 5000
             
-            # --- Gap Analysis ---
-            recent_assignments = sorted(self.worker_assignments[worker_id])
-            if recent_assignments:
-                days_since_last = (date - recent_assignments[-1]).days
-                if days_since_last < 2:
-                    return float('-inf')  # Minimum 2-day gap
-                elif days_since_last <= 3:
-                    score += 1000
-                elif days_since_last <= 5:
-                    score += 2000
-                else:
-                    score += 3000
-                
-            # --- Post Balance ---
+            # --- Post Balance Score ---
             post_counts = {i: 0 for i in range(self.num_shifts)}
             for assigned_date in self.worker_assignments[worker_id]:
                 if assigned_date in self.schedule:
@@ -574,28 +558,108 @@ class Scheduler:
                     post_counts[assigned_post] += 1
                 
             current_post_count = post_counts.get(post, 0)
-            min_post_count = min(post_counts.values()) if post_counts else 0
+            other_post_counts = [count for p, count in post_counts.items() if p != post]
+            max_other_posts = max(other_post_counts) if other_post_counts else 0
         
-            if current_post_count <= min_post_count:
+            post_difference = current_post_count - max_other_posts
+        
+            if post_difference <= -2:
+                score += 8000  # Strongly prefer under-assigned posts
+            elif post_difference <= -1:
+                score += 6000
+            elif post_difference == 0:
+                score += 4000
+            elif post_difference == 1:
                 score += 2000
-            elif current_post_count <= min_post_count + 1:
-                score += 1000
+            else:
+                score -= 5000  # Penalize but don't forbid
             
-            # --- Weekday Distribution Refinement ---
+            # --- Weekday Balance Score ---
             weekday = date.weekday()
             weekdays = self.worker_weekdays[worker_id]
-            min_weekday_count = min(weekdays.values())
+            current_weekday_count = weekdays[weekday]
+            other_weekday_counts = [count for day, count in weekdays.items() if day != weekday]
+            max_other_weekdays = max(other_weekday_counts) if other_weekday_counts else 0
         
-            if weekdays[weekday] == min_weekday_count:
-                score += 4000  # Increased priority for balancing weekdays
-            elif weekdays[weekday] == min_weekday_count + 1:
-                score += 2000
+            weekday_difference = current_weekday_count - max_other_weekdays
             
+            if weekday_difference <= -2:
+                score += 8000  # Strongly prefer under-assigned weekdays
+            elif weekday_difference <= -1:
+                score += 6000
+            elif weekday_difference == 0:
+                score += 4000
+            elif weekday_difference == 1:
+                score += 2000
+            else:
+                score -= 5000  # Penalize but don't forbid
+            
+            # --- Gap Analysis ---
+            recent_assignments = sorted(self.worker_assignments[worker_id])
+            if recent_assignments:
+                days_since_last = (date - recent_assignments[-1]).days
+                if days_since_last < 2:
+                    return float('-inf')  # Maintain minimum 2-day gap
+                elif days_since_last <= 3:
+                    score += 2000
+                elif days_since_last <= 5:
+                    score += 4000
+                else:
+                    score += 6000
+                
             return score
         
         except Exception as e:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
             return None
+
+    def _can_assign_worker(self, worker_id, date, post):
+        """
+        Checks if a worker can be assigned to a shift by validating hard constraints.
+    
+        Args:
+            worker_id: The ID of the worker to check
+            date: The date of the shift
+            post: The post number for the shift
+    
+        Returns:
+            bool: True if the worker can be assigned, False otherwise
+        """
+        try:
+            # Check if worker is unavailable for this date
+            if self._is_worker_unavailable(worker_id, date):
+            return False
+            
+            # Check if worker is already assigned that day
+            if date in self.schedule and worker_id in self.schedule[date]:
+                return False
+            
+            # Check minimum gap between shifts (2 days)
+            recent_assignments = sorted(self.worker_assignments[worker_id])
+            if recent_assignments:
+                days_since_last = (date - recent_assignments[-1]).days
+                if days_since_last < 2:
+                    return False
+                
+            # Check if worker has reached their target shifts
+            current_shifts = len(self.worker_assignments[worker_id])
+            target_shifts = next(w['target_shifts'] for w in self.workers_data if w['id'] == worker_id)
+            if current_shifts >= target_shifts:
+                return False
+            
+            # Check incompatibility constraints
+            if not self._check_incompatibility(worker_id, date):
+                return False
+            
+            # Check minimum gap constraint
+            if not self._check_gap_constraint(worker_id, date, self.min_gap_days):
+                return False
+            
+            return True
+        
+        except Exception as e:
+            logging.error(f"Error checking if worker {worker_id} can be assigned: {str(e)}")
+            return False
         
     def _get_post_counts(self, worker_id):
         """Helper method to get post counts for a worker"""
@@ -712,37 +776,27 @@ class Scheduler:
         return ranges
                 
     def _assign_day_shifts(self, date):
-        """Assign all shifts for a specific day with strict balance validation"""
+        """
+        Modified assignment method that keeps partial assignments
+        """
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
-
+    
         if date not in self.schedule:
             self.schedule[date] = []
-
+    
         remaining_shifts = self.num_shifts - len(self.schedule[date])
-
+    
         for post in range(remaining_shifts):
             best_worker = None
             best_score = float('-inf')
     
             for worker in self.workers_data:
-                worker_id = worker['id']
-            
-                # Check if worker can work using existing methods
-                if (date in self.schedule and worker_id in self.schedule[date] or
-                    self._is_worker_unavailable(worker_id, date) or
-                    not self._check_gap_constraint(worker_id, date, 3) or
-                    not self._check_incompatibility(worker_id, date)):
-                    continue
-                
-                # Check if assignment would create imbalance
-                if not self._validate_assignment(worker_id, date, post):
-                    continue
-                
-                score = self._calculate_worker_score(worker, date, post)
-                if score is not None and score > best_score:
-                    best_worker = worker
-                    best_score = score
-    
+                if self._can_assign_worker(worker['id'], date, post):
+                    score = self._calculate_worker_score(worker, date, post)
+                    if score is not None and score > best_score:
+                        best_worker = worker
+                        best_score = score
+        
             if best_worker:
                 worker_id = best_worker['id']
                 self.schedule[date].append(worker_id)
@@ -750,7 +804,7 @@ class Scheduler:
                 self._update_tracking_data(worker_id, date, post)
             else:
                 logging.error(f"Could not find suitable worker for shift {post + 1}")
-                break
+                # Don't break - continue with next shift
 
     def _update_tracking_data(self, worker_id, date, post):
         """Update all tracking data for a new assignment"""
