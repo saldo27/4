@@ -679,6 +679,11 @@ class Scheduler:
             if self._is_worker_unavailable(worker_id, date):
                 logging.debug(f"Worker {worker_id} is unavailable on {date}")
                 return False
+
+            # Check worker incompatibility
+            if not self._check_incompatibility(worker_id, date):
+                logging.debug(f"Worker {worker_id} has incompatibility issue")
+                return False
             
             # Check minimum gap between shifts (2 days)
             assignments = sorted(list(self.worker_assignments[worker_id]))
