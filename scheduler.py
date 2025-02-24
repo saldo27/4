@@ -475,6 +475,15 @@ class Scheduler:
         try:
             worker_id = worker['id']
             score = 0
+
+             # Check incompatibilities and weekends first
+            if date in self.schedule:
+                for other_worker in self.schedule[date]:
+                    if self._are_workers_incompatible(worker_id, other_worker):
+                        return float('-inf')
+                    
+            if self._would_create_consecutive_weekends(worker_id, date):
+                return float('-inf')
         
             # --- Hard Constraints ---
             if (self._is_worker_unavailable(worker_id, date) or
@@ -500,7 +509,11 @@ class Scheduler:
                 target_per_post = total_assignments / self.num_shifts
                 new_count = post_counts.get(post, 0) + 1
                 if abs(new_count - target_per_post) <= 1:
-                    score += 500
+                    score += 1000
+
+            # Add penalty for weekend assignments
+            if date.weekday() in [4, 5, 6]:
+                score -= 1000
 
             # Log the score calculation
             logging.debug(f"Score for worker {worker_id}: {score} "
@@ -737,6 +750,14 @@ class Scheduler:
         try:
             # Log all constraint checks
             logging.debug(f"\nChecking worker {worker_id} for {date}, post {post}")
+
+            # Check incompatibilities with already assigned workers
+            if date in self.schedule:
+                assigned_workers = self.schedule[date]
+                for other_worker in assigned_workers:
+                    if self._are_workers_incompatible(worker_id, other_worker):
+                        logging.debug(f"Workers {worker_id} and {other_worker} are incompatible")
+                        return False
         
             # 1. Check max shifts
             if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
@@ -781,7 +802,19 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error in _can_assign_worker for worker {worker_id}: {str(e)}", exc_info=True)
             return False
-
+    def _are_workers_incompatible(self, worker1, worker2):
+        """Check if two workers cannot work together"""
+        # Known incompatible pairs
+        incompatible_pairs = {
+            (1, 4), (1, 25),
+            (4, 7), (4, 25),
+            (7, 8), (7, 14),
+            (8, 25)
+        }
+    
+        pair = tuple(sorted([worker1, worker2]))
+        return pair in incompatible_pairs
+        
     def _is_worker_unavailable(self, worker_id, date):
         """
         Check if worker is unavailable on a specific date
@@ -821,6 +854,32 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
             return True  # Assume unavailable in case of error
+            
+    def _would_create_consecutive_weekends(self, worker_id, date):
+        """Check if assigning this date would create too many consecutive weekends"""
+        if not date.weekday() in [5, 6]:  # Not a weekend
+            return False
+        
+        # Get all weekend dates for this worker
+        weekend_dates = sorted([d for d in self.worker_assignments[worker_id] 
+                              if d.weekday() in [5, 6]])
+    
+        # Add the new date
+        weekend_dates.append(date)
+        weekend_dates.sort()
+    
+        # Check for consecutive weekends
+        consecutive_count = 1
+        for i in range(1, len(weekend_dates)):
+            if (weekend_dates[i] - weekend_dates[i-1]).days <= 7:
+                consecutive_count += 1
+            else:
+                consecutive_count = 1
+            
+            if consecutive_count >= 3:  # Lower this from 4 to 3 to prevent reaching 4
+                return True
+            
+        return False
 
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
