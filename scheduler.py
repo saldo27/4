@@ -628,7 +628,7 @@ class Scheduler:
         try:
             # Check if worker is unavailable for this date
             if self._is_worker_unavailable(worker_id, date):
-            return False
+                return False
             
             # Check if worker is already assigned that day
             if date in self.schedule and worker_id in self.schedule[date]:
