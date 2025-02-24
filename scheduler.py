@@ -281,6 +281,33 @@ class Scheduler:
 
         return True
 
+    def _check_monthly_balance(self, worker_id, date):
+        """
+        Check if assigning this date would maintain monthly balance (±1 rule)
+    
+        Returns:
+            tuple: (is_balanced, imbalance_score)
+            is_balanced: True if within ±1 range
+            imbalance_score: Lower is better, 0 is perfect balance
+        """
+        month_key = f"{date.year}-{date.month:02d}"
+        monthly_shifts = self._get_worker_monthly_shifts(worker_id, date, month_key)
+    
+        if not monthly_shifts:
+            return True, 0
+    
+        counts = list(monthly_shifts.values())
+        max_shifts = max(counts)
+        min_shifts = min(counts)
+    
+        # Calculate imbalance score
+        imbalance = max_shifts - min_shifts
+    
+        # Check if within ±1 range
+        is_balanced = (max_shifts - min_shifts) <= 1
+    
+        return is_balanced, imbalance
+
     def _check_weekday_balance(self, worker_id, date):
         """
         Strict weekday balance checker that enforces ±1 rule
@@ -463,7 +490,7 @@ class Scheduler:
 
     def _calculate_worker_score(self, worker, date, post):
         """
-        Improved scoring system with stricter balance requirements
+        Improved scoring system with monthly balance consideration
         """
         try:
             worker_id = worker['id']
@@ -519,6 +546,18 @@ class Scheduler:
                 score += 2000
             else:
                 score -= 5000  # Penalize but don't forbid
+
+            # --- Monthly Balance Score ---
+            is_balanced, monthly_imbalance = self._check_monthly_balance(worker_id, date)
+        
+            if is_balanced:
+                score += 10000  # High priority for maintaining monthly balance
+            else:
+                # Penalize based on imbalance severity
+                if monthly_imbalance == 2:
+                    score -= 5000
+                elif monthly_imbalance > 2:
+                    score -= 15000  # Strongly discourage high monthly imbalance
             
             # --- Weekday Balance Score ---
             weekday = date.weekday()
@@ -875,7 +914,7 @@ class Scheduler:
             self._update_worker_stats(worker_id, date, removing=True)
 
     def _validate_final_schedule(self):
-        """Enhanced validation including all constraints"""
+        """Enhanced validation including monthly balance"""
         errors = []
         warnings = []
 
@@ -921,6 +960,22 @@ class Scheduler:
             if max_diff > 2:
                 warnings.append(f"Worker {worker_id} post rotation imbalance: {post_counts}")
 
+            # Check monthly distribution
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            monthly_shifts = self._get_worker_monthly_shifts(worker_id)
+        
+            if monthly_shifts:
+                max_monthly = max(monthly_shifts.values())
+                min_monthly = min(monthly_shifts.values())
+            
+                if max_monthly - min_monthly > 1:
+                    warnings.append(
+                        f"Worker {worker_id} monthly shift imbalance: "
+                        f"Max={max_monthly}, Min={min_monthly}\n"
+                        f"Distribution: {monthly_shifts}"
+                    )
+                    
             # Check weekday distribution
             weekday_counts = self.worker_weekdays[worker_id]
             max_weekday_diff = max(weekday_counts.values()) - min(weekday_counts.values())
