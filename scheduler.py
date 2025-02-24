@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from worker_eligibility import WorkerEligibilityTracker
 import calendar
 import logging
 import sys
@@ -90,6 +91,11 @@ class Scheduler:
             total_shifts = total_days * self.num_shifts
             num_workers = len(self.workers_data)
             self.max_shifts_per_worker = (total_shifts // num_workers) + 2  # Add some flexibility
+
+            # Add eligibility tracker
+            self.eligibility_tracker = WorkerEligibilityTracker(
+                self.workers_data,
+                self.holidays
 
         except Exception as e:
             logging.error(f"Initialization error: {str(e)}")
@@ -221,65 +227,70 @@ class Scheduler:
         logging.info("=== Starting schedule generation ===")
         try:
             self._reset_schedule()
-        
-            # Calculate monthly targets first
             self._calculate_monthly_targets()
-        
-            # Initialize monthly assignment tracking
-            monthly_assignments = {
-                worker['id']: {
-                    month: 0 for month in self.monthly_targets[worker['id']]
-                } for worker in self.workers_data
-            }
-        
+            
             # Process mandatory assignments first
             self._assign_mandatory_guards()
-        
-            # Update monthly assignments for mandatory guards
+            
+            # Update eligibility tracker with mandatory assignments
             for date, workers in self.schedule.items():
-                month_key = f"{date.year}-{date.month:02d}"
                 for worker_id in workers:
-                    if month_key in monthly_assignments[worker_id]:
-                        monthly_assignments[worker_id][month_key] += 1
-        
-            # Process remaining days with monthly targets in mind
+                    self.eligibility_tracker.update_worker_status(worker_id, date)
+            
+            # Process remaining days
             current_date = self.start_date
             while current_date <= self.end_date:
                 if current_date not in self.schedule:
                     self.schedule[current_date] = []
-            
+                
                 month_key = f"{current_date.year}-{current_date.month:02d}"
-            
-                # Fill remaining shifts for this day
                 remaining_shifts = self.num_shifts - len(self.schedule[current_date])
+                
                 for _ in range(remaining_shifts):
+                    # Get eligible workers for this date
+                    eligible_workers = self.eligibility_tracker.get_eligible_workers(
+                        current_date,
+                        self.schedule[current_date]
+                    )
+                    
+                    # Find best worker among eligible ones
                     best_worker = None
                     best_score = float('-inf')
-                
-                    for worker in self.workers_data:
+                    
+                    for worker in eligible_workers:
                         worker_id = worker['id']
-                    
+                        
                         # Skip if monthly target reached
-                        if (monthly_assignments[worker_id][month_key] >= 
-                            self.monthly_targets[worker_id][month_key]):
+                        if self._check_monthly_target(worker_id, month_key):
                             continue
+                        
+                        # Calculate score only for eligible workers
+                        score = self._calculate_worker_score(
+                            worker,
+                            current_date,
+                            len(self.schedule[current_date])
+                        )
+                        
+                        if score > best_score:
+                            best_worker = worker
+                            best_score = score
                     
-                        # Check constraints and calculate score
-                        if self._can_assign_worker(worker_id, current_date, len(self.schedule[current_date])):
-                            score = self._calculate_worker_score(worker, current_date, len(self.schedule[current_date]))
-                            if score is not None and score > best_score:
-                                best_worker = worker
-                                best_score = score
-                
                     if best_worker:
                         worker_id = best_worker['id']
                         self.schedule[current_date].append(worker_id)
                         self.worker_assignments[worker_id].add(current_date)
-                        monthly_assignments[worker_id][month_key] += 1
-                        self._update_tracking_data(worker_id, current_date, len(self.schedule[current_date]) - 1)
+                        self._update_tracking_data(
+                            worker_id,
+                            current_date,
+                            len(self.schedule[current_date]) - 1
+                        )
+                        self.eligibility_tracker.update_worker_status(
+                            worker_id,
+                            current_date
+                        )
                     else:
                         logging.warning(f"Could not find suitable worker for {current_date}")
-            
+                
                 current_date += timedelta(days=1)
         
             self._cleanup_schedule()
@@ -539,15 +550,21 @@ class Scheduler:
             # Higher priority for workers further from their target
             score += shift_difference * 1000
         
-            # Add post rotation score
+        # Post rotation score - focus on last post distribution
+        last_post = self.num_shifts - 1
+        if post == last_post:
             post_counts = self._get_post_counts(worker_id)
-            total_assignments = sum(post_counts.values())
-            if total_assignments > 0:
-                target_per_post = total_assignments / self.num_shifts
-                new_count = post_counts.get(post, 0) + 1
-                if abs(new_count - target_per_post) <= 1:
+            total_assignments = sum(post_counts.values()) + 1
+            target_last_post = total_assignments / self.num_shifts
+            current_last_post = post_counts.get(last_post, 0)
+            
+                # Encourage assignments when below target
+                if current_last_post < target_last_post:
                     score += 1000
-
+                # Discourage assignments when above target
+                elif current_last_post > target_last_post:
+                    score -= 1000 0)
+             
             # Add penalty for weekend assignments
             if date.weekday() in [4, 5, 6]:
                 score -= 1000
@@ -1183,46 +1200,69 @@ class Scheduler:
         else:
             return 0  # Unacceptable imbalance
 
-    def _check_post_rotation(self, worker_id, post):
-        """
-        Check post rotation with strict +/- 1 deviation limit
-    
-        Args:
-            worker_id: Worker's ID
-            post: Post number being considered
-        Returns:
-            bool: True if assignment maintains balance, False otherwise
-        """
-        try:
-            # Get current post counts
-            post_counts = self._get_post_counts(worker_id)
-        
-            # Add the potential new assignment
-            new_counts = post_counts.copy()
-            new_counts[post] = new_counts.get(post, 0) + 1
-        
-            # Calculate total assignments including the new one
-            total_assignments = sum(new_counts.values())
-        
-            if total_assignments == 0:
-                return True
+    def _check_monthly_target(self, worker_id, month_key):
+    """Check if worker has reached their monthly target"""
+    if month_key not in self.monthly_targets.get(worker_id, {}):
+        return False
             
-            # Calculate the ideal distribution (target per post)
-            target_per_post = total_assignments / self.num_shifts
+    current_assignments = sum(
+        1 for d in self.worker_assignments[worker_id]
+        if self._get_month_key(d) == month_key
+    )
         
-            # Check that no post deviates by more than 1 from target
-            for p, count in new_counts.items():
-                if abs(count - target_per_post) > 1:
-                    logging.debug(f"Post rotation check failed for worker {worker_id}: "
-                                f"Post {p} has {count} assignments (target: {target_per_post:.1f}, "
-                                f"allowed range: [{max(0, target_per_post-1):.1f}, {target_per_post+1:.1f}])")
-                    return False
-                
-            return True
+    return current_assignments >= self.monthly_targets[worker_id][month_key]
 
-        except Exception as e:
-            logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
+def _check_post_rotation(self, worker_id, post):
+    """
+    Check if assigning this post maintains the required distribution.
+    Specifically checks that the last post (highest number) is assigned
+    approximately 1/num_shifts of the time.
+    
+    Args:
+        worker_id: Worker's ID
+        post: Post number being considered
+    Returns:
+        bool: True if assignment maintains proper distribution
+    """
+    try:
+        # Only check for last post position
+        last_post = self.num_shifts - 1
+        if post != last_post:
+            return True  # Don't restrict other post assignments
+        
+        # Get current post counts
+        post_counts = self._get_post_counts(worker_id)
+        
+        # Add the potential new assignment
+        new_counts = post_counts.copy()
+        new_counts[post] = new_counts.get(post, 0) + 1
+        
+        # Calculate total assignments including the new one
+        total_assignments = sum(new_counts.values())
+        
+        if total_assignments == 0:
             return True
+        
+        # Calculate target ratio for last post (1/num_shifts)
+        target_ratio = 1.0 / self.num_shifts
+        actual_ratio = new_counts[last_post] / total_assignments
+        
+        # Allow ±1 shift deviation from perfect ratio
+        allowed_deviation = 1.0 / total_assignments
+        
+        if abs(actual_ratio - target_ratio) > allowed_deviation:
+            logging.debug(
+                f"Post rotation check failed for worker {worker_id}: "
+                f"Last post ratio {actual_ratio:.2f} deviates too much from "
+                f"target {target_ratio:.2f} (allowed deviation: ±{allowed_deviation:.2f})"
+            )
+            return False
+        
+        return True
+
+    except Exception as e:
+        logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
+        return True
             
     # ------------------------
     # 5. Date/Time Helper Methods
