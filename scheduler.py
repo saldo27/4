@@ -865,17 +865,17 @@ class Scheduler:
             return min(candidates, key=lambda x: x[1])[0]
         return None
 
-     def _check_monthly_balance(self, worker_id, date):
-        """
-        Check if assigning this date would maintain monthly balance
+    def _check_monthly_balance(self, worker_id, date):
+       """
+       Check if assigning this date would maintain monthly balance
         
-        Returns:
-            bool: True if assignment maintains balance, False otherwise
-        """
-        try:
+       Returns:
+           bool: True if assignment maintains balance, False otherwise
+       """
+       try:
             # Get current monthly distribution
-            distribution = {}
-            for assigned_date in self.worker_assignments[worker_id]:
+               distribution = {}
+               for assigned_date in self.worker_assignments[worker_id]:
                 month_key = f"{assigned_date.year}-{assigned_date.month:02d}"
                 distribution[month_key] = distribution.get(month_key, 0) + 1
 
