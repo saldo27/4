@@ -794,110 +794,6 @@ class Scheduler:
             return min(candidates, key=lambda x: x[1])[0]
         return None
 
-    def _check_monthly_balance(self, worker_id, date):
-        """
-        Check if assigning this date would maintain monthly balance
-        
-        Returns:
-            bool: True if assignment maintains balance, False otherwise
-        """
-        try:
-            # Get current monthly distribution
-            distribution = {}
-            for assigned_date in self.worker_assignments[worker_id]:
-                month_key = f"{assigned_date.year}-{assigned_date.month:02d}"
-                distribution[month_key] = distribution.get(month_key, 0) + 1
-
-            # Add the new date to distribution
-            month_key = f"{date.year}-{date.month:02d}"
-            new_distribution = distribution.copy()
-            new_distribution[month_key] = new_distribution.get(month_key, 0) + 1
-
-            # Check balance
-            if new_distribution:
-                max_shifts = max(new_distribution.values())
-                min_shifts = min(new_distribution.values())
-                if max_shifts - min_shifts > 2:  # Allow maximum 2 shifts difference between months
-                    logging.debug(f"Monthly balance violated for worker {worker_id}: {new_distribution}")
-                    return False
-
-            return True
-
-        except Exception as e:
-            logging.error(f"Error checking monthly balance for worker {worker_id}: {str(e)}")
-            return True  # Allow assignment in case of error
-
-    def _check_weekday_balance(self, worker_id, date):
-        """
-        Check if assigning this date would maintain weekday balance
-        
-        Returns:
-            bool: True if assignment maintains balance, False otherwise
-        """
-        try:
-            # Get current weekday counts including the new date
-            weekday = date.weekday()
-            weekday_counts = self.worker_weekdays[worker_id].copy()
-            weekday_counts[weekday] += 1
-
-            # Calculate maximum difference
-            max_count = max(weekday_counts.values())
-            min_count = min(weekday_counts.values())
-            
-            # Allow maximum 1 shift difference between weekdays
-            if max_count - min_count > 1:
-                logging.debug(f"Weekday balance violated for worker {worker_id}: {weekday_counts}")
-                return False
-
-            return True
-
-        except Exception as e:
-            logging.error(f"Error checking weekday balance for worker {worker_id}: {str(e)}")
-            return True
-
-    def _check_post_rotation(self, worker_id, post_number):
-    """
-    Check if assigning this post would maintain proper rotation
-    
-    Args:
-        worker_id: The ID of the worker
-        post_number: The post number to be assigned
-        
-    Returns:
-        bool: True if assignment maintains balance, False otherwise
-    """
-    try:
-        posts = self.worker_posts[worker_id]
-
-        # If worker hasn't worked all posts yet, be more lenient
-        if len(posts) < self.num_shifts:
-            return True
-
-        # Get current post distribution
-        post_counts = {i: 0 for i in range(self.num_shifts)}
-        for assigned_date in self.worker_assignments[worker_id]:
-            if assigned_date in self.schedule:
-                post = self.schedule[assigned_date].index(worker_id)
-                post_counts[post] += 1
-        
-        # Add the new post assignment
-        post_counts[post_number] += 1
-
-        # Calculate maximum allowed difference
-        max_count = max(post_counts.values())
-        min_count = min(post_counts.values())
-        max_allowed_diff = 1  # Stricter balance
-
-        if max_count - min_count > max_allowed_diff:
-            logging.debug(f"Post rotation imbalance for worker {worker_id}: {post_counts}")
-            return False
-
-        return True
-
-    except Exception as e:
-        logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
-        return True  # Allow assignment in case of error
-
     # ------------------------
     # 4. Balance and Distribution Methods
     # ------------------------
@@ -969,82 +865,92 @@ class Scheduler:
             return min(candidates, key=lambda x: x[1])[0]
         return None
 
-    def _check_monthly_balance(self, worker_id, date):
+     def _check_monthly_balance(self, worker_id, date):
         """
-        Check if assigning this date would maintain monthly balance (±1 rule)
-    
+        Check if assigning this date would maintain monthly balance
+        
         Returns:
-            tuple: (is_balanced, imbalance_score)
-            is_balanced: True if within ±1 range
-            imbalance_score: Lower is better, 0 is perfect balance
+            bool: True if assignment maintains balance, False otherwise
         """
-        month_key = f"{date.year}-{date.month:02d}"
-        monthly_shifts = self._get_worker_monthly_shifts(worker_id, date, month_key)
-    
-        if not monthly_shifts:
-            return True, 0
-    
-        counts = list(monthly_shifts.values())
-        max_shifts = max(counts)
-        min_shifts = min(counts)
-    
-        # Calculate imbalance score
-        imbalance = max_shifts - min_shifts
-    
-        # Check if within ±1 range
-        is_balanced = (max_shifts - min_shifts) <= 1
-    
-        return is_balanced, imbalance
+        try:
+            # Get current monthly distribution
+            distribution = {}
+            for assigned_date in self.worker_assignments[worker_id]:
+                month_key = f"{assigned_date.year}-{assigned_date.month:02d}"
+                distribution[month_key] = distribution.get(month_key, 0) + 1
+
+            # Add the new date to distribution
+            month_key = f"{date.year}-{date.month:02d}"
+            new_distribution = distribution.copy()
+            new_distribution[month_key] = new_distribution.get(month_key, 0) + 1
+
+            # Check balance
+            if new_distribution:
+                max_shifts = max(new_distribution.values())
+                min_shifts = min(new_distribution.values())
+                if max_shifts - min_shifts > 2:  # Allow maximum 2 shifts difference between months
+                    logging.debug(f"Monthly balance violated for worker {worker_id}: {new_distribution}")
+                    return False
+
+            return True
+
+        except Exception as e:
+            logging.error(f"Error checking monthly balance for worker {worker_id}: {str(e)}")
+            return True  # Allow assignment in case of error
 
     def _check_weekday_balance(self, worker_id, date):
         """
-        Strict weekday balance checker that enforces ±1 rule
+        Check if assigning this date would maintain weekday balance
+        
+        Returns:
+            bool: True if assignment maintains balance, False otherwise
         """
-        weekday = date.weekday()
-        weekdays = self.worker_weekdays[worker_id]
-    
-        # Get current counts
-        current_count = weekdays[weekday]
-        other_counts = [count for day, count in weekdays.items() if day != weekday]
-    
-        if not other_counts:
+        try:
+            # Get current weekday counts including the new date
+            weekday = date.weekday()
+            weekday_counts = self.worker_weekdays[worker_id].copy()
+            weekday_counts[weekday] += 1
+
+            # Calculate maximum difference
+            max_count = max(weekday_counts.values())
+            min_count = min(weekday_counts.values())
+            
+            # Allow maximum 1 shift difference between weekdays
+            if max_count - min_count > 1:
+                logging.debug(f"Weekday balance violated for worker {worker_id}: {weekday_counts}")
+                return False
+
             return True
-        
-        max_other = max(other_counts)
-        min_other = min(other_counts)
+
+        except Exception as e:
+            logging.error(f"Error checking weekday balance for worker {worker_id}: {str(e)}")
+            return True
+
+    def _check_post_rotation(self, worker_id, post):
+    """
+    Check if assigning this post would maintain proper rotation
     
-        # Enforce strict ±1 rule
-        if current_count >= max_other + 1:
-            return False
-        
-        # Also check if this would create too much imbalance with minimum
-        if current_count > min_other + 1:
-            return False
-        
+    Returns:
+        bool: True if assignment maintains balance, False otherwise
+    """
+    try:
+        # Get current post counts
+        post_counts = self._get_post_counts(worker_id)
+        post_counts[post] = post_counts.get(post, 0) + 1
+
+        # Calculate maximum difference
+        if post_counts:
+            max_posts = max(post_counts.values())
+            min_posts = min(post_counts.values())
+            if max_posts - min_posts > 1:  # Allow maximum 1 post difference
+                logging.debug(f"Post rotation violated for worker {worker_id}: {post_counts}")
+                return False
+
         return True
 
-    def _is_balanced_post_rotation(self, worker_id, post_number):
-        """
-        More lenient version of post rotation balance
-        Allow some imbalance while maintaining basic rotation
-        """
-        posts = self.worker_posts[worker_id]
-    
-        if len(posts) < self.num_shifts:
-            # Worker hasn't worked all posts yet
-            return True
-        else:
-            # Worker has worked all posts, check distribution
-            post_counts = {i: 0 for i in range(self.num_shifts)}
-            for assigned_date in self.worker_assignments[worker_id]:
-                if assigned_date in self.schedule:
-                    post = self.schedule[assigned_date].index(worker_id)
-                    post_counts[post] += 1
-        
-            # Allow up to 2 shifts difference between posts
-            current_count = post_counts.get(post_number, 0)
-            min_count = min(post_counts.values())
-            return (current_count - min_count) <= 2
+    except Exception as e:
+        logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
+        return True
 
     # ------------------------
     # 5. Date/Time Helper Methods
