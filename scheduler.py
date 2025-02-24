@@ -61,7 +61,15 @@ class Scheduler:
             self.worker_posts = {w['id']: set() for w in self.workers_data}
             self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
-            
+
+             # Initialize worker targets
+            for worker in self.workers_data:
+                if 'target_shifts' not in worker:
+                    worker['target_shifts'] = 0
+
+            # Calculate targets before proceeding
+            self._calculate_target_shifts()
+        
             # Track constraint skips
             self.constraint_skips = {
                 w['id']: {
@@ -317,21 +325,54 @@ class Scheduler:
         """Calculate target number of shifts for each worker based on their percentage"""
         total_days = (self.end_date - self.start_date).days + 1
         total_shifts = total_days * self.num_shifts
+    
+        logging.info(f"Calculating targets for {total_days} days with {self.num_shifts} shifts per day")
+        logging.info(f"Total shifts to distribute: {total_shifts}")
 
-        # Convert work_percentage to float when summing
-        total_percentage = sum(float(str(w.get('work_percentage', 100)).strip()) for w in self.workers_data)
-
+        # Initialize target_shifts to 0 for all workers
         for worker in self.workers_data:
-            try:
-                # Ensure work_percentage is properly converted to float
-                percentage = float(str(worker.get('work_percentage', 100)).strip())
-                target = (percentage / total_percentage) * total_shifts
-                worker['target_shifts'] = round(target)
-                logging.info(f"Worker {worker['id']} - Target shifts: {worker['target_shifts']} ({percentage}%)")
-            except (ValueError, TypeError) as e:
-                logging.error(f"Error processing work percentage for worker {worker.get('id')}: {str(e)}")
-                raise SchedulerError(f"Invalid work percentage for worker {worker.get('id')}")
+            worker['target_shifts'] = 0
 
+        try:
+            # Convert work_percentage to float when summing
+            percentages = []
+            for worker in self.workers_data:
+                try:
+                    percentage = float(str(worker.get('work_percentage', 100)).strip())
+                    if percentage <= 0:
+                        logging.warning(f"Worker {worker['id']} has 0 or negative percentage: {percentage}")
+                        percentage = 100  # Default to 100% if invalid
+                    percentages.append(percentage)
+                except (ValueError, TypeError) as e:
+                    logging.warning(f"Invalid percentage for worker {worker['id']}, using 100%: {str(e)}")
+                    percentages.append(100)
+        
+            total_percentage = sum(percentages)
+            if total_percentage <= 0:
+                logging.error("Total percentage is 0 or negative")
+                raise SchedulerError("Invalid total percentage")
+
+            # Calculate and assign targets
+            for worker, percentage in zip(self.workers_data, percentages):
+                target = (percentage / total_percentage) * total_shifts
+                worker['target_shifts'] = max(1, round(target))  # Ensure at least 1 shift
+                logging.info(f"Worker {worker['id']} - Percentage: {percentage}%, "
+                            f"Target shifts: {worker['target_shifts']}")
+
+        except Exception as e:
+            logging.error(f"Error in target calculation: {str(e)}", exc_info=True)
+            # Set default targets if calculation fails
+            default_target = max(1, round(total_shifts / len(self.workers_data)))
+            for worker in self.workers_data:
+                worker['target_shifts'] = default_target
+                logging.warning(f"Using default target for worker {worker['id']}: {default_target}")
+
+        # Verify all workers have targets
+        for worker in self.workers_data:
+            if 'target_shifts' not in worker or worker['target_shifts'] <= 0:
+                logging.error(f"Worker {worker['id']} has invalid target_shifts: {worker.get('target_shifts')}")
+                worker['target_shifts'] = 1
+                
     def _assign_mandatory_guards(self):
         """
         Assign all mandatory guards first
