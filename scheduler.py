@@ -615,7 +615,8 @@ class Scheduler:
 
     def _can_assign_worker(self, worker_id, date, post):
         """
-        Checks if a worker can be assigned to a shift by validating hard constraints.
+        Checks if a worker can be assigned to a shift by validating all constraints
+        using existing class methods.
     
         Args:
             worker_id: The ID of the worker to check
@@ -626,7 +627,7 @@ class Scheduler:
             bool: True if the worker can be assigned, False otherwise
         """
         try:
-            # Check if worker is unavailable for this date
+            # Check if worker is unavailable
             if self._is_worker_unavailable(worker_id, date):
                 return False
             
@@ -634,28 +635,26 @@ class Scheduler:
             if date in self.schedule and worker_id in self.schedule[date]:
                 return False
             
-            # Check minimum gap between shifts (2 days)
-            recent_assignments = sorted(self.worker_assignments[worker_id])
-            if recent_assignments:
-                days_since_last = (date - recent_assignments[-1]).days
-                if days_since_last < 2:
-                    return False
-                
+            # Check minimum gap (2 days)
+            if not self._check_gap_constraint(worker_id, date, 2):
+                return False
+            
+            # Check worker incompatibility
+            if not self._check_incompatibility(worker_id, date):
+                return False
+            
+            # Check weekday balance
+            if not self._check_weekday_balance(worker_id, date):
+                return False
+            
             # Check if worker has reached their target shifts
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = next(w['target_shifts'] for w in self.workers_data if w['id'] == worker_id)
             if current_shifts >= target_shifts:
                 return False
             
-            # Check weekday balance
-            weekday = date.weekday()
-            weekdays = self.worker_weekdays[worker_id]
-            current_count = weekdays[weekday]
-            other_counts = [count for day, count in weekdays.items() if day != weekday]
-            max_other = max(other_counts) if other_counts else 0
-        
-            # Allow only +/- 1 difference in weekday assignments
-            if current_count > max_other + 1:
+            # Check post rotation balance
+            if not self._is_balanced_post_rotation(worker_id, post):
                 return False
             
             return True
@@ -879,56 +878,28 @@ class Scheduler:
             'max_gap': max(gaps),
             'avg_gap': sum(gaps) / len(gaps)
         }
-    def _cleanup_schedule(self):
-        """Clean up the schedule by removing incomplete or invalid assignments"""
+    
+   def _cleanup_schedule(self):
+        """Clean up the schedule by removing incomplete assignments"""
         logging.info("Cleaning up schedule...")
-        dates_to_remove = []
-
-        for date, assignments in self.schedule.items():
-            # Check if the day has all required shifts filled
-            if len(assignments) < self.num_shifts:
-                logging.warning(f"Incomplete assignments for {date.strftime('%Y-%m-%d')}")
-                dates_to_remove.append(date)
-            
-                # Remove these assignments from worker records
-                for worker_id in assignments:
-                    # Remove from worker assignments
-                    if date in self.worker_assignments[worker_id]:
-                        self.worker_assignments[worker_id].remove(date)
-                
-                    # Update weekday counts
-                    effective_weekday = self._get_effective_weekday(date)
-                    self.worker_weekdays[worker_id][effective_weekday] = max(
-                        0, self.worker_weekdays[worker_id][effective_weekday] - 1
-                    )
-                
-                    # Update weekend tracking if applicable
-                    if self._is_weekend_day(date):
-                        weekend_start = self._get_weekend_start(date)
-                        if weekend_start in self.worker_weekends[worker_id]:
-                            # Only remove if there are no other assignments on this weekend
-                            other_weekend_assignments = [
-                                d for d in self.worker_assignments[worker_id]
-                                if (self._is_weekend_day(d) and 
-                                    self._get_weekend_start(d) == weekend_start)
-                            ]
-                            if not other_weekend_assignments:
-                                self.worker_weekends[worker_id].remove(weekend_start)
-
-        # Remove incomplete days from schedule
+        dates_to_remove = self._find_incomplete_days()
+    
         for date in dates_to_remove:
-            del self.schedule[date]
-            logging.info(f"Removed incomplete schedule for {date.strftime('%Y-%m-%D')}")
-
-        # Recalculate posts for each worker
-        for worker_id in self.worker_posts.keys():
-            self.worker_posts[worker_id] = set()
-            for date in self.worker_assignments[worker_id]:
-                if date in self.schedule:
-                    post = self.schedule[date].index(worker_id)
-                    self.worker_posts[worker_id].add(post)
-
+            self._remove_day_assignments(date)
+    
         logging.info(f"Schedule cleanup complete. Removed {len(dates_to_remove)} incomplete days.")
+
+    def _remove_day_assignments(self, date):
+        """Remove assignments for a specific day and update statistics"""
+        if date not in self.schedule:
+            return
+        
+        for worker_id in self.schedule[date]:
+            # Remove from worker assignments
+            self.worker_assignments[worker_id].discard(date)
+        
+            # Update weekday counts
+            self._update_worker_stats(worker_id, date, removing=True)
 
     def _validate_final_schedule(self):
         """Enhanced validation including all constraints"""
