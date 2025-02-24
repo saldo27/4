@@ -45,6 +45,9 @@ class Scheduler:
             config: Dictionary containing schedule configuration
         """
         try:
+            # First validate the configuration
+            self._validate_config(config)
+
             self.config = config
             self.start_date = config['start_date']
             self.end_date = config['end_date']
@@ -54,7 +57,7 @@ class Scheduler:
             
             # Initialize tracking dictionaries
             self.schedule = {}
-            self.worker_assignments = {w['id']: set() for w in self.workers_data}
+            self.worker_assignments = {w['id']: set() for w in self.workers_data}  # Changed to set()
             self.worker_posts = {w['id']: set() for w in self.workers_data}
             self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
@@ -83,6 +86,77 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Initialization error: {str(e)}")
             raise SchedulerError(f"Failed to initialize scheduler: {str(e)}")
+
+    def _validate_config(self, config):
+        """
+        Validate configuration parameters
+        
+        Args:
+            config: Dictionary containing schedule configuration
+            
+        Raises:
+            SchedulerError: If configuration is invalid
+        """
+        # Check required fields
+        required_fields = ['start_date', 'end_date', 'num_shifts', 'workers_data']
+        for field in required_fields:
+            if field not in config:
+                raise SchedulerError(f"Missing required configuration field: {field}")
+
+        # Validate date range
+        if not isinstance(config['start_date'], datetime) or not isinstance(config['end_date'], datetime):
+            raise SchedulerError("Start date and end date must be datetime objects")
+            
+        if config['start_date'] > config['end_date']:
+            raise SchedulerError("Start date must be before end date")
+
+        # Validate shifts
+        if not isinstance(config['num_shifts'], int) or config['num_shifts'] < 1:
+            raise SchedulerError("Number of shifts must be a positive integer")
+
+        # Validate workers data
+        if not config['workers_data'] or not isinstance(config['workers_data'], list):
+            raise SchedulerError("workers_data must be a non-empty list")
+
+        # Validate each worker's data
+        for worker in config['workers_data']:
+            if not isinstance(worker, dict):
+                raise SchedulerError("Each worker must be a dictionary")
+            
+            if 'id' not in worker:
+                raise SchedulerError("Each worker must have an 'id' field")
+            
+            # Validate work percentage if present
+            if 'work_percentage' in worker:
+                try:
+                    work_percentage = float(str(worker['work_percentage']).strip())
+                    if work_percentage <= 0 or work_percentage > 100:
+                        raise SchedulerError(f"Invalid work percentage for worker {worker['id']}: {work_percentage}")
+                except ValueError:
+                    raise SchedulerError(f"Invalid work percentage format for worker {worker['id']}")
+
+            # Validate date formats in mandatory_days if present
+            if 'mandatory_days' in worker:
+                try:
+                    self._parse_dates(worker['mandatory_days'])
+                except ValueError as e:
+                    raise SchedulerError(f"Invalid mandatory_days format for worker {worker['id']}: {str(e)}")
+
+            # Validate date formats in days_off if present
+            if 'days_off' in worker:
+                try:
+                    self._parse_date_ranges(worker['days_off'])
+                except ValueError as e:
+                    raise SchedulerError(f"Invalid days_off format for worker {worker['id']}: {str(e)}")
+
+        # Validate holidays if present
+        if 'holidays' in config:
+            if not isinstance(config['holidays'], list):
+                raise SchedulerError("holidays must be a list")
+            
+            for holiday in config['holidays']:
+                if not isinstance(holiday, datetime):
+                    raise SchedulerError("Each holiday must be a datetime object")
 
     def _log_initialization(self):
         """Log initialization parameters"""
@@ -1474,7 +1548,130 @@ class Scheduler:
         Returns:
             str: Formatted report text
         """
+
+    def get_schedule_metrics(self):
+        """
+        Calculate schedule performance metrics
         
+        Returns:
+            dict: Dictionary containing various schedule performance metrics
+        """
+        metrics = {
+            'coverage': self._calculate_coverage(),
+            'balance_score': self._calculate_balance_score(),
+            'constraint_violations': self._count_constraint_violations(),
+            'worker_satisfaction': self._calculate_worker_satisfaction()
+        }
+        
+        logging.info("Generated schedule metrics")
+        return metrics
+
+    def _calculate_coverage(self):
+        """Calculate schedule coverage percentage"""
+        total_required_shifts = (
+            (self.end_date - self.start_date).days + 1
+        ) * self.num_shifts
+        
+        actual_shifts = sum(len(shifts) for shifts in self.schedule.values())
+        return (actual_shifts / total_required_shifts) * 100
+
+    def _calculate_balance_score(self):
+        """Calculate overall balance score based on various factors"""
+        scores = []
+        
+        # Post rotation balance
+        for worker_id in self.worker_assignments:
+            post_counts = self._get_post_counts(worker_id)
+            if post_counts.values():
+                post_imbalance = max(post_counts.values()) - min(post_counts.values())
+                scores.append(max(0, 100 - (post_imbalance * 20)))
+        
+        # Weekday distribution balance
+        for worker_id, weekdays in self.worker_weekdays.items():
+            if weekdays.values():
+                weekday_imbalance = max(weekdays.values()) - min(weekdays.values())
+                scores.append(max(0, 100 - (weekday_imbalance * 20)))
+        
+        return sum(scores) / len(scores) if scores else 0
+
+    def _count_constraint_violations(self):
+        """Count total constraint violations"""
+        return {
+            'gap_violations': sum(
+                len(skips['gap']) for skips in self.constraint_skips.values()
+            ),
+            'incompatibility_violations': sum(
+                len(skips['incompatibility']) for skips in self.constraint_skips.values()
+            ),
+            'reduced_gap_violations': sum(
+                len(skips['reduced_gap']) for skips in self.constraint_skips.values()
+            )
+        }
+
+    def _calculate_worker_satisfaction(self):
+        """Calculate worker satisfaction score based on preferences and constraints"""
+        satisfaction_scores = []
+        
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            assignments = len(self.worker_assignments[worker_id])
+            target = worker.get('target_shifts', 0)
+            
+            # Calculate basic satisfaction score
+            if target > 0:
+                target_satisfaction = 100 - (abs(assignments - target) / target * 100)
+                satisfaction_scores.append(target_satisfaction)
+            
+            # Deduct points for constraint violations
+            violations = sum(len(v) for v in self.constraint_skips[worker_id].values())
+            if violations > 0:
+                violation_penalty = min(violations * 10, 50)  # Cap penalty at 50%
+                satisfaction_scores.append(100 - violation_penalty)
+        
+        return sum(satisfaction_scores) / len(satisfaction_scores) if satisfaction_scores else 0
+
+    def verify_schedule_integrity(self):
+        """
+        Verify schedule integrity and constraints
+        
+        Returns:
+            tuple: (bool, dict) - (is_valid, results)
+                is_valid: True if schedule passes all validations
+                results: Dictionary containing validation results and metrics
+        """
+        try:
+            # Run comprehensive validation
+            self._validate_final_schedule()
+            
+            # Gather statistics and metrics
+            stats = self.gather_statistics()
+            metrics = self.get_schedule_metrics()
+            
+            # Calculate coverage
+            coverage = self._calculate_coverage()
+            if coverage < 95:  # Less than 95% coverage is considered problematic
+                logging.warning(f"Low schedule coverage: {coverage:.1f}%")
+            
+            # Check worker assignment balance
+            for worker_id, worker_stats in stats['workers'].items():
+                if abs(worker_stats['total_shifts'] - worker_stats['target_shifts']) > 2:
+                    logging.warning(
+                        f"Worker {worker_id} has significant deviation from target shifts: "
+                        f"Actual={worker_stats['total_shifts']}, "
+                        f"Target={worker_stats['target_shifts']}"
+                    )
+            
+            return True, {
+                'stats': stats,
+                'metrics': metrics,
+                'coverage': coverage,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'validator': self.current_user
+            }
+            
+        except SchedulerError as e:
+            logging.error(f"Schedule validation failed: {str(e)}")
+            return False, str(e)
 
     
 
