@@ -479,7 +479,14 @@ class Scheduler:
            # First check incompatibility - reject immediately if incompatible
             if not self._check_incompatibility(worker_id, date):
                 return float('-inf')
-                    
+
+            # Check minimum gap requirement first
+            assignments = sorted(list(self.worker_assignments[worker_id]))
+            if assignments:
+                days_since_last = (date - assignments[-1]).days
+                if days_since_last < 3:  # Changed from 2 to 3
+                    return float('-inf')
+                
             # Check weekend limit - reject if would exceed
             if self._would_exceed_weekend_limit(worker_id, date):
                 return float('-inf')
@@ -657,7 +664,7 @@ class Scheduler:
         if assignments:
             for prev_date in assignments:
                 days_between = abs((date - prev_date).days)
-                if days_between < min_gap or days_between in [7, 14, 21]:
+                if days_between < 3 or days_between in [7, 14, 21]:
                     return False
         return True
 
@@ -855,7 +862,7 @@ class Scheduler:
             assignments = sorted(list(self.worker_assignments[worker_id]))
             if assignments:
                 days_since_last = (date - assignments[-1]).days
-                if days_since_last < 2:
+                if days_since_last < 3:
                     logging.debug(f"- Failed: Insufficient gap ({days_since_last} days)")
                     return False
 
