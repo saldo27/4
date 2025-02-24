@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from worker_eligibility import WorkerEligibilityTracker
 import calendar
 import logging
 import sys
 import requests
+from worker_eligibility import WorkerEligibilityTracker
 
 # Configure logging
 logging.basicConfig(
@@ -96,6 +96,9 @@ class Scheduler:
             self.eligibility_tracker = WorkerEligibilityTracker(
                 self.workers_data,
                 self.holidays
+            )
+
+            self._loginitialization()
 
         except Exception as e:
             logging.error(f"Initialization error: {str(e)}")
@@ -265,12 +268,7 @@ class Scheduler:
                             continue
                         
                         # Calculate score only for eligible workers
-                        score = self._calculate_worker_score(
-                            worker,
-                            current_date,
-                            len(self.schedule[current_date])
-                        )
-                        
+                        score = self._calculate_worker_score(worker, current_date, post)
                         if score > best_score:
                             best_worker = worker
                             best_score = score
@@ -279,23 +277,16 @@ class Scheduler:
                         worker_id = best_worker['id']
                         self.schedule[current_date].append(worker_id)
                         self.worker_assignments[worker_id].add(current_date)
-                        self._update_tracking_data(
-                            worker_id,
-                            current_date,
-                            len(self.schedule[current_date]) - 1
-                        )
-                        self.eligibility_tracker.update_worker_status(
-                            worker_id,
-                            current_date
-                        )
+                        self._update_tracking_data(worker_id, current_date, post)
+                        self.eligibility_tracker.update_worker_status(worker_id, current_date)
                     else:
-                        logging.warning(f"Could not find suitable worker for {current_date}")
+                        logging.warning(f"Could not find suitable worker for {current_date}, post {post}")
                 
                 current_date += timedelta(days=1)
-        
+            
             self._cleanup_schedule()
             self._validate_final_schedule()
-        
+            
             return self.schedule
         
         except Exception as e:
