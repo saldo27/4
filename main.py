@@ -316,26 +316,28 @@ class WorkerDetailsScreen(Screen):
     def generate_schedule(self):
         app = App.get_running_app()
         try:
-            from scheduler import Scheduler
             scheduler = Scheduler(app.schedule_config)
             schedule = scheduler.generate_schedule()
+        
+            if schedule is None:  # Schedule generation failed
+                raise ValueError("Failed to generate schedule - validation errors detected")
             
-            if not schedule:
-                raise ValueError("No schedule was generated")
-                
+            if not schedule:  # Schedule is empty
+                raise ValueError("Generated schedule is empty")
+            
             app.schedule_config['schedule'] = schedule
-            
+        
             popup = Popup(title='Success',
                          content=Label(text='Schedule generated successfully!'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
             self.manager.current = 'calendar_view'
-            
+        
         except Exception as e:
             error_message = f"Failed to generate schedule: {str(e)}"
             logging.error(error_message)
             self.show_error(error_message)
-
+        
     def clear_inputs(self):
         self.worker_id.text = ''
         self.work_periods.text = ''
