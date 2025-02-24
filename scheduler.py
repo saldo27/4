@@ -133,7 +133,7 @@ class Scheduler:
     def _reset_schedule(self):
         """Reset all schedule data"""
         self.schedule = {}
-        self.worker_assignments = {w['id']: [] for w in self.workers_data}
+        self.worker_assignments = {w['id']: set() for w in self.workers_data}
         self.worker_posts = {w['id']: set() for w in self.workers_data}
         self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
         self.worker_weekends = {w['id']: [] for w in self.workers_data}
@@ -177,11 +177,9 @@ class Scheduler:
     def _assign_mandatory_guards(self):
         """
         Assign all mandatory guards first
-        Mandatory guards take precedence over all other constraints
         """
         logging.info("Processing mandatory guards...")
 
-        # Sort workers by number of mandatory days to handle conflicts
         workers_with_mandatory = [
             (w, self._parse_dates(w.get('mandatory_days', ''))) 
             for w in self.workers_data
@@ -197,35 +195,23 @@ class Scheduler:
                 if self.start_date <= date <= self.end_date:
                     if date not in self.schedule:
                         self.schedule[date] = []
-                
+            
                     if (worker_id not in self.schedule[date] and 
                         len(self.schedule[date]) < self.num_shifts):
                         self.schedule[date].append(worker_id)
-                        self.worker_assignments[worker_id].add(date)  # Changed from append to add
+                        self.worker_assignments[worker_id].add(date)  # Using add() for sets
                     
                         # Update tracking data
                         post = len(self.schedule[date]) - 1
                         self.worker_posts[worker_id].add(post)
                     
-                        # Update weekday tracking
                         effective_weekday = self._get_effective_weekday(date)
                         self.worker_weekdays[worker_id][effective_weekday] += 1
                     
-                        # Update weekend tracking if applicable
                         if self._is_weekend_day(date):
                             weekend_start = self._get_weekend_start(date)
                             if weekend_start not in self.worker_weekends[worker_id]:
                                 self.worker_weekends[worker_id].append(weekend_start)
-                    
-                        logging.info(
-                            f"Assigned mandatory guard: Worker {worker_id} on "
-                            f"{date.strftime('%Y-%m-%d')} (post {post})"
-                        )
-                    else:
-                        logging.warning(
-                            f"Could not assign mandatory guard for Worker {worker_id} on "
-                            f"{date.strftime('%Y-%m-%d')} - slot unavailable"
-                        )
 
     def _get_weekend_start(self, date):
         """Get the start date (Friday) of the weekend containing this date"""
@@ -265,7 +251,7 @@ class Scheduler:
 
     def _check_gap_constraint(self, worker_id, date, min_gap):
         """Check minimum gap between assignments"""
-        assignments = sorted(self.worker_assignments[worker_id])
+        assignments = sorted(list(self.worker_assignments[worker_id]))
         if assignments:
             for prev_date in assignments:
                 days_between = abs((date - prev_date).days)
@@ -555,7 +541,7 @@ class Scheduler:
                 score -= 5000  # Penalize but don't forbid
             
             # --- Gap Analysis ---
-            recent_assignments = sorted(self.worker_assignments[worker_id])
+            recent_assignments = sorted(list(self.worker_assignments[worker_id]))
             if recent_assignments:
                 days_since_last = (date - recent_assignments[-1]).days
                 if days_since_last < 2:
@@ -742,31 +728,30 @@ class Scheduler:
         Modified assignment method that keeps partial assignments
         """
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
-    
+
         if date not in self.schedule:
             self.schedule[date] = []
-    
+
         remaining_shifts = self.num_shifts - len(self.schedule[date])
-    
+
         for post in range(remaining_shifts):
             best_worker = None
             best_score = float('-inf')
-    
+
             for worker in self.workers_data:
                 if self._can_assign_worker(worker['id'], date, post):
                     score = self._calculate_worker_score(worker, date, post)
                     if score is not None and score > best_score:
                         best_worker = worker
                         best_score = score
-        
+    
             if best_worker:
                 worker_id = best_worker['id']
                 self.schedule[date].append(worker_id)
-                self.worker_assignments[worker_id].add(date)  # Changed from append to add
+                self.worker_assignments[worker_id].add(date)  # Using add() for sets
                 self._update_tracking_data(worker_id, date, post)
             else:
                 logging.error(f"Could not find suitable worker for shift {post + 1}")
-                # Don't break - continue with next shift
 
     def _update_worker_stats(self, worker_id, date, removing=False):
         """Update worker statistics for assignment or removal"""
@@ -847,14 +832,14 @@ class Scheduler:
     def _get_monthly_distribution(self, worker_id):
         """Get monthly shift distribution for a worker"""
         distribution = {}
-        for date in sorted(self.worker_assignments[worker_id]):
+        for date in sorted(list(self.worker_assignments[worker_id])):
             month_key = f"{date.year}-{date.month:02d}"
             distribution[month_key] = distribution.get(month_key, 0) + 1
         return distribution
 
     def _analyze_gaps(self, worker_id):
         """Analyze gaps between shifts for a worker"""
-        assignments = sorted(self.worker_assignments[worker_id])
+        assignments = sorted(list(self.worker_assignments[worker_id]))
         if len(assignments) <= 1:
             return {'min_gap': None, 'max_gap': None, 'avg_gap': None}
 
@@ -1006,7 +991,7 @@ class Scheduler:
     def get_worker_schedule(self, worker_id):
         """Get detailed schedule for a specific worker"""
         worker = next(w for w in self.workers_data if w['id'] == worker_id)
-        assignments = sorted(self.worker_assignments[worker_id])
+        assignments = sorted(list(self.worker_assignments[worker_id]))
         
         return {
             'worker_id': worker_id,
