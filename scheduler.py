@@ -1,4 +1,3 @@
-
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import calendar
@@ -477,13 +476,13 @@ class Scheduler:
             worker_id = worker['id']
             score = 0
 
-             # Check incompatibilities and weekends first
+            # Check incompatibilities and weekends first - STRICT ENFORCEMENT
             if date in self.schedule:
                 for other_worker in self.schedule[date]:
                     if self._are_workers_incompatible(worker_id, other_worker):
                         return float('-inf')
                     
-           # If would exceed weekend limit, reject immediately
+            # If would exceed weekend limit, reject immediately
             if self._would_exceed_weekend_limit(worker_id, date):
                 return float('-inf')
             
@@ -615,25 +614,21 @@ class Scheduler:
                 return True
 
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
-            
+        
             for assigned_id in self.schedule[date]:
                 assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_id)
-                
-                # Check general incompatibility flag
+            
+                # Check general incompatibility flag - STRICT ENFORCEMENT
                 if worker.get('is_incompatible', False) and assigned_worker.get('is_incompatible', False):
-                    date_str = date.strftime('%Y-%m-%d')
-                    skip_pairs = [pair for d, pair in self.constraint_skips[worker_id]['incompatibility'] if d == date_str]
-                    
-                    if not any((worker_id, assigned_id) in pairs or (assigned_id, worker_id) in pairs for pairs in skip_pairs):
-                        logging.debug(f"Workers {worker_id} and {assigned_id} are incompatible on {date}")
-                        return False
-                
+                    logging.debug(f"Workers {worker_id} and {assigned_id} are incompatible on {date}")
+                    return False
+            
                 # Check specific incompatibilities list
                 if ('incompatible_workers' in worker and 
                     assigned_id in worker.get('incompatible_workers', [])):
                     logging.debug(f"Worker {worker_id} is specifically incompatible with {assigned_id}")
                     return False
-                    
+                
                 if ('incompatible_workers' in assigned_worker and 
                     worker_id in assigned_worker.get('incompatible_workers', [])):
                     logging.debug(f"Worker {assigned_id} is specifically incompatible with {worker_id}")
@@ -665,28 +660,25 @@ class Scheduler:
             # Check if this is a weekend day (Fri, Sat, Sun)
             if not date.weekday() >= 4:  # Not Fri(4), Sat(5), or Sun(6)
                 return False
-            
+        
             # Get all weekend assignments for this worker
             weekend_dates = set(d for d in self.worker_assignments[worker_id] 
                               if d.weekday() >= 4)  # Existing weekend days
             weekend_dates.add(date)  # Add the proposed date
+    
+            # For each weekend, check if it would create more than 3 consecutive weekends
+            weekends = sorted(weekend_dates)
+            consecutive_count = 1
         
-            # For each date, check the 3-week window
-            for check_date in weekend_dates:
-                window_start = check_date - timedelta(days=10)  # 10 days before
-                window_end = check_date + timedelta(days=10)    # 10 days after
-            
-                # Count weekend days in this window
-                weekend_count = sum(
-                    1 for d in weekend_dates
-                    if window_start <= d <= window_end
-                )
-            
-                if weekend_count > 3:
-                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
-                                f"{weekend_count} weekend days in 3-week window "
-                                f"around {check_date}")
-                    return True
+            for i in range(1, len(weekends)):
+                days_between = (weekends[i] - weekends[i-1]).days
+                if days_between <= 7:  # Same or consecutive weekend
+                    consecutive_count += 1
+                    if consecutive_count > 3:
+                        logging.debug(f"Worker {worker_id} would exceed 3 consecutive weekends")
+                        return True
+                else:
+                    consecutive_count = 1
                 
             return False
         
