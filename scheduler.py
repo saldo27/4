@@ -400,7 +400,7 @@ class Scheduler:
             other_months_max = max(month_counts.values()) if month_counts else 0
             
             if current_month_shifts <= other_months_max:
-                score += 5000  # Strongly prefer under-assigned months
+                score += 8000  # Strongly prefer under-assigned months
 
             # Weekday balance score
             weekday = date.weekday()
@@ -408,7 +408,7 @@ class Scheduler:
             other_weekdays_max = max(count for day, count in self.worker_weekdays[worker_id].items() if day != weekday)
             
             if current_weekday_count <= other_weekdays_max:
-                score += 3000  # Prefer under-assigned weekdays
+                score += 6000  # Prefer under-assigned weekdays
 
             # Post rotation score
             post_counts = self._get_post_counts(worker_id)
@@ -416,21 +416,8 @@ class Scheduler:
             other_posts_max = max(post_counts.values()) if post_counts else 0
             
             if current_post_count <= other_posts_max:
-                score += 2000  # Prefer under-assigned posts
+                score += 4000  # Prefer under-assigned posts
                                     
-            # --- Gap Analysis ---
-            recent_assignments = sorted(list(self.worker_assignments[worker_id]))
-            if recent_assignments:
-                days_since_last = (date - recent_assignments[-1]).days
-                if days_since_last < 2:
-                    return float('-inf')  # Maintain minimum 2-day gap
-                elif days_since_last <= 3:
-                    score += 2000
-                elif days_since_last <= 5:
-                    score += 4000
-                else:
-                    score += 6000
-                
             return score
         
         except Exception as e:
@@ -868,9 +855,7 @@ class Scheduler:
     def _check_monthly_balance(self, worker_id, date):
         """
         Check if assigning this date would maintain monthly balance
-        
-        Returns:
-            bool: True if assignment maintains balance, False otherwise
+        Returns: (bool, float) - (passed, imbalance_score)
         """
         try:
             # Get current monthly distribution
@@ -884,19 +869,33 @@ class Scheduler:
             new_distribution = distribution.copy()
             new_distribution[month_key] = new_distribution.get(month_key, 0) + 1
 
-            # Check balance
+            # Calculate max allowed shifts per month based on target
+            worker = next(w for w in self.workers_data if w['id'] == worker_id)
+            target_shifts = worker.get('target_shifts', 0)
+            months_in_schedule = self._get_schedule_months()
+            target_per_month = target_shifts / months_in_schedule
+
+            # Check balance with stricter limits
             if new_distribution:
                 max_shifts = max(new_distribution.values())
                 min_shifts = min(new_distribution.values())
-                if max_shifts - min_shifts > 2:  # Allow maximum 2 shifts difference between months
-                    logging.debug(f"Monthly balance violated for worker {worker_id}: {new_distribution}")
-                    return False
+                imbalance = max_shifts - min_shifts
+            
+            # Don't allow more than 1 shift difference between months
+            if imbalance > 1:
+                logging.debug(f"Monthly balance violated for worker {worker_id}: {new_distribution}")
+                return False, imbalance
+            
+            # Don't exceed monthly target by more than 1
+            if max_shifts > (target_per_month + 1):
+                logging.debug(f"Monthly target exceeded for worker {worker_id}")
+                return False, imbalance
 
-            return True
+            return True, 0.0
 
         except Exception as e:
             logging.error(f"Error checking monthly balance for worker {worker_id}: {str(e)}")
-            return True  # Allow assignment in case of error
+            return True, 0.0  # Allow assignment in case of error
 
     def _check_weekday_balance(self, worker_id, date):
         """
@@ -1391,17 +1390,32 @@ class Scheduler:
 
     def _cleanup_schedule(self):
         """
-        Clean up the schedule by removing incomplete assignments
-        Logs cleanup operations and updates all relevant tracking data
+        Clean up schedule while preserving partial assignments
         """
         logging.info("Starting schedule cleanup...")
-        dates_to_remove = self._find_incomplete_days()
-    
-        for date in dates_to_remove:
-            logging.info(f"Removing incomplete assignments for {date.strftime('%Y-%m-%d')}")
-            self._remove_day_assignments(date)
-    
-        logging.info(f"Schedule cleanup complete. Removed {len(dates_to_remove)} incomplete days.")
+        incomplete_days = []
+        
+        current_date = self.start_date
+        while current_date <= self.end_date:
+            if current_date not in self.schedule:
+                incomplete_days.append(current_date)
+            else:
+                # Keep partial assignments instead of removing them
+                assigned_shifts = len(self.schedule[current_date])
+                if assigned_shifts > 0 and assigned_shifts < self.num_shifts:
+                    logging.info(f"Keeping {assigned_shifts} shifts for {current_date}")
+                elif assigned_shifts == 0:
+                    incomplete_days.append(current_date)
+            
+            current_date += timedelta(days=1)
+
+        # Only remove days with zero assignments
+        for date in incomplete_days:
+            if date in self.schedule:
+                logging.info(f"Removing empty day {date}")
+                del self.schedule[date]
+
+        logging.info(f"Schedule cleanup complete. Removed {len(incomplete_days)} empty days.")
 
     def _validate_final_schedule(self):
         """
