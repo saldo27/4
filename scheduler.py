@@ -922,6 +922,12 @@ class Scheduler:
                 logging.debug(f"Worker {worker_id} is incompatible with assigned worker {assigned_worker}")
                 return False
         return True
+
+    def get_assigned_workers(self, date):
+        """
+        Return a list of worker IDs that are scheduled on a given date.
+        """
+        return self.schedule.get(date, [])
         
     def _is_worker_unavailable(self, worker_id, date):
         """
@@ -2120,28 +2126,4 @@ class Scheduler:
         except SchedulerError as e:
             logging.error(f"Schedule validation failed: {str(e)}")
             return False, str(e)
-
-        
-if __name__ == '__main__':
-    # Example usage:
-    scheduler = Scheduler()
-    
-    # Example workers; adjust according to your actual data.
-    scheduler.workers_data = [
-        {'id': 1, 'has_incompatibility': True},
-        {'id': 2, 'has_incompatibility': True},
-        {'id': 3, 'has_incompatibility': False}
-    ]
-    # Example assignments
-    scheduler.worker_assignments = {
-        1: [datetime(2025, 2, 24).date()],
-        2: [],
-        3: []
-    }
-    # Example schedule for today: worker 1 is already assigned.
-    today = datetime(2025, 2, 24).date()
-    scheduler.schedule[today] = [1]
-    
-    # Attempt to assign worker 2 on the same day to a given post (e.g., post 0).
-    can_assign = scheduler._can_assign_worker(2, today, 0)
-    print(f"Can assign worker 2 on {today}: {can_assign}")
+     
