@@ -955,43 +955,43 @@ class Scheduler:
             return True  # Assume unavailable in case of error
             
         def _would_exceed_weekend_limit(self, worker_id, date):
-        """
-        Check if assigning this date would exceed the weekend/holiday limit:
-        Max 3 weekend/holiday days in any 3-week period.
-        Weekend days include: Friday, Saturday, Sunday, and days before holidays
-        """
-        try:
-            # Check if this is a weekend day (Fri, Sat, Sun)
-            if not date.weekday() >= 4:  # Not Fri(4), Sat(5), or Sun(6)
-                return False
+            """
+            Check if assigning this date would exceed the weekend/holiday limit:
+            Max 3 weekend/holiday days in any 3-week period.
+            Weekend days include: Friday, Saturday, Sunday, and days before holidays
+            """
+            try:
+                # Check if this is a weekend day (Fri, Sat, Sun)
+                if not date.weekday() >= 4:  # Not Fri(4), Sat(5), or Sun(6)
+                    return False
             
-            # Get all weekend assignments for this worker
-            weekend_dates = set(d for d in self.worker_assignments[worker_id] 
-                              if d.weekday() >= 4)  # Existing weekend days
-            weekend_dates.add(date)  # Add the proposed date
+                # Get all weekend assignments for this worker
+                weekend_dates = set(d for d in self.worker_assignments[worker_id] 
+                                  if d.weekday() >= 4)  # Existing weekend days
+                weekend_dates.add(date)  # Add the proposed date
         
-            # For each date, check the 3-week window
-            for check_date in weekend_dates:
-                window_start = check_date - timedelta(days=10)  # 10 days before
-                window_end = check_date + timedelta(days=10)    # 10 days after
+                # For each date, check the 3-week window
+                for check_date in weekend_dates:
+                    window_start = check_date - timedelta(days=10)  # 10 days before
+                    window_end = check_date + timedelta(days=10)    # 10 days after
             
-                # Count weekend days in this window
-                weekend_count = sum(
-                    1 for d in weekend_dates
-                    if window_start <= d <= window_end
-                )    
+                    # Count weekend days in this window
+                    weekend_count = sum(
+                        1 for d in weekend_dates
+                        if window_start <= d <= window_end
+                    )    
             
-                if weekend_count > 3:
-                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
-                                f"{weekend_count} weekend days in 3-week window "
-                                f"around {check_date}")
-                    return True
+                    if weekend_count > 3:
+                        logging.debug(f"Worker {worker_id} would exceed weekend limit: "
+                                    f"{weekend_count} weekend days in 3-week window "
+                                    f"around {check_date}")
+                        return True
                 
-            return False
+                return False
         
-        except Exception as e:
-            logging.error(f"Error checking weekend limit: {str(e)}")
-            return True  # Fail safe - assume limit would be exceeded
+            except Exception as e:
+                logging.error(f"Error checking weekend limit: {str(e)}")
+                return True  # Fail safe - assume limit would be exceeded
 
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
