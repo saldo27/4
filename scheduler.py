@@ -937,13 +937,13 @@ class Scheduler:
         try:
             # Get monthly distribution
             distribution = {}
-            month_days = self._get_schedule_months()
+            month_days = self._get_schedule_months()  # This returns a dict, not an int
         
             # Count current assignments
             for assigned_date in self.worker_assignments[worker_id]:
                 month_key = f"{assigned_date.year}-{assigned_date.month:02d}"
                 distribution[month_key] = distribution.get(month_key, 0) + 1
-
+    
             # Add potential new assignment
             month_key = f"{date.year}-{date.month:02d}"
             new_distribution = distribution.copy()
@@ -953,13 +953,20 @@ class Scheduler:
                 # Calculate ratios of shifts per available day for each month
                 ratios = {}
                 for m_key, shifts in new_distribution.items():
-                    available_days = month_days[m_key]
-                    ratios[m_key] = shifts / available_days
+                    if m_key in month_days:  # Make sure month key exists
+                        available_days = month_days[m_key]
+                        if available_days > 0:  # Prevent division by zero
+                            ratios[m_key] = shifts / available_days
+                        else:
+                            ratios[m_key] = 0
+                    else:
+                        logging.warning(f"Month {m_key} not found in month_days for worker {worker_id}")
+                        ratios[m_key] = 0
 
                 if ratios:
                     max_ratio = max(ratios.values())
                     min_ratio = min(ratios.values())
-                
+            
                     # Allow maximum 20% difference in ratios
                     if (max_ratio - min_ratio) > 0.2:
                         logging.debug(f"Monthly balance violated for worker {worker_id}: {ratios}")
@@ -968,7 +975,7 @@ class Scheduler:
             return True, 0.0
 
         except Exception as e:
-            logging.error(f"Error checking monthly balance for worker {worker_id}: {str(e)}")
+            logging.error(f"Error checking monthly balance for worker {worker_id}: {str(e)}", exc_info=True)
             return True, 0.0
 
     def _calculate_monthly_targets(self):
@@ -1147,13 +1154,34 @@ class Scheduler:
 
     def _get_schedule_months(self):
         """
-        Calculate number of months in schedule period
-        
+        Calculate available days per month in schedule period
+    
         Returns:
-            int: Number of months between start_date and end_date
+            dict: Dictionary with month keys and their available days count
         """
-        return ((self.end_date.year * 12 + self.end_date.month) -
-                (self.start_date.year * 12 + self.start_date.month) + 1)
+        month_days = {}
+        current = self.start_date
+        while current <= self.end_date:
+            month_key = f"{current.year}-{current.month:02d}"
+        
+            if month_key not in month_days:
+                month_days[month_key] = 0
+        
+            # Only count days within our schedule period
+            if self.start_date <= current <= self.end_date:
+                month_days[month_key] += 1
+            
+            current += timedelta(days=1)
+        
+            # Move to first day of next month if we've finished current month
+            if current.day == 1:
+                next_month = current
+            else:
+                # Get first day of next month
+                next_month = (current.replace(day=1) + timedelta(days=32)).replace(day=1)
+                current = next_month
+    
+        return month_days
 
     def _get_month_key(self, date):
         """
