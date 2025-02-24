@@ -492,6 +492,9 @@ class Scheduler:
         
             if shift_difference <= 0:
                 return float('-inf')  # Never exceed target
+
+            # Higher priority for workers further from their target
+            score += shift_difference * 1000
         
             # Calculate progress percentage
             progress = (current_shifts / target_shifts) * 100 if target_shifts > 0 else 0
@@ -506,35 +509,16 @@ class Scheduler:
             elif progress < 100:
                 score += 10000
             
-           # Monthly balance score - Highest priority
+          # --- Monthly Balance Score ---
             month_key = f"{date.year}-{date.month:02d}"
-            month_counts = {}
-            for d in self.worker_assignments[worker_id]:
-                mk = f"{d.year}-{d.month:02d}"
-                month_counts[mk] = month_counts.get(mk, 0) + 1
-        
-            current_month_shifts = month_counts.get(month_key, 0)
-            other_months = [c for m, c in month_counts.items() if m != month_key]
+            monthly_dist = self._get_worker_monthly_shifts(worker_id)
+            current_month = monthly_dist.get(month_key, 0)
+            other_months = [c for m, c in monthly_dist.items() if m != month_key]
         
             if other_months:
                 avg_other_months = sum(other_months) / len(other_months)
-                if current_month_shifts < avg_other_months:
-                    score += 15000  # Highest priority for underutilized months
-                elif current_month_shifts == avg_other_months:
-                    score += 10000  # Good priority for balanced months
-            else:
-                score += 5000  # Base score for first month
-
-            # Progress towards target
-            progress = (current_shifts / target_shifts) * 100 if target_shifts > 0 else 0
-            if progress < 60:
-                score += 8000
-            elif progress < 80:
-                score += 6000
-            elif progress < 90:
-                score += 4000
-            elif progress < 100:
-                score += 2000
+                if current_month < avg_other_months:
+                    score += 2000  # Boost score for underutilized months
 
            # Weekday balance score
             weekday = date.weekday()
@@ -544,27 +528,13 @@ class Scheduler:
             if current_weekday_count <= other_weekdays_max:
                 score += 6000  # Prefer under-assigned weekdays
 
-            # Post rotation score
+            # --- Post Balance Score ---
             post_counts = self._get_post_counts(worker_id)
             current_post_count = post_counts.get(post, 0)
-            other_posts_max = max(post_counts.values()) if post_counts else 0
-            
-            if current_post_count <= other_posts_max:
-                score += 4000  # Prefer under-assigned posts
-                
-            # --- Gap Analysis ---
-            recent_assignments = sorted(list(self.worker_assignments[worker_id]))
-            if recent_assignments:
-                days_since_last = (date - recent_assignments[-1]).days
-                if days_since_last < 2:
-                    return float('-inf')  # Maintain minimum 2-day gap
-                elif days_since_last <= 3:
-                    score += 2000
-                elif days_since_last <= 5:
-                    score += 4000
-                else:
-                    score += 6000                        
-            return score
+            target_per_post = sum(post_counts.values()) / self.num_shifts
+        
+            if abs(current_post_count - target_per_post) <= 1:
+                score += 3000  # Boost score if within target range
       
         except Exception as e:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
