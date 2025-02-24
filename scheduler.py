@@ -298,20 +298,27 @@ class Scheduler:
 
     def _check_weekday_balance(self, worker_id, date):
         """
-        Much more lenient weekday balance check that only prevents extreme imbalances
+        Strict weekday balance checker that enforces ±1 rule
         """
         weekday = date.weekday()
         weekdays = self.worker_weekdays[worker_id]
     
-        # Get current weekday counts
+        # Get current counts
         current_count = weekdays[weekday]
-        max_count = max(weekdays.values())
-        min_count = min(weekdays.values())
+        other_counts = [count for day, count in weekdays.items() if day != weekday]
     
-        # Allow much more variation - only prevent extreme imbalances
-        max_imbalance = 4  # Allow up to 4 more shifts on any given day
+        if not other_counts:
+            return True
+        
+        max_other = max(other_counts)
+        min_other = min(other_counts)
     
-        if current_count > min_count + max_imbalance:
+        # Enforce strict ±1 rule
+        if current_count >= max_other + 1:
+            return False
+        
+        # Also check if this would create too much imbalance with minimum
+        if current_count > min_other + 1:
             return False
         
         return True
@@ -510,7 +517,7 @@ class Scheduler:
 
     def _calculate_worker_score(self, worker, date, post):
         """
-        Revised scoring system that prioritizes even distribution and completion
+        Revised scoring system with strict shift count and weekday balance
         """
         try:
             worker_id = worker['id']
@@ -521,65 +528,68 @@ class Scheduler:
                 date in self.schedule and worker_id in self.schedule[date]):
                 return float('-inf')
             
-            # --- Current State Analysis ---
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = worker.get('target_shifts', 0)
-            all_workers_shifts = [len(self.worker_assignments[w['id']]) for w in self.workers_data]
-            avg_shifts = sum(all_workers_shifts) / len(all_workers_shifts) if all_workers_shifts else 0
         
-            # --- Distribution Score (Highest Priority) ---
-            shift_difference = target_shifts - current_shifts
-            distribution_score = 0
-        
-            # Strong preference for under-assigned workers
-            if current_shifts < avg_shifts:
-                distribution_score = 15000
-            elif current_shifts == avg_shifts:
-                distribution_score = 10000
-            elif current_shifts < target_shifts:
-                distribution_score = 8000
-            elif current_shifts == target_shifts:
-                distribution_score = 5000
-            elif current_shifts > target_shifts:
-                return float('-inf')  # Prevent over-assignment
+            # Strict enforcement of target shifts
+            if current_shifts >= target_shifts:
+                return float('-inf')  # Never exceed target
             
-            score += distribution_score
+            # --- Weekday Balance Check ---
+            if not self._check_weekday_balance(worker_id, date):
+                return float('-inf')  # Enforce weekday balance strictly
+            
+            # --- Target Progress Score ---
+            shift_difference = target_shifts - current_shifts
+            progress_ratio = current_shifts / target_shifts if target_shifts > 0 else 0
         
+            # Prioritize workers furthest from their targets
+            if progress_ratio < 0.5:  # Less than 50% complete
+                score += 20000
+            elif progress_ratio < 0.75:  # 50-75% complete
+                score += 15000
+            elif progress_ratio < 0.9:  # 75-90% complete
+                score += 10000
+            else:  # 90-100% complete
+                score += 5000
+            
             # --- Gap Analysis ---
             recent_assignments = sorted(self.worker_assignments[worker_id])
             if recent_assignments:
                 days_since_last = (date - recent_assignments[-1]).days
-                if days_since_last < 2:  # Minimum 2-day gap
-                    return float('-inf')
+                if days_since_last < 2:
+                    return float('-inf')  # Minimum 2-day gap
                 elif days_since_last <= 3:
                     score += 1000
                 elif days_since_last <= 5:
                     score += 2000
                 else:
-                    score += 3000  # Prefer workers who haven't worked recently
+                    score += 3000
                 
-            # --- Post Balance (Secondary Priority) ---
+            # --- Post Balance ---
             post_counts = {i: 0 for i in range(self.num_shifts)}
             for assigned_date in self.worker_assignments[worker_id]:
                 if assigned_date in self.schedule:
                     assigned_post = self.schedule[assigned_date].index(worker_id)
                     post_counts[assigned_post] += 1
                 
-            min_posts = min(post_counts.values())
-            if post_counts[post] == min_posts:
+            current_post_count = post_counts.get(post, 0)
+            min_post_count = min(post_counts.values()) if post_counts else 0
+        
+            if current_post_count <= min_post_count:
                 score += 2000
-            elif post_counts[post] <= min_posts + 1:
+            elif current_post_count <= min_post_count + 1:
                 score += 1000
             
-            # --- Weekday Distribution (Lower Priority) ---
+            # --- Weekday Distribution Refinement ---
             weekday = date.weekday()
             weekdays = self.worker_weekdays[worker_id]
             min_weekday_count = min(weekdays.values())
         
             if weekdays[weekday] == min_weekday_count:
-                score += 1000
-            elif weekdays[weekday] <= min_weekday_count + 2:
-                score += 500
+                score += 4000  # Increased priority for balancing weekdays
+            elif weekdays[weekday] == min_weekday_count + 1:
+                score += 2000
             
             return score
         
@@ -598,21 +608,28 @@ class Scheduler:
 
     def _validate_assignment(self, worker_id, date, post):
         """
-        Simplified validation that only enforces critical constraints
+        Strict validation enforcing both shift count and weekday balance
         """
-        # Check minimum gap between shifts
+        # Check basic constraints
+        if (self._is_worker_unavailable(worker_id, date) or
+            date in self.schedule and worker_id in self.schedule[date]):
+            return False
+        
+        # Check shift count
+        current_shifts = len(self.worker_assignments[worker_id])
+        target_shifts = next(w['target_shifts'] for w in self.workers_data if w['id'] == worker_id)
+        if current_shifts >= target_shifts:
+            return False
+        
+        # Check minimum gap
         recent_assignments = sorted(self.worker_assignments[worker_id])
         if recent_assignments:
             days_since_last = (date - recent_assignments[-1]).days
-            if days_since_last < 2:  # Enforce minimum 2-day gap
+            if days_since_last < 2:
                 return False
             
-        # Check if worker is already assigned that day
-        if date in self.schedule and worker_id in self.schedule[date]:
-            return False
-        
-        # Check if worker is unavailable
-        if self._is_worker_unavailable(worker_id, date):
+        # Check weekday balance
+        if not self._check_weekday_balance(worker_id, date):
             return False
         
         return True
