@@ -20,6 +20,24 @@ class SchedulerError(Exception):
     pass
 
 class Scheduler:
+    """
+    Scheduler class for managing guard duty assignments
+    Methods are organized in logical groups:
+    1. Core/Initialization
+    2. Schedule Generation
+    3. Constraint Checking
+    4. Balance and Distribution
+    5. Date/Time Helpers
+    6. Worker Statistics
+    7. Data Management
+    8. Cleanup and Validation
+    9. Output/Export
+    """
+
+    # ------------------------
+    # 1. Core/Initialization Methods
+    # ------------------------
+    
     def __init__(self, config):
         """
         Initialize the scheduler with configuration
@@ -65,7 +83,7 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Initialization error: {str(e)}")
             raise SchedulerError(f"Failed to initialize scheduler: {str(e)}")
-    
+
     def _log_initialization(self):
         """Log initialization parameters"""
         logging.info("Scheduler initialized with:")
@@ -76,6 +94,18 @@ class Scheduler:
         logging.info(f"Holidays: {[h.strftime('%Y-%m-%d') for h in self.holidays]}")
         logging.info(f"Current datetime (Spain): {self.current_datetime}")
         logging.info(f"Current user: {self.current_user}")
+
+    def _reset_schedule(self):
+        """Reset all schedule data"""
+        self.schedule = {}
+        self.worker_assignments = {w['id']: set() for w in self.workers_data}
+        self.worker_posts = {w['id']: set() for w in self.workers_data}
+        self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
+        self.worker_weekends = {w['id']: [] for w in self.workers_data}
+        self.constraint_skips = {
+            w['id']: {'gap': [], 'incompatibility': [], 'reduced_gap': []}
+            for w in self.workers_data
+        }
 
     def _get_spain_time(self):
         """Get current time in Spain timezone with fallback options"""
@@ -99,6 +129,10 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Fallback time error: {str(e)}")
             return datetime.utcnow()
+
+    # ------------------------
+    # 2. Schedule Generation Methods
+    # ------------------------
 
     def generate_schedule(self):
         """Generate the complete schedule"""
@@ -130,50 +164,25 @@ class Scheduler:
             logging.error("Schedule generation failed", exc_info=True)
             raise SchedulerError(f"Failed to generate schedule: {str(e)}")
 
-    def _reset_schedule(self):
-        """Reset all schedule data"""
-        self.schedule = {}
-        self.worker_assignments = {w['id']: set() for w in self.workers_data}
-        self.worker_posts = {w['id']: set() for w in self.workers_data}
-        self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
-        self.worker_weekends = {w['id']: [] for w in self.workers_data}
-        self.constraint_skips = {
-            w['id']: {'gap': [], 'incompatibility': [], 'reduced_gap': []}
-            for w in self.workers_data
-        }
+    def _calculate_target_shifts(self):
+        """Calculate target number of shifts for each worker based on their percentage"""
+        total_days = (self.end_date - self.start_date).days + 1
+        total_shifts = total_days * self.num_shifts
 
-    def _check_constraints(self, worker_id, date, skip_constraints=False, try_part_time=False):
-        """
-        Unified constraint checking
-        Returns: (bool, str) - (passed, reason_if_failed)
-        """
-        worker = next(w for w in self.workers_data if w['id'] == worker_id)
-        work_percentage = float(worker.get('work_percentage', 100))
+        # Convert work_percentage to float when summing
+        total_percentage = sum(float(str(w.get('work_percentage', 100)).strip()) for w in self.workers_data)
 
-        # Basic availability checks (never skipped)
-        if date in self.worker_assignments[worker_id]:
-            return False, "already assigned"
+        for worker in self.workers_data:
+            try:
+                # Ensure work_percentage is properly converted to float
+                percentage = float(str(worker.get('work_percentage', 100)).strip())
+                target = (percentage / total_percentage) * total_shifts
+                worker['target_shifts'] = round(target)
+                logging.info(f"Worker {worker['id']} - Target shifts: {worker['target_shifts']} ({percentage}%)")
+            except (ValueError, TypeError) as e:
+                logging.error(f"Error processing work percentage for worker {worker.get('id')}: {str(e)}")
+                raise SchedulerError(f"Invalid work percentage for worker {worker.get('id')}")
 
-        if self._is_worker_unavailable(worker_id, date):
-            return False, "unavailable"
-
-        # Gap constraints
-        if not skip_constraints:
-            min_gap = 5 if try_part_time and work_percentage < 100 else max(2, int(4 / (work_percentage / 100)))
-            if not self._check_gap_constraint(worker_id, date, min_gap):
-                return False, f"gap constraint ({min_gap} days)"
-
-        # Incompatibility constraints
-        if not skip_constraints and not self._check_incompatibility(worker_id, date):
-            return False, "incompatibility"
-
-        # Weekend constraints
-        if self._is_weekend_day(date):
-            if self._has_three_consecutive_weekends(worker_id, date):
-                return False, "three consecutive weekends"
-
-        return True, ""
-    
     def _assign_mandatory_guards(self):
         """
         Assign all mandatory guards first
@@ -199,87 +208,240 @@ class Scheduler:
                     if (worker_id not in self.schedule[date] and 
                         len(self.schedule[date]) < self.num_shifts):
                         self.schedule[date].append(worker_id)
-                        self.worker_assignments[worker_id].add(date)  # Using add() for sets
-                    
+                        self.worker_assignments[worker_id].add(date)
+                        
                         # Update tracking data
                         post = len(self.schedule[date]) - 1
-                        self.worker_posts[worker_id].add(post)
-                    
-                        effective_weekday = self._get_effective_weekday(date)
-                        self.worker_weekdays[worker_id][effective_weekday] += 1
-                    
-                        if self._is_weekend_day(date):
-                            weekend_start = self._get_weekend_start(date)
-                            if weekend_start not in self.worker_weekends[worker_id]:
-                                self.worker_weekends[worker_id].append(weekend_start)
+                        self._update_tracking_data(worker_id, date, post)
 
-    def _get_weekend_start(self, date):
-        """Get the start date (Friday) of the weekend containing this date"""
-        if self._is_pre_holiday(date):
-            return date
-        elif self._is_holiday(date):
-            return date - timedelta(days=1)
-        else:
-            # Regular weekend - get to Friday
-            return date - timedelta(days=date.weekday() - 4)
+    def _assign_day_shifts(self, date):
+        """
+        Modified assignment method that keeps partial assignments
+        """
+        logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
 
-    def _get_effective_weekday(self, date):
-        """Get the effective weekday, treating holidays as Sundays and pre-holidays as Fridays"""
-        if self._is_holiday(date):
-            return 6  # Sunday
-        if self._is_pre_holiday(date):
-            return 4  # Friday
-        return date.weekday()
-
-    def _is_worker_unavailable(self, worker_id, date):
-        """Check if worker is unavailable on date"""
-        worker = next(w for w in self.workers_data if w['id'] == worker_id)
-        
-        # Check days off
-        if worker.get('days_off'):
-            off_periods = self._parse_date_ranges(worker['days_off'])
-            if any(start <= date <= end for start, end in off_periods):
-                return True
-
-        # Check work periods
-        if worker.get('work_periods'):
-            work_periods = self._parse_date_ranges(worker['work_periods'])
-            if not any(start <= date <= end for start, end in work_periods):
-                return True
-
-        return False
-
-    def _check_gap_constraint(self, worker_id, date, min_gap):
-        """Check minimum gap between assignments"""
-        assignments = sorted(list(self.worker_assignments[worker_id]))
-        if assignments:
-            for prev_date in assignments:
-                days_between = abs((date - prev_date).days)
-                if days_between < min_gap or days_between in [7, 14, 21]:
-                    return False
-        return True
-
-    def _check_incompatibility(self, worker_id, date):
-        """Check worker compatibility with already assigned workers"""
         if date not in self.schedule:
-            return True
+            self.schedule[date] = []
 
-        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+        remaining_shifts = self.num_shifts - len(self.schedule[date])
+
+        for post in range(remaining_shifts):
+            best_worker = None
+            best_score = float('-inf')
+
+            for worker in self.workers_data:
+                if self._can_assign_worker(worker['id'], date, post):
+                    score = self._calculate_worker_score(worker, date, post)
+                    if score is not None and score > best_score:
+                        best_worker = worker
+                        best_score = score
+    
+            if best_worker:
+                worker_id = best_worker['id']
+                self.schedule[date].append(worker_id)
+                self.worker_assignments[worker_id].add(date)
+                self._update_tracking_data(worker_id, date, post)
+            else:
+                logging.error(f"Could not find suitable worker for shift {post + 1}")
+
+    def _get_candidates(self, date, post, skip_constraints=False, try_part_time=False):
+        """Get suitable candidates with their scores"""
+        candidates = []
+    
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            work_percentage = float(worker.get('work_percentage', 100))
+
+            # Skip if max shifts reached
+            if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
+                continue
+
+            # For part-time assignment, only consider part-time workers
+            if try_part_time and work_percentage >= 100:
+                continue
+
+            # Check constraints
+            passed, reason = self._check_constraints(
+                worker_id, 
+                date,
+                skip_constraints=skip_constraints,
+                try_part_time=try_part_time
+            )
         
-        for assigned_id in self.schedule[date]:
-            assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_id)
-            
-            # Check general incompatibility
-            if worker.get('is_incompatible', False) and assigned_worker.get('is_incompatible', False):
-                return False
-                
-            # Check specific incompatibilities
-            if ('incompatible_workers' in worker and assigned_id in worker['incompatible_workers']):
-                return False
-            if ('incompatible_workers' in assigned_worker and worker_id in assigned_worker['incompatible_workers']):
-                return False
+            if not passed:
+                logging.debug(f"Worker {worker_id} skipped: {reason}")
+                continue
 
-        return True
+            score = self._calculate_worker_score(worker, date, post)
+            # Only add candidate if score is not None or -inf
+            if score is not None and score != float('-inf'):
+                candidates.append((worker, score))
+                logging.debug(f"Worker {worker_id} added as candidate with score {score}")
+
+        return candidates
+
+    def _calculate_worker_score(self, worker, date, post):
+        """
+        Calculate a score for assigning a worker to a shift
+        Higher score means better fit
+        """
+        try:
+            worker_id = worker['id']
+            score = 0
+        
+            # --- Hard Constraints ---
+            if (self._is_worker_unavailable(worker_id, date) or
+                date in self.schedule and worker_id in self.schedule[date]):
+                return float('-inf')
+        
+            current_shifts = len(self.worker_assignments[worker_id])
+            target_shifts = worker.get('target_shifts', 0)
+        
+            # --- Target Progress Score ---
+            shift_difference = target_shifts - current_shifts
+        
+            if shift_difference <= 0:
+                return float('-inf')  # Never exceed target
+        
+            # Calculate progress percentage
+            progress = (current_shifts / target_shifts) * 100 if target_shifts > 0 else 0
+        
+            # More granular progress scoring
+            if progress < 60:
+                score += 25000  # High priority for workers below 60%
+            elif progress < 80:
+                score += 20000
+            elif progress < 90:
+                score += 15000
+            elif progress < 100:
+                score += 10000
+            
+            # --- Monthly Balance Score ---
+            is_balanced, monthly_imbalance = self._check_monthly_balance(worker_id, date)
+        
+            if is_balanced:
+                score += 10000  # High priority for maintaining monthly balance
+            else:
+                # Penalize based on imbalance severity
+                if monthly_imbalance == 2:
+                    score -= 5000
+                elif monthly_imbalance > 2:
+                    score -= 15000  # Strongly discourage high monthly imbalance
+            
+            # --- Post Balance and Other Scores ---
+            post_counts = self._get_post_counts(worker_id)
+            current_post_count = post_counts.get(post, 0)
+            other_post_counts = [count for p, count in post_counts.items() if p != post]
+            max_other_posts = max(other_post_counts) if other_post_counts else 0
+        
+            post_difference = current_post_count - max_other_posts
+            
+            if post_difference <= -2:
+                score += 8000  # Strongly prefer under-assigned posts
+            elif post_difference <= -1:
+                score += 6000
+            elif post_difference == 0:
+                score += 4000
+            elif post_difference == 1:
+                score += 2000
+            else:
+                score -= 5000  # Penalize but don't forbid
+            
+            # --- Gap Analysis ---
+            recent_assignments = sorted(list(self.worker_assignments[worker_id]))
+            if recent_assignments:
+                days_since_last = (date - recent_assignments[-1]).days
+                if days_since_last < 2:
+                    return float('-inf')  # Maintain minimum 2-day gap
+                elif days_since_last <= 3:
+                    score += 2000
+                elif days_since_last <= 5:
+                    score += 4000
+                else:
+                    score += 6000
+                
+            return score
+        
+        except Exception as e:
+            logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
+            return None
+
+    # ------------------------
+    # 3. Balance and Distribution Methods
+    # ------------------------
+
+    def _get_worker_monthly_shifts(self, worker_id, include_date=None, include_month=None):
+        """
+        Get the number of shifts per month for a worker
+        
+        Args:
+            worker_id: The worker's ID
+            include_date: Optional date to include in the count (for calculating potential assignments)
+            include_month: The month key (YYYY-MM) of include_date
+        
+        Returns:
+            dict: Monthly shift counts {YYYY-MM: count}
+        """
+        monthly_shifts = {}
+        
+        # Count existing assignments
+        for date in self.worker_assignments[worker_id]:
+            month_key = f"{date.year}-{date.month:02d}"
+            monthly_shifts[month_key] = monthly_shifts.get(month_key, 0) + 1
+        
+        # Include potential new assignment if date provided
+        if include_date and include_month:
+            monthly_shifts[include_month] = monthly_shifts.get(include_month, 0) + 1
+        
+        return monthly_shifts
+
+    def _calculate_weekday_imbalance(self, worker_id, date):
+        """Calculate how much this assignment would affect weekday balance"""
+        weekday = date.weekday()
+        counts = self.worker_weekdays[worker_id].copy()
+        counts[weekday] += 1
+        return max(counts.values()) - min(counts.values())
+
+    def _calculate_post_imbalance(self, worker_id, post):
+        """Calculate how much this assignment would affect post balance"""
+        post_counts = {i: 0 for i in range(self.num_shifts)}
+        for assigned_date in self.worker_assignments[worker_id]:
+            if assigned_date in self.schedule:
+                assigned_post = self.schedule[assigned_date].index(worker_id)
+                post_counts[assigned_post] += 1
+        post_counts[post] += 1
+        return max(post_counts.values()) - min(post_counts.values())
+
+    def _try_balance_assignment(self, date, post):
+        """
+        Try to find a worker that would improve balance
+        Returns the worker that would create the least imbalance
+        """
+        candidates = []
+    
+        for worker in self.workers_data:
+            worker_id = worker['id']
+        
+            # Skip if worker is unavailable
+            if not self._check_constraints(worker_id, date, skip_constraints=False)[0]:
+                continue
+            
+            # Calculate imbalance scores
+            weekday_imbalance = self._calculate_weekday_imbalance(worker_id, date)
+            post_imbalance = self._calculate_post_imbalance(worker_id, post)
+            
+            # Calculate monthly imbalance
+            month_key = f"{date.year}-{date.month:02d}"
+            _, monthly_imbalance = self._check_monthly_balance(worker_id, date)
+        
+            # Lower score is better
+            total_imbalance = weekday_imbalance + post_imbalance + (monthly_imbalance * 2)
+            candidates.append((worker, total_imbalance))
+    
+        if candidates:
+            # Return worker with lowest imbalance
+            return min(candidates, key=lambda x: x[1])[0]
+        return None
 
     def _check_monthly_balance(self, worker_id, date):
         """
@@ -344,76 +506,32 @@ class Scheduler:
     
         if len(posts) < self.num_shifts:
             # Worker hasn't worked all posts yet
-            # Allow repeating a post if no other option
             return True
         else:
             # Worker has worked all posts, check distribution
-            post_counts = {i: 0 for i in range(self.num_shifts)}
-            for assigned_date in self.worker_assignments[worker_id]:
-                if assigned_date in self.schedule:
-                    post = self.schedule[assigned_date].index(worker_id)
-                    post_counts[post] += 1
-        
+            post_counts = self._get_post_counts(worker_id)
+            
             # Allow up to 2 shifts difference between posts
-            current_count = post_counts.get(post_number, 0)
-            min_count = min(post_counts.values())
-            return (current_count - min_count) <= 2
+            current_count
 
-    def _has_three_consecutive_weekends(self, worker_id, date):
-        """
-        Check if assigning this date would result in more than 3 consecutive weekends.
-        Includes holidays and pre-holiday days in the weekend check.
-        """
-        if not self._is_weekend_day(date):
-            return False
-
-        def get_weekend_start(d):
-            """Get the start date of the weekend containing this date"""
-            if self._is_pre_holiday(d):
-                return d
-            elif self._is_holiday(d):
-                return d - timedelta(days=1)
-            else:
-                # Regular weekend - get to Friday
-                return d - timedelta(days=d.weekday() - 4)
-
-        # Get current weekend's start date
-        current_weekend = get_weekend_start(date)
-    
-        # Get all weekend dates for this worker
-        weekends = sorted(self.worker_weekends[worker_id])
-        if current_weekend not in weekends:
-            weekends = sorted(weekends + [current_weekend])
-
-        # Count consecutive weekends
-        consecutive_count = 1
-        for i in range(len(weekends) - 1, -1, -1):
-            if i > 0:
-                days_diff = abs((weekends[i] - weekends[i-1]).days)
-                if days_diff == 7:  # Consecutive weekends
-                    consecutive_count += 1
-                    if consecutive_count > 3:
-                        logging.debug(f"Worker {worker_id} would exceed 3 consecutive weekends")
-                        return True
-                else:
-                    break  # Break if weekends not consecutive
-
-        return False
+    # ------------------------
+    # 4. Balance and Distribution Methods
+    # ------------------------
 
     def _get_worker_monthly_shifts(self, worker_id, include_date=None, include_month=None):
         """
         Get the number of shifts per month for a worker
-    
+        
         Args:
             worker_id: The worker's ID
             include_date: Optional date to include in the count (for calculating potential assignments)
             include_month: The month key (YYYY-MM) of include_date
-    
+        
         Returns:
             dict: Monthly shift counts {YYYY-MM: count}
         """
         monthly_shifts = {}
-    
+        
         # Count existing assignments
         for date in self.worker_assignments[worker_id]:
             month_key = f"{date.year}-{date.month:02d}"
@@ -422,317 +540,8 @@ class Scheduler:
         # Include potential new assignment if date provided
         if include_date and include_month:
             monthly_shifts[include_month] = monthly_shifts.get(include_month, 0) + 1
-    
+        
         return monthly_shifts
- 
-    def _is_weekend_day(self, date):
-        """
-        Check if date is a weekend day, holiday, or pre-holiday
-        """
-        if self._is_holiday(date):
-            return True
-        if self._is_pre_holiday(date):
-            return True
-        return date.weekday() in [4, 5, 6]  # Friday = 4, Saturday = 5, Sunday = 6
-
-    def _is_holiday(self, date):
-        """Check if a date is a holiday"""
-        return date in self.holidays
-
-    def _is_pre_holiday(self, date):
-        """Check if a date is the day before a holiday"""
-        next_day = date + timedelta(days=1)
-        return next_day in self.holidays
-
-    def _calculate_target_shifts(self):
-        """Calculate target number of shifts for each worker based on their percentage"""
-        total_days = (self.end_date - self.start_date).days + 1
-        total_shifts = total_days * self.num_shifts
-
-        # Convert work_percentage to float when summing
-        total_percentage = sum(float(str(w.get('work_percentage', 100)).strip()) for w in self.workers_data)
-
-        for worker in self.workers_data:
-            try:
-                # Ensure work_percentage is properly converted to float
-                percentage = float(str(worker.get('work_percentage', 100)).strip())
-                target = (percentage / total_percentage) * total_shifts
-                worker['target_shifts'] = round(target)
-                logging.info(f"Worker {worker['id']} - Target shifts: {worker['target_shifts']} ({percentage}%)")
-            except (ValueError, TypeError) as e:
-                logging.error(f"Error processing work percentage for worker {worker.get('id')}: {str(e)}")
-                raise SchedulerError(f"Invalid work percentage for worker {worker.get('id')}")
-
-    def _get_candidates(self, date, post, skip_constraints=False, try_part_time=False):
-        """Get suitable candidates with their scores"""
-        candidates = []
-    
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            work_percentage = float(worker.get('work_percentage', 100))
-
-            # Skip if max shifts reached
-            if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
-                continue
-
-            # For part-time assignment, only consider part-time workers
-            if try_part_time and work_percentage >= 100:
-                continue
-
-            # Check constraints
-            passed, reason = self._check_constraints(
-                worker_id, 
-                date,
-                skip_constraints=skip_constraints,
-                try_part_time=try_part_time
-            )
-        
-            if not passed:
-                logging.debug(f"Worker {worker_id} skipped: {reason}")
-                continue
-
-            score = self._calculate_worker_score(worker, date, post)
-            # Only add candidate if score is not None or -inf
-            if score is not None and score != float('-inf'):
-                candidates.append((worker, score))
-                logging.debug(f"Worker {worker_id} added as candidate with score {score}")
-
-        return candidates
-    
-    def _get_least_used_weekday(self, worker_id):
-        """
-        Get the weekday that has been used least often for this worker
-        Returns the weekday number (0-6 for Monday-Sunday)
-        """
-        weekdays = self.worker_weekdays[worker_id]
-        min_count = min(weekdays.values())
-        # If there are multiple weekdays with the same minimum count,
-        # prefer the earliest one in the week
-        for weekday in range(7):  # 0-6 for Monday-Sunday
-            if weekdays[weekday] == min_count:
-                return weekday
-        return 0  # Fallback to Monday if something goes wrong
-
-    def _calculate_worker_score(self, worker, date, post):
-        """
-        Improved scoring system with monthly balance consideration
-        """
-        try:
-            worker_id = worker['id']
-            score = 0
-        
-            # --- Hard Constraints ---
-            if (self._is_worker_unavailable(worker_id, date) or
-                date in self.schedule and worker_id in self.schedule[date]):
-                return float('-inf')
-        
-            current_shifts = len(self.worker_assignments[worker_id])
-            target_shifts = worker.get('target_shifts', 0)
-        
-            # --- Target Progress Score ---
-            shift_difference = target_shifts - current_shifts
-        
-            if shift_difference <= 0:
-                return float('-inf')  # Never exceed target
-        
-            # Calculate progress percentage
-            progress = (current_shifts / target_shifts) * 100 if target_shifts > 0 else 0
-        
-            # More granular progress scoring
-            if progress < 60:
-                score += 25000  # High priority for workers below 60%
-            elif progress < 80:
-                score += 20000
-            elif progress < 90:
-                score += 15000
-            elif progress < 100:
-                score += 10000
-            
-            # --- Post Balance Score ---
-            post_counts = {i: 0 for i in range(self.num_shifts)}
-            for assigned_date in self.worker_assignments[worker_id]:
-                if assigned_date in self.schedule:
-                    assigned_post = self.schedule[assigned_date].index(worker_id)
-                    post_counts[assigned_post] += 1
-                
-            current_post_count = post_counts.get(post, 0)
-            other_post_counts = [count for p, count in post_counts.items() if p != post]
-            max_other_posts = max(other_post_counts) if other_post_counts else 0
-        
-            post_difference = current_post_count - max_other_posts
-        
-            if post_difference <= -2:
-                score += 8000  # Strongly prefer under-assigned posts
-            elif post_difference <= -1:
-                score += 6000
-            elif post_difference == 0:
-                score += 4000
-            elif post_difference == 1:
-                score += 2000
-            else:
-                score -= 5000  # Penalize but don't forbid
-
-            # --- Monthly Balance Score ---
-            is_balanced, monthly_imbalance = self._check_monthly_balance(worker_id, date)
-        
-            if is_balanced:
-                score += 10000  # High priority for maintaining monthly balance
-            else:
-                # Penalize based on imbalance severity
-                if monthly_imbalance == 2:
-                    score -= 5000
-                elif monthly_imbalance > 2:
-                    score -= 15000  # Strongly discourage high monthly imbalance
-            
-            # --- Weekday Balance Score ---
-            weekday = date.weekday()
-            weekdays = self.worker_weekdays[worker_id]
-            current_weekday_count = weekdays[weekday]
-            other_weekday_counts = [count for day, count in weekdays.items() if day != weekday]
-            max_other_weekdays = max(other_weekday_counts) if other_weekday_counts else 0
-        
-            weekday_difference = current_weekday_count - max_other_weekdays
-            
-            if weekday_difference <= -2:
-                score += 8000  # Strongly prefer under-assigned weekdays
-            elif weekday_difference <= -1:
-                score += 6000
-            elif weekday_difference == 0:
-                score += 4000
-            elif weekday_difference == 1:
-                score += 2000
-            else:
-                score -= 5000  # Penalize but don't forbid
-            
-            # --- Gap Analysis ---
-            recent_assignments = sorted(list(self.worker_assignments[worker_id]))
-            if recent_assignments:
-                days_since_last = (date - recent_assignments[-1]).days
-                if days_since_last < 2:
-                    return float('-inf')  # Maintain minimum 2-day gap
-                elif days_since_last <= 3:
-                    score += 2000
-                elif days_since_last <= 5:
-                    score += 4000
-                else:
-                    score += 6000
-                
-            return score
-        
-        except Exception as e:
-            logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
-            return None
-
-    def _can_assign_worker(self, worker_id, date, post):
-        """
-        Checks if a worker can be assigned to a shift by validating all constraints
-        using existing class methods.
-    
-        Args:
-            worker_id: The ID of the worker to check
-            date: The date of the shift
-            post: The post number for the shift
-    
-        Returns:
-            bool: True if the worker can be assigned, False otherwise
-        """
-        try:
-            # Check if worker is unavailable
-            if self._is_worker_unavailable(worker_id, date):
-                return False
-            
-            # Check if worker is already assigned that day
-            if date in self.schedule and worker_id in self.schedule[date]:
-                return False
-            
-            # Check minimum gap (2 days)
-            if not self._check_gap_constraint(worker_id, date, 2):
-                return False
-            
-            # Check worker incompatibility
-            if not self._check_incompatibility(worker_id, date):
-                return False
-            
-            # Check weekday balance
-            if not self._check_weekday_balance(worker_id, date):
-                return False
-            
-            # Check if worker has reached their target shifts
-            current_shifts = len(self.worker_assignments[worker_id])
-            target_shifts = next(w['target_shifts'] for w in self.workers_data if w['id'] == worker_id)
-            if current_shifts >= target_shifts:
-                return False
-            
-            # Check post rotation balance
-            if not self._is_balanced_post_rotation(worker_id, post):
-                return False
-            
-            return True
-        
-        except Exception as e:
-            logging.error(f"Error checking if worker {worker_id} can be assigned: {str(e)}")
-            return False
-        
-    def _get_post_counts(self, worker_id):
-        """Helper method to get post counts for a worker"""
-        post_counts = {i: 0 for i in range(self.num_shifts)}
-        for assigned_date in self.worker_assignments[worker_id]:
-            if assigned_date in self.schedule:
-                post = self.schedule[assigned_date].index(worker_id)
-                post_counts[post] += 1
-        return post_counts
-
-    def _validate_assignment(self, worker_id, date, post):
-        """
-        Strict validation enforcing both shift count and weekday balance
-        """
-        # Check basic constraints
-        if (self._is_worker_unavailable(worker_id, date) or
-            date in self.schedule and worker_id in self.schedule[date]):
-            return False
-        
-        # Check shift count
-        current_shifts = len(self.worker_assignments[worker_id])
-        target_shifts = next(w['target_shifts'] for w in self.workers_data if w['id'] == worker_id)
-        if current_shifts >= target_shifts:
-            return False
-        
-        # Check minimum gap
-        recent_assignments = sorted(self.worker_assignments[worker_id])
-        if recent_assignments:
-            days_since_last = (date - recent_assignments[-1]).days
-            if days_since_last < 2:
-                return False
-            
-        # Check weekday balance
-        if not self._check_weekday_balance(worker_id, date):
-            return False
-        
-        return True
-        
-    def _try_balance_assignment(self, date, post):
-        """Try to find a worker that would improve balance"""
-        candidates = []
-    
-        for worker in self.workers_data:
-            worker_id = worker['id']
-        
-            # Skip if worker is unavailable
-            if not self._check_constraints(worker_id, date, skip_constraints=False)[0]:
-                continue
-            
-            # Calculate imbalance scores
-            weekday_imbalance = self._calculate_weekday_imbalance(worker_id, date)
-            post_imbalance = self._calculate_post_imbalance(worker_id, post)
-        
-            # Lower score is better
-            total_imbalance = weekday_imbalance + post_imbalance
-            candidates.append((worker, total_imbalance))
-    
-        if candidates:
-            # Return worker with lowest imbalance
-            return min(candidates, key=lambda x: x[1])[0]
-        return None
 
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
@@ -751,118 +560,340 @@ class Scheduler:
         post_counts[post] += 1
         return max(post_counts.values()) - min(post_counts.values())
 
-    def _parse_dates(self, date_str):
-        """Parse semicolon-separated dates"""
-        if not date_str:
-            return []
-
-        dates = []
-        for date_text in date_str.split(';'):
-            date_text = date_text.strip()
-            if date_text:
-                try:
-                    dates.append(datetime.strptime(date_text, '%d-%m-%Y'))
-                except ValueError as e:
-                    print(f"Warning: Invalid date format '{date_text}' - {str(e)}")
-        return dates
-
-    def _parse_date_ranges(self, date_ranges_str):
-        """Parse semicolon-separated date ranges"""
-        if not date_ranges_str:
-            return []
-
-        ranges = []
-        for date_range in date_ranges_str.split(';'):
-            date_range = date_range.strip()
-            try:
-                if ' - ' in date_range:
-                    start_str, end_str = date_range.split(' - ')
-                    start = datetime.strptime(start_str.strip(), '%d-%m-%Y')
-                    end = datetime.strptime(end_str.strip(), '%d-%m-%Y')
-                    ranges.append((start, end))
-                else:
-                    date = datetime.strptime(date_range, '%d-%m-%Y')
-                    ranges.append((date, date))
-            except ValueError as e:
-                print(f"Warning: Invalid date range format '{date_range}' - {str(e)}")
-        return ranges
-                
-    def _assign_day_shifts(self, date):
-        """
-        Modified assignment method that keeps partial assignments
-        """
-        logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
-
-        if date not in self.schedule:
-            self.schedule[date] = []
-
-        remaining_shifts = self.num_shifts - len(self.schedule[date])
-
-        for post in range(remaining_shifts):
-            best_worker = None
-            best_score = float('-inf')
-
-            for worker in self.workers_data:
-                if self._can_assign_worker(worker['id'], date, post):
-                    score = self._calculate_worker_score(worker, date, post)
-                    if score is not None and score > best_score:
-                        best_worker = worker
-                        best_score = score
+    def _try_balance_assignment(self, date, post):
+        """Try to find a worker that would improve balance"""
+        candidates = []
     
-            if best_worker:
-                worker_id = best_worker['id']
-                self.schedule[date].append(worker_id)
-                self.worker_assignments[worker_id].add(date)  # Using add() for sets
-                self._update_tracking_data(worker_id, date, post)
-            else:
-                logging.error(f"Could not find suitable worker for shift {post + 1}")
-
-    def _update_worker_stats(self, worker_id, date, removing=False):
-        """Update worker statistics for assignment or removal"""
-        effective_weekday = self._get_effective_weekday(date)
-    
-        if removing:
-            self.worker_weekdays[worker_id][effective_weekday] = max(
-                0, self.worker_weekdays[worker_id][effective_weekday] - 1
-            )
+        for worker in self.workers_data:
+            worker_id = worker['id']
         
-            if self._is_weekend_day(date):
-                weekend_start = self._get_weekend_start(date)
-                if weekend_start in self.worker_weekends[worker_id]:
-                    self.worker_weekends[worker_id].remove(weekend_start)
+            # Skip if worker is unavailable
+            if not self._check_constraints(worker_id, date, skip_constraints=False)[0]:
+                continue
+            
+            # Calculate imbalance scores
+            weekday_imbalance = self._calculate_weekday_imbalance(worker_id, date)
+            post_imbalance = self._calculate_post_imbalance(worker_id, post)
+            monthly_imbalance = self._check_monthly_balance(worker_id, date)[1]
+        
+            # Lower score is better
+            total_imbalance = weekday_imbalance + post_imbalance + monthly_imbalance
+            candidates.append((worker, total_imbalance))
+    
+        if candidates:
+            # Return worker with lowest imbalance
+            return min(candidates, key=lambda x: x[1])[0]
+        return None
+
+    def _check_monthly_balance(self, worker_id, date):
+        """
+        Check if assigning this date would maintain monthly balance (±1 rule)
+    
+        Returns:
+            tuple: (is_balanced, imbalance_score)
+            is_balanced: True if within ±1 range
+            imbalance_score: Lower is better, 0 is perfect balance
+        """
+        month_key = f"{date.year}-{date.month:02d}"
+        monthly_shifts = self._get_worker_monthly_shifts(worker_id, date, month_key)
+    
+        if not monthly_shifts:
+            return True, 0
+    
+        counts = list(monthly_shifts.values())
+        max_shifts = max(counts)
+        min_shifts = min(counts)
+    
+        # Calculate imbalance score
+        imbalance = max_shifts - min_shifts
+    
+        # Check if within ±1 range
+        is_balanced = (max_shifts - min_shifts) <= 1
+    
+        return is_balanced, imbalance
+
+    def _check_weekday_balance(self, worker_id, date):
+        """
+        Strict weekday balance checker that enforces ±1 rule
+        """
+        weekday = date.weekday()
+        weekdays = self.worker_weekdays[worker_id]
+    
+        # Get current counts
+        current_count = weekdays[weekday]
+        other_counts = [count for day, count in weekdays.items() if day != weekday]
+    
+        if not other_counts:
+            return True
+        
+        max_other = max(other_counts)
+        min_other = min(other_counts)
+    
+        # Enforce strict ±1 rule
+        if current_count >= max_other + 1:
+            return False
+        
+        # Also check if this would create too much imbalance with minimum
+        if current_count > min_other + 1:
+            return False
+        
+        return True
+
+    def _is_balanced_post_rotation(self, worker_id, post_number):
+        """
+        More lenient version of post rotation balance
+        Allow some imbalance while maintaining basic rotation
+        """
+        posts = self.worker_posts[worker_id]
+    
+        if len(posts) < self.num_shifts:
+            # Worker hasn't worked all posts yet
+            return True
         else:
-            self.worker_weekdays[worker_id][effective_weekday] += 1
+            # Worker has worked all posts, check distribution
+            post_counts = {i: 0 for i in range(self.num_shifts)}
+            for assigned_date in self.worker_assignments[worker_id]:
+                if assigned_date in self.schedule:
+                    post = self.schedule[assigned_date].index(worker_id)
+                    post_counts[post] += 1
         
-            if self._is_weekend_day(date):
-                weekend_start = self._get_weekend_start(date)
-                if weekend_start not in self.worker_weekends[worker_id]:
-                    self.worker_weekends[worker_id].append(weekend_start)
+            # Allow up to 2 shifts difference between posts
+            current_count = post_counts.get(post_number, 0)
+            min_count = min(post_counts.values())
+            return (current_count - min_count) <= 2
 
-    def _find_incomplete_days(self):
-        """Find days with incomplete shift assignments"""
-        return [
-            date for date in self.schedule.keys()
-            if len(self.schedule[date]) < self.num_shifts
-        ]
+    # ------------------------
+    # 5. Date/Time Helper Methods
+    # ------------------------
 
-    def _update_tracking_data(self, worker_id, date, post):
-        """Update all tracking data for a new assignment"""
-        self.worker_posts[worker_id].add(post)
-        effective_weekday = self._get_effective_weekday(date)
-        self.worker_weekdays[worker_id][effective_weekday] += 1
-    
-        if self._is_weekend_day(date):
-            weekend_start = self._get_weekend_start(date)
-            if weekend_start not in self.worker_weekends[worker_id]:
-                self.worker_weekends[worker_id].append(weekend_start)
-                
+    def _get_effective_weekday(self, date):
+        """
+        Get the effective weekday, treating holidays as Sundays and pre-holidays as Fridays
+        
+        Args:
+            date: datetime object
+        Returns:
+            int: 0-6 representing Monday-Sunday, with holidays as 6 and pre-holidays as 4
+        """
+        if self._is_holiday(date):
+            return 6  # Sunday
+        if self._is_pre_holiday(date):
+            return 4  # Friday
+        return date.weekday()
+
+    def _is_weekend_day(self, date):
+        """
+        Check if date is a weekend day, holiday, or pre-holiday
+        
+        Args:
+            date: datetime object
+        Returns:
+            bool: True if weekend/holiday/pre-holiday, False otherwise
+        """
+        if self._is_holiday(date):
+            return True
+        if self._is_pre_holiday(date):
+            return True
+        return date.weekday() in [4, 5, 6]  # Friday = 4, Saturday = 5, Sunday = 6
+
+    def _is_holiday(self, date):
+        """
+        Check if a date is a holiday
+        
+        Args:
+            date: datetime object
+        Returns:
+            bool: True if holiday, False otherwise
+        """
+        return date in self.holidays
+
+    def _is_pre_holiday(self, date):
+        """
+        Check if a date is the day before a holiday
+        
+        Args:
+            date: datetime object
+        Returns:
+            bool: True if pre-holiday, False otherwise
+        """
+        next_day = date + timedelta(days=1)
+        return next_day in self.holidays
+
+    def _get_weekend_start(self, date):
+        """
+        Get the start date (Friday) of the weekend containing this date
+        
+        Args:
+            date: datetime object
+        Returns:
+            datetime: Friday date of the weekend (or holiday start)
+        """
+        if self._is_pre_holiday(date):
+            return date
+        elif self._is_holiday(date):
+            return date - timedelta(days=1)
+        else:
+            # Regular weekend - get to Friday
+            return date - timedelta(days=date.weekday() - 4)
+
     def _get_schedule_months(self):
-        """Calculate number of months in schedule period"""
+        """
+        Calculate number of months in schedule period
+        
+        Returns:
+            int: Number of months between start_date and end_date
+        """
         return ((self.end_date.year * 12 + self.end_date.month) -
                 (self.start_date.year * 12 + self.start_date.month) + 1)
 
+    def _get_month_key(self, date):
+        """
+        Get standardized month key for a date
+        
+        Args:
+            date: datetime object
+        Returns:
+            str: Month key in format 'YYYY-MM'
+        """
+        return f"{date.year}-{date.month:02d}"
+
+    def _days_between(self, date1, date2):
+        """
+        Calculate the number of days between two dates
+        
+        Args:
+            date1: datetime object
+            date2: datetime object
+        Returns:
+            int: Absolute number of days between dates
+        """
+        return abs((date2 - date1).days)
+
+    def _is_same_month(self, date1, date2):
+        """
+        Check if two dates are in the same month
+        
+        Args:
+            date1: datetime object
+            date2: datetime object
+        Returns:
+            bool: True if same year and month, False otherwise
+        """
+        return date1.year == date2.year and date1.month == date2.month
+
+    def _get_month_dates(self, year, month):
+        """
+        Get all dates in a specific month
+        
+        Args:
+            year: int
+            month: int
+        Returns:
+            list: List of datetime objects for each day in the month
+        """
+        num_days = calendar.monthrange(year, month)[1]
+        return [
+            datetime(year, month, day)
+            for day in range(1, num_days + 1)
+        ]
+
+    def _get_month_workdays(self, year, month):
+        """
+        Get all workdays (non-holidays, non-weekends) in a specific month
+        
+        Args:
+            year: int
+            month: int
+        Returns:
+            list: List of datetime objects for workdays in the month
+        """
+        return [
+            date for date in self._get_month_dates(year, month)
+            if not self._is_weekend_day(date) and not self._is_holiday(date)
+        ]
+
+    # ------------------------
+    # 6. Worker Statistics Methods
+    # ------------------------
+
+    def _get_post_counts(self, worker_id):
+        """
+        Get count of assignments per post for a worker
+        
+        Args:
+            worker_id: The worker's ID
+        Returns:
+            dict: Count of assignments for each post number
+        """
+        post_counts = {i: 0 for i in range(self.num_shifts)}
+        for assigned_date in self.worker_assignments[worker_id]:
+            if assigned_date in self.schedule:
+                post = self.schedule[assigned_date].index(worker_id)
+                post_counts[post] += 1
+        return post_counts
+
+    def _get_monthly_distribution(self, worker_id):
+        """
+        Get monthly shift distribution for a worker
+        
+        Args:
+            worker_id: The worker's ID
+        Returns:
+            dict: Monthly shift counts {YYYY-MM: count}
+        """
+        distribution = {}
+        for date in sorted(list(self.worker_assignments[worker_id])):
+            month_key = f"{date.year}-{date.month:02d}"
+            distribution[month_key] = distribution.get(month_key, 0) + 1
+        return distribution
+
+    def _analyze_gaps(self, worker_id):
+        """
+        Analyze gaps between shifts for a worker
+        
+        Args:
+            worker_id: The worker's ID
+        Returns:
+            dict: Statistics about gaps between assignments
+        """
+        assignments = sorted(list(self.worker_assignments[worker_id]))
+        if len(assignments) <= 1:
+            return {'min_gap': None, 'max_gap': None, 'avg_gap': None}
+
+        gaps = [(assignments[i+1] - assignments[i]).days 
+                for i in range(len(assignments)-1)]
+        
+        return {
+            'min_gap': min(gaps),
+            'max_gap': max(gaps),
+            'avg_gap': sum(gaps) / len(gaps)
+        }
+
+    def _get_least_used_weekday(self, worker_id):
+        """
+        Get the weekday that has been used least often for this worker
+        
+        Args:
+            worker_id: The worker's ID
+        Returns:
+            int: Weekday number (0-6 for Monday-Sunday)
+        """
+        weekdays = self.worker_weekdays[worker_id]
+        min_count = min(weekdays.values())
+        # If there are multiple weekdays with the same minimum count,
+        # prefer the earliest one in the week
+        for weekday in range(7):  # 0-6 for Monday-Sunday
+            if weekdays[weekday] == min_count:
+                return weekday
+        return 0  # Fallback to Monday if something goes wrong
+
     def gather_statistics(self):
-        """Gather comprehensive schedule statistics"""
+        """
+        Gather comprehensive schedule statistics
+        
+        Returns:
+            dict: Detailed statistics about the schedule and worker assignments
+        """
         stats = {
             'general': {
                 'total_days': (self.end_date - self.start_date).days + 1,
@@ -880,200 +911,534 @@ class Scheduler:
             worker_id = worker['id']
             assignments = self.worker_assignments[worker_id]
             
+            monthly_dist = self._get_monthly_distribution(worker_id)
+            monthly_stats = {
+                'distribution': monthly_dist,
+                'min_monthly': min(monthly_dist.values()) if monthly_dist else 0,
+                'max_monthly': max(monthly_dist.values()) if monthly_dist else 0,
+                'monthly_imbalance': max(monthly_dist.values()) - min(monthly_dist.values()) if monthly_dist else 0
+            }
+            
             stats['workers'][worker_id] = {
                 'total_shifts': len(assignments),
                 'target_shifts': worker.get('target_shifts', 0),
                 'work_percentage': worker.get('work_percentage', 100),
                 'weekend_shifts': len(self.worker_weekends[worker_id]),
                 'weekday_distribution': self.worker_weekdays[worker_id],
+                'post_distribution': self._get_post_counts(worker_id),
                 'constraint_skips': self.constraint_skips[worker_id],
-                'monthly_distribution': self._get_monthly_distribution(worker_id),
+                'monthly_stats': monthly_stats,
                 'gaps_analysis': self._analyze_gaps(worker_id)
             }
 
+        # Add monthly balance analysis
+        stats['monthly_balance'] = self._analyze_monthly_balance()
+        
         return stats
 
-    def _get_monthly_distribution(self, worker_id):
-        """Get monthly shift distribution for a worker"""
-        distribution = {}
-        for date in sorted(list(self.worker_assignments[worker_id])):
-            month_key = f"{date.year}-{date.month:02d}"
-            distribution[month_key] = distribution.get(month_key, 0) + 1
-        return distribution
-
-    def _analyze_gaps(self, worker_id):
-        """Analyze gaps between shifts for a worker"""
-        assignments = sorted(list(self.worker_assignments[worker_id]))
-        if len(assignments) <= 1:
-            return {'min_gap': None, 'max_gap': None, 'avg_gap': None}
-
-        gaps = [(assignments[i+1] - assignments[i]).days 
-                for i in range(len(assignments)-1)]
+    def _analyze_monthly_balance(self):
+        """
+        Analyze monthly balance across all workers
         
-        return {
-            'min_gap': min(gaps),
-            'max_gap': max(gaps),
-            'avg_gap': sum(gaps) / len(gaps)
-        }
+        Returns:
+            dict: Statistics about monthly distribution balance
+        """
+        monthly_stats = {}
+        
+        # Get all months in schedule period
+        all_months = set()
+        for worker_id in self.worker_assignments:
+            dist = self._get_monthly_distribution(worker_id)
+            all_months.update(dist.keys())
+        
+        for month in sorted(all_months):
+            worker_counts = []
+            for worker_id in self.worker_assignments:
+                dist = self._get_monthly_distribution(worker_id)
+                worker_counts.append(dist.get(month, 0))
+            
+            if worker_counts:
+                monthly_stats[month] = {
+                    'min_shifts': min(worker_counts),
+                    'max_shifts': max(worker_counts),
+                    'avg_shifts': sum(worker_counts) / len(worker_counts),
+                    'imbalance': max(worker_counts) - min(worker_counts)
+                }
+        
+        return monthly_stats
+
+    def _get_worker_shift_ratio(self, worker_id):
+        """
+        Calculate the ratio of assigned shifts to target shifts for a worker
+        
+        Args:
+            worker_id: The worker's ID
+        Returns:
+            float: Ratio of assigned/target shifts (1.0 = perfect match)
+        """
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+        target = worker.get('target_shifts', 0)
+        if target == 0:
+            return 0
+        return len(self.worker_assignments[worker_id]) / target
+
+    # ------------------------
+    # 7. Data Management Methods
+    # ------------------------
+
+    def _update_tracking_data(self, worker_id, date, post):
+        """
+        Update all tracking data for a new assignment
+        
+        Args:
+            worker_id: The worker's ID
+            date: Assignment date
+            post: Post number
+        """
+        # Update post tracking
+        self.worker_posts[worker_id].add(post)
+        
+        # Update weekday tracking
+        effective_weekday = self._get_effective_weekday(date)
+        self.worker_weekdays[worker_id][effective_weekday] += 1
     
-    def _cleanup_schedule(self):
-        """Clean up the schedule by removing incomplete assignments"""
-        logging.info("Cleaning up schedule...")
-        dates_to_remove = self._find_incomplete_days()
+        # Update weekend tracking if applicable
+        if self._is_weekend_day(date):
+            weekend_start = self._get_weekend_start(date)
+            if weekend_start not in self.worker_weekends[worker_id]:
+                self.worker_weekends[worker_id].append(weekend_start)
+
+    def _update_worker_stats(self, worker_id, date, removing=False):
+        """
+        Update worker statistics for assignment or removal
+        
+        Args:
+            worker_id: The worker's ID
+            date: Date of assignment
+            removing: Boolean indicating if this is a removal operation
+        """
+        effective_weekday = self._get_effective_weekday(date)
     
-        for date in dates_to_remove:
-            self._remove_day_assignments(date)
-    
-        logging.info(f"Schedule cleanup complete. Removed {len(dates_to_remove)} incomplete days.")
+        if removing:
+            # Decrease weekday count
+            self.worker_weekdays[worker_id][effective_weekday] = max(
+                0, self.worker_weekdays[worker_id][effective_weekday] - 1
+            )
+        
+            # Remove weekend if applicable
+            if self._is_weekend_day(date):
+                weekend_start = self._get_weekend_start(date)
+                if weekend_start in self.worker_weekends[worker_id]:
+                    self.worker_weekends[worker_id].remove(weekend_start)
+        else:
+            # Increase weekday count
+            self.worker_weekdays[worker_id][effective_weekday] += 1
+        
+            # Add weekend if applicable
+            if self._is_weekend_day(date):
+                weekend_start = self._get_weekend_start(date)
+                if weekend_start not in self.worker_weekends[worker_id]:
+                    self.worker_weekends[worker_id].append(weekend_start)
+
+    def _parse_dates(self, date_str):
+        """
+        Parse semicolon-separated dates
+        
+        Args:
+            date_str: String containing dates in format "DD-MM-YYYY;DD-MM-YYYY;..."
+        Returns:
+            list: List of datetime objects
+        """
+        if not date_str:
+            return []
+
+        dates = []
+        for date_text in date_str.split(';'):
+            date_text = date_text.strip()
+            if date_text:
+                try:
+                    dates.append(datetime.strptime(date_text, '%d-%m-%Y'))
+                except ValueError as e:
+                    logging.warning(f"Invalid date format '{date_text}' - {str(e)}")
+        return dates
+
+    def _parse_date_ranges(self, date_ranges_str):
+        """
+        Parse semicolon-separated date ranges
+        
+        Args:
+            date_ranges_str: String containing date ranges "DD-MM-YYYY - DD-MM-YYYY;..."
+        Returns:
+            list: List of tuples (start_date, end_date)
+        """
+        if not date_ranges_str:
+            return []
+
+        ranges = []
+        for date_range in date_ranges_str.split(';'):
+            date_range = date_range.strip()
+            try:
+                if ' - ' in date_range:
+                    start_str, end_str = date_range.split(' - ')
+                    start = datetime.strptime(start_str.strip(), '%d-%m-%Y')
+                    end = datetime.strptime(end_str.strip(), '%d-%m-%Y')
+                    ranges.append((start, end))
+                else:
+                    date = datetime.strptime(date_range, '%d-%m-%Y')
+                    ranges.append((date, date))
+            except ValueError as e:
+                logging.warning(f"Invalid date range format '{date_range}' - {str(e)}")
+        return ranges
+
+    def _record_constraint_skip(self, worker_id, date, constraint_type, other_worker_id=None):
+        """
+        Record when a constraint is skipped for tracking purposes
+        
+        Args:
+            worker_id: The worker's ID
+            date: Date of the constraint skip
+            constraint_type: Type of constraint ('gap', 'incompatibility', 'reduced_gap')
+            other_worker_id: Optional ID of other worker involved (for incompatibility)
+        """
+        date_str = date.strftime('%Y-%m-%d')
+        if constraint_type == 'incompatibility' and other_worker_id:
+            self.constraint_skips[worker_id][constraint_type].append(
+                (date_str, (worker_id, other_worker_id))
+            )
+        else:
+            self.constraint_skips[worker_id][constraint_type].append(date_str)
+        
+        logging.warning(
+            f"Constraint skip recorded - Type: {constraint_type}, "
+            f"Worker: {worker_id}, Date: {date_str}"
+        )
+
+    def _find_incomplete_days(self):
+        """
+        Find days with incomplete shift assignments
+        
+        Returns:
+            list: Dates where not all shifts are assigned
+        """
+        return [
+            date for date in self.schedule.keys()
+            if len(self.schedule[date]) < self.num_shifts
+        ]
 
     def _remove_day_assignments(self, date):
-        """Remove assignments for a specific day and update statistics"""
+        """
+        Remove all assignments for a specific day and update statistics
+        
+        Args:
+            date: Date to remove assignments from
+        """
         if date not in self.schedule:
             return
     
         for worker_id in self.schedule[date]:
             # Remove from worker assignments
-            self.worker_assignments[worker_id].discard(date)  # This will now work with sets
+            self.worker_assignments[worker_id].discard(date)
         
-            # Update weekday counts
+            # Update tracking data
             self._update_worker_stats(worker_id, date, removing=True)
+        
+        # Remove the day from schedule
+        del self.schedule[date]
+
+    # ------------------------
+    # 8. Cleanup and Validation Methods
+    # ------------------------
+
+    def _cleanup_schedule(self):
+        """
+        Clean up the schedule by removing incomplete assignments
+        Logs cleanup operations and updates all relevant tracking data
+        """
+        logging.info("Starting schedule cleanup...")
+        dates_to_remove = self._find_incomplete_days()
+    
+        for date in dates_to_remove:
+            logging.info(f"Removing incomplete assignments for {date.strftime('%Y-%m-%d')}")
+            self._remove_day_assignments(date)
+    
+        logging.info(f"Schedule cleanup complete. Removed {len(dates_to_remove)} incomplete days.")
 
     def _validate_final_schedule(self):
-        """Enhanced validation including monthly balance"""
+        """
+        Comprehensive schedule validation including all balance requirements
+        Raises SchedulerError if critical issues are found
+        """
         errors = []
         warnings = []
 
+        logging.info("Starting final schedule validation...")
+
         # Check each date in schedule
         for date in sorted(self.schedule.keys()):
-            assigned_workers = self.schedule[date]
-            
-            # Check number of workers
-            if len(assigned_workers) < self.num_shifts:
-                warnings.append(
-                    f"Understaffed on {date.strftime('%Y-%m-%d')}: "
-                    f"{len(assigned_workers)} of {self.num_shifts} shifts filled"
-                )
-            
-            # Check for incompatible workers
-            for i, worker_id in enumerate(assigned_workers):
-                worker = next(w for w in self.workers_data if w['id'] == worker_id)
-                
-                for other_id in assigned_workers[i+1:]:
-                    other_worker = next(w for w in self.workers_data if w['id'] == other_id)
-                    
-                    if (worker.get('is_incompatible', False) and 
-                        other_worker.get('is_incompatible', False)):
-                        if (date.strftime('%Y-%m-%d'), (worker_id, other_id)) not in [
-                            (d, pair) for d, pair in self.constraint_skips[worker_id]['incompatibility']
-                        ]:
-                            errors.append(
-                                f"Unauthorized incompatible workers {worker_id} and {other_id} "
-                                f"on {date.strftime('%Y-%m-%d')}"
-                            )
-        # Check rotation constraints for each worker
+            self._validate_daily_assignments(date, errors, warnings)
+
+        # Check worker-specific constraints
         for worker in self.workers_data:
             worker_id = worker['id']
-        
-            # Check post rotation
-            post_counts = {i: 0 for i in range(self.num_shifts)}
-            for date in self.worker_assignments[worker_id]:
-                if date in self.schedule:
-                    post = self.schedule[date].index(worker_id)
-                    post_counts[post] += 1
-        
-            max_diff = max(post_counts.values()) - min(post_counts.values())
-            if max_diff > 2:
-                warnings.append(f"Worker {worker_id} post rotation imbalance: {post_counts}")
+            self._validate_worker_constraints(worker_id, errors, warnings)
 
-            # Check monthly distribution
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            monthly_shifts = self._get_worker_monthly_shifts(worker_id)
-        
-            if monthly_shifts:
-                max_monthly = max(monthly_shifts.values())
-                min_monthly = min(monthly_shifts.values())
-            
-                if max_monthly - min_monthly > 1:
-                    warnings.append(
-                        f"Worker {worker_id} monthly shift imbalance: "
-                        f"Max={max_monthly}, Min={min_monthly}\n"
-                        f"Distribution: {monthly_shifts}"
-                    )
-                    
-            # Check weekday distribution
-            weekday_counts = self.worker_weekdays[worker_id]
-            max_weekday_diff = max(weekday_counts.values()) - min(weekday_counts.values())
-            if max_weekday_diff > 2:
-                warnings.append(f"Worker {worker_id} weekday imbalance: {weekday_counts}")
-
-            # Check consecutive weekends
-            weekends = sorted(self.worker_weekends[worker_id])
-            consecutive_count = 1
-            max_consecutive = 1
-            for i in range(1, len(weekends)):
-                if (weekends[i] - weekends[i-1]).days == 7:
-                    consecutive_count += 1
-                    max_consecutive = max(max_consecutive, consecutive_count)
-                else:
-                    consecutive_count = 1
-        
-            if max_consecutive > 3:
-                errors.append(f"Worker {worker_id} has {max_consecutive} consecutive weekends")
-                
-        # Check worker assignments
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            assignments = self.worker_assignments[worker_id]
-            
-            # Check total shifts against target
-            shift_difference = abs(len(assignments) - worker['target_shifts'])
-            if shift_difference > 2:  # Allow small deviation
-                warnings.append(
-                    f"Worker {worker_id} has {len(assignments)} shifts "
-                    f"(target: {worker['target_shifts']})"
-                )
-
+        # Handle validation results
         if errors:
-            raise SchedulerError("Schedule validation failed:\n" + "\n".join(errors))
+            error_msg = "Schedule validation failed:\n" + "\n".join(errors)
+            logging.error(error_msg)
+            raise SchedulerError(error_msg)
         
         if warnings:
             for warning in warnings:
                 logging.warning(warning)
 
+        logging.info("Schedule validation completed successfully")
+
+    def _validate_daily_assignments(self, date, errors, warnings):
+        """
+        Validate assignments for a specific date
+        
+        Args:
+            date: Date to validate
+            errors: List to collect critical errors
+            warnings: List to collect non-critical issues
+        """
+        assigned_workers = self.schedule[date]
+        
+        # Check staffing levels
+        if len(assigned_workers) < self.num_shifts:
+            warnings.append(
+                f"Understaffed on {date.strftime('%Y-%m-%d')}: "
+                f"{len(assigned_workers)} of {self.num_shifts} shifts filled"
+            )
+        
+        # Check worker incompatibilities
+        for i, worker_id in enumerate(assigned_workers):
+            worker = next(w for w in self.workers_data if w['id'] == worker_id)
+            
+            for other_id in assigned_workers[i+1:]:
+                other_worker = next(w for w in self.workers_data if w['id'] == other_id)
+                
+                if (worker.get('is_incompatible', False) and 
+                    other_worker.get('is_incompatible', False)):
+                    if not self._is_authorized_incompatibility(date, worker_id, other_id):
+                        errors.append(
+                            f"Unauthorized incompatible workers {worker_id} and {other_id} "
+                            f"on {date.strftime('%Y-%m-%d')}"
+                        )
+
+    def _validate_worker_constraints(self, worker_id, errors, warnings):
+        """
+        Validate all constraints for a specific worker
+        
+        Args:
+            worker_id: Worker's ID to validate
+            errors: List to collect critical errors
+            warnings: List to collect non-critical issues
+        """
+        # Validate post rotation
+        self._validate_post_rotation(worker_id, warnings)
+        
+        # Validate monthly distribution
+        self._validate_monthly_distribution(worker_id, warnings)
+        
+        # Validate weekday distribution
+        self._validate_weekday_distribution(worker_id, warnings)
+        
+        # Validate consecutive weekends
+        self._validate_consecutive_weekends(worker_id, errors)
+        
+        # Validate shift targets
+        self._validate_shift_targets(worker_id, warnings)
+
+    def _validate_post_rotation(self, worker_id, warnings):
+        """Validate post rotation balance for a worker"""
+        post_counts = self._get_post_counts(worker_id)
+        max_diff = max(post_counts.values()) - min(post_counts.values())
+        if max_diff > 2:
+            warnings.append(
+                f"Worker {worker_id} post rotation imbalance: {post_counts}"
+            )
+
+    def _validate_monthly_distribution(self, worker_id, warnings):
+        """Validate monthly shift distribution for a worker"""
+        monthly_shifts = self._get_monthly_distribution(worker_id)
+        
+        if monthly_shifts:
+            max_monthly = max(monthly_shifts.values())
+            min_monthly = min(monthly_shifts.values())
+        
+            if max_monthly - min_monthly > 1:
+                warnings.append(
+                    f"Worker {worker_id} monthly shift imbalance: "
+                    f"Max={max_monthly}, Min={min_monthly}\n"
+                    f"Distribution: {monthly_shifts}"
+                )
+
+    def _validate_weekday_distribution(self, worker_id, warnings):
+        """Validate weekday distribution for a worker"""
+        weekday_counts = self.worker_weekdays[worker_id]
+        max_weekday_diff = max(weekday_counts.values()) - min(weekday_counts.values())
+        if max_weekday_diff > 2:
+            warnings.append(
+                f"Worker {worker_id} weekday imbalance: {weekday_counts}"
+            )
+
+    def _validate_consecutive_weekends(self, worker_id, errors):
+        """Validate consecutive weekend assignments for a worker"""
+        weekends = sorted(self.worker_weekends[worker_id])
+        consecutive_count = 1
+        max_consecutive = 1
+        
+        for i in range(1, len(weekends)):
+            if (weekends[i] - weekends[i-1]).days == 7:
+                consecutive_count += 1
+                max_consecutive = max(max_consecutive, consecutive_count)
+            else:
+                consecutive_count = 1
+        
+        if max_consecutive > 3:
+            errors.append(
+                f"Worker {worker_id} has {max_consecutive} consecutive weekends"
+            )
+
+    def _validate_shift_targets(self, worker_id, warnings):
+        """Validate if worker has met their shift targets"""
+        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+        assignments = self.worker_assignments[worker_id]
+        
+        shift_difference = abs(len(assignments) - worker['target_shifts'])
+        if shift_difference > 2:  # Allow small deviation
+            warnings.append(
+                f"Worker {worker_id} has {len(assignments)} shifts "
+                f"(target: {worker['target_shifts']})"
+            )
+
+    def _is_authorized_incompatibility(self, date, worker1_id, worker2_id):
+        """
+        Check if an incompatibility was authorized via constraint skip
+        
+        Args:
+            date: Date of the assignment
+            worker1_id: First worker's ID
+            worker2_id: Second worker's ID
+        Returns:
+            bool: True if incompatibility was authorized
+        """
+        date_str = date.strftime('%Y-%m-%d')
+        return (date_str, (worker1_id, worker2_id)) in self.constraint_skips[worker1_id]['incompatibility'] or \
+               (date_str, (worker2_id, worker1_id)) in self.constraint_skips[worker2_id]['incompatibility']
+
+    # ------------------------
+    # 9. Output/Export Methods
+    # ------------------------
+
     def export_schedule(self, format='txt'):
-        """Export the schedule in the specified format"""
+        """
+        Export the schedule in the specified format
+        
+        Args:
+            format: Output format ('txt' currently supported)
+        Returns:
+            str: Name of the generated file
+        """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f'schedule_{timestamp}.{format}'
         
         if format == 'txt':
             with open(filename, 'w', encoding='utf-8') as f:
-                f.write("=== Guard Schedule ===\n")
-                f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Period: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}\n\n")
-                
-                for date in sorted(self.schedule.keys()):
-                    f.write(f"\n{date.strftime('%Y-%m-%d')} ({date.strftime('%A')})")
-                    if self._is_holiday(date):
-                        f.write(" [HOLIDAY]")
-                    f.write("\n")
-                    
-                    for i, worker_id in enumerate(self.schedule[date], 1):
-                        worker = next(w for w in self.workers_data if w['id'] == worker_id)
-                        f.write(f"  Shift {i}: Worker {worker_id}")
-                        if float(worker.get('work_percentage', 100)) < 100:
-                            f.write(f" (Part-time: {worker['work_percentage']}%)")
-                        f.write("\n")
-                    f.write("-" * 40 + "\n")
-
+                f.write(self._generate_schedule_header())
+                f.write(self._generate_schedule_body())
+                f.write(self._generate_schedule_summary())
+        
+        logging.info(f"Schedule exported to {filename}")
         return filename
 
+    def _generate_schedule_header(self):
+        """Generate the header section of the schedule output"""
+        return (
+            "=== Guard Schedule ===\n"
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Generated by: {self.current_user}\n"
+            f"Period: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}\n"
+            f"Total Workers: {len(self.workers_data)}\n"
+            f"Shifts per Day: {self.num_shifts}\n"
+            "=" * 40 + "\n\n"
+        )
+
+    def _generate_schedule_body(self):
+        """Generate the main body of the schedule output"""
+        output = ""
+        for date in sorted(self.schedule.keys()):
+            # Date header
+            output += f"\n{date.strftime('%Y-%m-%d')} ({date.strftime('%A')})"
+            if self._is_holiday(date):
+                output += " [HOLIDAY]"
+            elif self._is_pre_holiday(date):
+                output += " [PRE-HOLIDAY]"
+            output += "\n"
+            
+            # Shift assignments
+            for i, worker_id in enumerate(self.schedule[date], 1):
+                worker = next(w for w in self.workers_data if w['id'] == worker_id)
+                output += f"  Shift {i}: Worker {worker_id}"
+                
+                # Add worker details
+                work_percentage = worker.get('work_percentage', 100)
+                if float(work_percentage) < 100:
+                    output += f" (Part-time: {work_percentage}%)"
+                
+                # Add post rotation info
+                post_counts = self._get_post_counts(worker_id)
+                output += f" [Post {i} count: {post_counts.get(i-1, 0)}]"
+                
+                output += "\n"
+            output += "-" * 40 + "\n"
+        
+        return output
+
+    def _generate_schedule_summary(self):
+        """Generate summary statistics for the schedule output"""
+        stats = self.gather_statistics()
+        
+        summary = "\n=== Schedule Summary ===\n"
+        summary += f"Total Days: {stats['general']['total_days']}\n"
+        summary += f"Total Shifts: {stats['general']['total_shifts']}\n"
+        
+        # Constraint skip summary
+        summary += "\nConstraint Skips:\n"
+        for skip_type, count in stats['general']['constraint_skips'].items():
+            summary += f"  {skip_type.title()}: {count}\n"
+        
+        # Worker summary
+        summary += "\nWorker Statistics:\n"
+        for worker_id, worker_stats in stats['workers'].items():
+            summary += f"\nWorker {worker_id}:\n"
+            summary += f"  Assigned/Target: {worker_stats['total_shifts']}/{worker_stats['target_shifts']}\n"
+            summary += f"  Weekend Shifts: {worker_stats['weekend_shifts']}\n"
+            
+            # Monthly distribution
+            monthly_stats = worker_stats['monthly_stats']
+            summary += "  Monthly Distribution:\n"
+            for month, count in monthly_stats['distribution'].items():
+                summary += f"    {month}: {count}\n"
+        
+        summary += "\n" + "=" * 40 + "\n"
+        return summary
+
     def get_worker_schedule(self, worker_id):
-        """Get detailed schedule for a specific worker"""
+        """
+        Get detailed schedule for a specific worker
+        
+        Args:
+            worker_id: The worker's ID to get schedule for
+        Returns:
+            dict: Detailed schedule information for the worker
+        """
         worker = next(w for w in self.workers_data if w['id'] == worker_id)
         assignments = sorted(list(self.worker_assignments[worker_id]))
         
-        return {
+        schedule_info = {
             'worker_id': worker_id,
             'work_percentage': worker.get('work_percentage', 100),
             'total_shifts': len(assignments),
@@ -1082,11 +1447,36 @@ class Scheduler:
                 {
                     'date': date.strftime('%Y-%m-%d'),
                     'weekday': date.strftime('%A'),
+                    'post': self.schedule[date].index(worker_id) + 1,
                     'is_weekend': self._is_weekend_day(date),
-                    'is_holiday': self._is_holiday(date)
+                    'is_holiday': self._is_holiday(date),
+                    'is_pre_holiday': self._is_pre_holiday(date)
                 }
                 for date in assignments
             ],
+            'distribution': {
+                'monthly': self._get_monthly_distribution(worker_id),
+                'weekday': self.worker_weekdays[worker_id],
+                'posts': self._get_post_counts(worker_id)
+            },
             'constraint_skips': self.constraint_skips[worker_id],
-            'stats': self._analyze_gaps(worker_id)
+            'gaps_analysis': self._analyze_gaps(worker_id)
         }
+        
+        return schedule_info
+
+    def generate_worker_report(self, worker_id):
+        """
+        Generate a detailed report for a specific worker
+        
+        Args:
+            worker_id: The worker's ID to generate report for
+        Returns:
+            str: Formatted report text
+        """
+        
+
+    
+
+
+    
