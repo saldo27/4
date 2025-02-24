@@ -484,14 +484,12 @@ class Scheduler:
         try:
             # Check if worker has reached maximum shifts
             if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
+                logging.debug(f"Worker {worker_id} has reached maximum shifts")
                 return False
 
             # Check if worker is unavailable for this date
             if self._is_worker_unavailable(worker_id, date):
-                return False
-            
-            # Check if worker is already assigned that day
-            if date in self.schedule and worker_id in self.schedule[date]:
+                logging.debug(f"Worker {worker_id} is unavailable on {date}")
                 return False
             
             # Check minimum gap between shifts (2 days)
@@ -499,6 +497,7 @@ class Scheduler:
             if assignments:
                 days_since_last = (date - assignments[-1]).days
                 if days_since_last < 2:
+                    logging.debug(f"Worker {worker_id} has insufficient gap ({days_since_last} days)")
                     return False
                 
             # Check if worker has reached their target shifts
@@ -506,6 +505,7 @@ class Scheduler:
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = worker.get('target_shifts', 0)
             if current_shifts >= target_shifts:
+                logging.debug(f"Worker {worker_id} has reached target shifts")
                 return False
             
             # Check weekday balance
@@ -517,17 +517,19 @@ class Scheduler:
         
             # Allow only +/- 1 difference in weekday assignments
             if current_count > max_other + 1:
+                logging.debug(f"Worker {worker_id} weekday balance constraint violated")
                 return False
 
             # Check worker incompatibility
             if date in self.schedule:
-                for assigned_id in self.schedule[date]:
-                    if not self._check_incompatibility(worker_id, date):
-                        return False
+                if not self._check_incompatibility(worker_id, date):
+                    logging.debug(f"Worker {worker_id} has incompatibility issue")
+                    return False
 
             # Check consecutive weekends
             if self._is_weekend_day(date):
                 if self._has_three_consecutive_weekends(worker_id, date):
+                    logging.debug(f"Worker {worker_id} would exceed consecutive weekends limit")
                     return False
             
             return True
@@ -535,6 +537,98 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking if worker {worker_id} can be assigned: {str(e)}")
             return False
+
+    def _is_worker_unavailable(self, worker_id, date):
+        """
+        Check if worker is unavailable on a specific date
+        
+        Args:
+            worker_id: The worker's ID
+            date: Date to check availability
+            
+        Returns:
+            bool: True if worker is unavailable, False otherwise
+        """
+        try:
+            worker = next(w for w in self.workers_data if w['id'] == worker_id)
+            
+            # Check days off
+            if worker.get('days_off'):
+                off_periods = self._parse_date_ranges(worker['days_off'])
+                if any(start <= date <= end for start, end in off_periods):
+                    logging.debug(f"Worker {worker_id} is off on {date}")
+                    return True
+
+            # Check work periods
+            if worker.get('work_periods'):
+                work_periods = self._parse_date_ranges(worker['work_periods'])
+                # If work periods are specified, worker is unavailable if date is not in any work period
+                if not any(start <= date <= end for start, end in work_periods):
+                    logging.debug(f"Worker {worker_id} is not in work period on {date}")
+                    return True
+
+            # Check if worker is already assigned for this date
+            if date in self.worker_assignments[worker_id]:
+                logging.debug(f"Worker {worker_id} is already assigned on {date}")
+                return True
+
+            return False
+
+        except Exception as e:
+            logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
+            return True  # Assume unavailable in case of error
+
+    def _parse_date_ranges(self, date_ranges_str):
+        """
+        Parse semicolon-separated date ranges
+        
+        Args:
+            date_ranges_str: String containing date ranges "DD-MM-YYYY - DD-MM-YYYY;..."
+            
+        Returns:
+            list: List of tuples (start_date, end_date)
+        """
+        if not date_ranges_str:
+            return []
+
+        ranges = []
+        for date_range in date_ranges_str.split(';'):
+            date_range = date_range.strip()
+            try:
+                if ' - ' in date_range:
+                    start_str, end_str = date_range.split(' - ')
+                    start = datetime.strptime(start_str.strip(), '%d-%m-%Y')
+                    end = datetime.strptime(end_str.strip(), '%d-%m-%Y')
+                    ranges.append((start, end))
+                else:
+                    date = datetime.strptime(date_range, '%d-%m-%Y')
+                    ranges.append((date, date))
+            except ValueError as e:
+                logging.warning(f"Invalid date range format '{date_range}' - {str(e)}")
+        return ranges
+
+    def _parse_dates(self, date_str):
+        """
+        Parse semicolon-separated dates
+        
+        Args:
+            date_str: String containing dates in format "DD-MM-YYYY;DD-MM-YYYY;..."
+            
+        Returns:
+            list: List of datetime objects
+        """
+        if not date_str:
+            return []
+
+        dates = []
+        for date_text in date_str.split(';'):
+            date_text = date_text.strip()
+            if date_text:
+                try:
+                    dates.append(datetime.strptime(date_text, '%d-%m-%Y'))
+                except ValueError as e:
+                    logging.warning(f"Invalid date format '{date_text}' - {str(e)}")
+        return dates
 
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
@@ -1180,56 +1274,6 @@ class Scheduler:
                 weekend_start = self._get_weekend_start(date)
                 if weekend_start not in self.worker_weekends[worker_id]:
                     self.worker_weekends[worker_id].append(weekend_start)
-
-    def _parse_dates(self, date_str):
-        """
-        Parse semicolon-separated dates
-        
-        Args:
-            date_str: String containing dates in format "DD-MM-YYYY;DD-MM-YYYY;..."
-        Returns:
-            list: List of datetime objects
-        """
-        if not date_str:
-            return []
-
-        dates = []
-        for date_text in date_str.split(';'):
-            date_text = date_text.strip()
-            if date_text:
-                try:
-                    dates.append(datetime.strptime(date_text, '%d-%m-%Y'))
-                except ValueError as e:
-                    logging.warning(f"Invalid date format '{date_text}' - {str(e)}")
-        return dates
-
-    def _parse_date_ranges(self, date_ranges_str):
-        """
-        Parse semicolon-separated date ranges
-        
-        Args:
-            date_ranges_str: String containing date ranges "DD-MM-YYYY - DD-MM-YYYY;..."
-        Returns:
-            list: List of tuples (start_date, end_date)
-        """
-        if not date_ranges_str:
-            return []
-
-        ranges = []
-        for date_range in date_ranges_str.split(';'):
-            date_range = date_range.strip()
-            try:
-                if ' - ' in date_range:
-                    start_str, end_str = date_range.split(' - ')
-                    start = datetime.strptime(start_str.strip(), '%d-%m-%Y')
-                    end = datetime.strptime(end_str.strip(), '%d-%m-%Y')
-                    ranges.append((start, end))
-                else:
-                    date = datetime.strptime(date_range, '%d-%m-%Y')
-                    ranges.append((date, date))
-            except ValueError as e:
-                logging.warning(f"Invalid date range format '{date_range}' - {str(e)}")
-        return ranges
 
     def _record_constraint_skip(self, worker_id, date, constraint_type, other_worker_id=None):
         """
