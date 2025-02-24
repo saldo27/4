@@ -927,30 +927,30 @@ class Scheduler:
             return True
 
     def _check_post_rotation(self, worker_id, post):
-    """
-    Check if assigning this post would maintain proper rotation
+        """
+        Check if assigning this post would maintain proper rotation
     
-    Returns:
-        bool: True if assignment maintains balance, False otherwise
-    """
-    try:
-        # Get current post counts
-        post_counts = self._get_post_counts(worker_id)
-        post_counts[post] = post_counts.get(post, 0) + 1
+        Returns:
+            bool: True if assignment maintains balance, False otherwise
+        """
+        try:
+            # Get current post counts
+            post_counts = self._get_post_counts(worker_id)
+            post_counts[post] = post_counts.get(post, 0) + 1
 
-        # Calculate maximum difference
-        if post_counts:
-            max_posts = max(post_counts.values())
-            min_posts = min(post_counts.values())
-            if max_posts - min_posts > 1:  # Allow maximum 1 post difference
-                logging.debug(f"Post rotation violated for worker {worker_id}: {post_counts}")
-                return False
+            # Calculate maximum difference
+            if post_counts:
+                max_posts = max(post_counts.values())
+                min_posts = min(post_counts.values())
+                if max_posts - min_posts > 1:  # Allow maximum 1 post difference
+                    logging.debug(f"Post rotation violated for worker {worker_id}: {post_counts}")
+                    return False
 
-        return True
+            return True
 
-    except Exception as e:
-        logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
-        return True
+        except Exception as e:
+            logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
+            return True
 
     # ------------------------
     # 5. Date/Time Helper Methods
@@ -1839,7 +1839,3 @@ class Scheduler:
             logging.error(f"Schedule validation failed: {str(e)}")
             return False, str(e)
 
-    
-
-
-    
