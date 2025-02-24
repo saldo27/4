@@ -554,7 +554,7 @@ class Scheduler:
                     score += 1000
                 # Discourage assignments when above target
                 elif current_last_post > target_last_post:
-                    score -= 1000 0)
+                    score -= 1000 
              
             # Add penalty for weekend assignments
             if date.weekday() in [4, 5, 6]:
