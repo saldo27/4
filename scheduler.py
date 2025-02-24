@@ -469,6 +469,73 @@ class Scheduler:
         
         return monthly_shifts
 
+    def _can_assign_worker(self, worker_id, date, post):
+        """
+        Checks if a worker can be assigned to a shift by validating hard constraints.
+    
+        Args:
+            worker_id: The ID of the worker to check
+            date: The date of the shift
+            post: The post number for the shift
+    
+        Returns:
+            bool: True if the worker can be assigned, False otherwise
+        """
+        try:
+            # Check if worker has reached maximum shifts
+            if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
+                return False
+
+            # Check if worker is unavailable for this date
+            if self._is_worker_unavailable(worker_id, date):
+                return False
+            
+            # Check if worker is already assigned that day
+            if date in self.schedule and worker_id in self.schedule[date]:
+                return False
+            
+            # Check minimum gap between shifts (2 days)
+            assignments = sorted(list(self.worker_assignments[worker_id]))
+            if assignments:
+                days_since_last = (date - assignments[-1]).days
+                if days_since_last < 2:
+                    return False
+                
+            # Check if worker has reached their target shifts
+            worker = next(w for w in self.workers_data if w['id'] == worker_id)
+            current_shifts = len(self.worker_assignments[worker_id])
+            target_shifts = worker.get('target_shifts', 0)
+            if current_shifts >= target_shifts:
+                return False
+            
+            # Check weekday balance
+            weekday = date.weekday()
+            weekdays = self.worker_weekdays[worker_id]
+            current_count = weekdays[weekday]
+            other_counts = [count for day, count in weekdays.items() if day != weekday]
+            max_other = max(other_counts) if other_counts else 0
+        
+            # Allow only +/- 1 difference in weekday assignments
+            if current_count > max_other + 1:
+                return False
+
+            # Check worker incompatibility
+            if date in self.schedule:
+                for assigned_id in self.schedule[date]:
+                    if not self._check_incompatibility(worker_id, date):
+                        return False
+
+            # Check consecutive weekends
+            if self._is_weekend_day(date):
+                if self._has_three_consecutive_weekends(worker_id, date):
+                    return False
+            
+            return True
+        
+        except Exception as e:
+            logging.error(f"Error checking if worker {worker_id} can be assigned: {str(e)}")
+            return False
+
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
         weekday = date.weekday()
