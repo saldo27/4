@@ -471,10 +471,7 @@ class Scheduler:
         return candidates
 
     def _calculate_worker_score(self, worker, date, post):
-        """
-        Calculate a score for assigning a worker to a shift
-        Higher score means better fit
-        """
+        """Calculate a score for assigning a worker to a shift"""
         try:
             worker_id = worker['id']
             score = 0
@@ -490,52 +487,28 @@ class Scheduler:
             # --- Target Progress Score ---
             shift_difference = target_shifts - current_shifts
         
-            if shift_difference <= 0:
+            if shift_difference <= 0:  # This might be the problem!
                 return float('-inf')  # Never exceed target
-
+            
             # Higher priority for workers further from their target
             score += shift_difference * 1000
         
-            # Calculate progress percentage
-            progress = (current_shifts / target_shifts) * 100 if target_shifts > 0 else 0
-        
-            # More granular progress scoring
-            if progress < 60:
-                score += 25000  # High priority for workers below 60%
-            elif progress < 80:
-                score += 20000
-            elif progress < 90:
-                score += 15000
-            elif progress < 100:
-                score += 10000
-            
-          # --- Monthly Balance Score ---
-            month_key = f"{date.year}-{date.month:02d}"
-            monthly_dist = self._get_worker_monthly_shifts(worker_id)
-            current_month = monthly_dist.get(month_key, 0)
-            other_months = [c for m, c in monthly_dist.items() if m != month_key]
-        
-            if other_months:
-                avg_other_months = sum(other_months) / len(other_months)
-                if current_month < avg_other_months:
-                    score += 2000  # Boost score for underutilized months
-
-           # Weekday balance score
-            weekday = date.weekday()
-            current_weekday_count = self.worker_weekdays[worker_id][weekday]
-            other_weekdays_max = max(count for day, count in self.worker_weekdays[worker_id].items() if day != weekday)
-            
-            if current_weekday_count <= other_weekdays_max:
-                score += 6000  # Prefer under-assigned weekdays
-
-            # --- Post Balance Score ---
+            # Add post rotation score
             post_counts = self._get_post_counts(worker_id)
-            current_post_count = post_counts.get(post, 0)
-            target_per_post = sum(post_counts.values()) / self.num_shifts
-        
-            if abs(current_post_count - target_per_post) <= 1:
-                score += 3000  # Boost score if within target range
-      
+            total_assignments = sum(post_counts.values())
+            if total_assignments > 0:
+                target_per_post = total_assignments / self.num_shifts
+                new_count = post_counts.get(post, 0) + 1
+                if abs(new_count - target_per_post) <= 1:
+                    score += 500
+
+            # Log the score calculation
+            logging.debug(f"Score for worker {worker_id}: {score} "
+                         f"(current: {current_shifts}, target: {target_shifts}, "
+                         f"post counts: {post_counts})")
+                     
+            return score
+
         except Exception as e:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
             return None
@@ -949,35 +922,32 @@ class Scheduler:
             return True, 0.0
 
     def _calculate_monthly_targets(self):
-        """Pre-calculate target shifts per month for each worker"""
-        self.monthly_targets = {}
-        total_days = (self.end_date - self.start_date).days + 1
-    
-        # Calculate available days per month
-        month_days = {}
-        current = self.start_date
-        while current <= self.end_date:
-            month_key = f"{current.year}-{current.month:02d}"
-            if month_key not in month_days:
-                month_days[month_key] = 0
-            month_days[month_key] += 1
-            current += timedelta(days=1)
-    
-        # Calculate targets for each worker
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            target_shifts = worker.get('target_shifts', 0)
-            self.monthly_targets[worker_id] = {}
+        """Calculate target shifts per month for each worker"""
+        try:
+            self.monthly_targets = {}
         
-            # Distribute target shifts proportionally to days in month
-            remaining_shifts = target_shifts
-            for month, days in month_days.items():
-                # Calculate proportional target for this month
-                month_target = round((days / total_days) * target_shifts)
-                # Ensure we don't exceed total target due to rounding
-                month_target = min(month_target, remaining_shifts)
-                self.monthly_targets[worker_id][month] = month_target
-                remaining_shifts -= month_target
+            # Get available days per month
+            month_days = self._get_schedule_months()
+            logging.debug(f"Available days per month: {month_days}")
+        
+            for worker in self.workers_data:
+                worker_id = worker['id']
+                self.monthly_targets[worker_id] = {}
+            
+                # Get worker's total target shifts
+                total_target = worker.get('target_shifts', 0)
+                logging.debug(f"Worker {worker_id} total target: {total_target}")
+            
+                # Calculate monthly proportion
+                total_days = sum(month_days.values())
+                for month, days in month_days.items():
+                    month_target = round((days / total_days) * total_target)
+                    self.monthly_targets[worker_id][month] = month_target
+                    logging.debug(f"Worker {worker_id}, Month {month}: {month_target} shifts")
+                
+        except Exception as e:
+            logging.error(f"Error calculating monthly targets: {str(e)}", exc_info=True)
+            raise
                 
     def _check_weekday_balance(self, worker_id, date):
         """
