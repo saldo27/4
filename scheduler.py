@@ -217,21 +217,25 @@ class Scheduler:
     # ------------------------
 
     def generate_schedule(self):
-        """Generate the complete schedule"""
+        """
+        Generate the complete schedule
+        Returns:
+            dict: The generated schedule if successful, None if failed
+        """
         try:
             current_date = self.start_date
             while current_date <= self.end_date:
                 # Try to assign workers for each post
                 for post in range(self.num_shifts):
                     assigned = False
-                    
+                
                     # Calculate scores for all available workers
                     worker_scores = []
                     for worker in self.workers_data:
                         score = self._calculate_worker_score(worker, current_date, post)
                         if score is not None and score > float('-inf'):
                             worker_scores.append((score, worker['id']))
-                    
+                
                     # Sort by score and try to assign
                     for score, worker_id in sorted(worker_scores, reverse=True):
                         if self._can_assign_worker(worker_id, current_date, post):
@@ -241,17 +245,18 @@ class Scheduler:
                             self.worker_assignments[worker_id].add(current_date)
                             assigned = True
                             break
-                    
+                
                     if not assigned:
                         logging.warning(f"Could not find suitable worker for {current_date}")
-                
+            
                 current_date += timedelta(days=1)
-                
-            return True
+            
+            # Return the schedule instead of True
+            return self.schedule if self.schedule else None
             
         except Exception as e:
             logging.error(f"Error generating schedule: {str(e)}")
-            return False
+            return None
             
     def _get_schedule_months(self):
         """
