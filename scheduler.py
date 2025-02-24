@@ -471,70 +471,44 @@ class Scheduler:
         return candidates
 
     def _calculate_worker_score(self, worker, date, post):
-        """Calculate a score for assigning a worker to a shift"""
+        """Calculate score for assigning a worker to a shift"""
         try:
             worker_id = worker['id']
             score = 0
-
-             # Check incompatibilities and weekends first
-            if date in self.schedule:
-                for other_worker in self.schedule[date]:
-                    if self._are_workers_incompatible(worker_id, other_worker):
-                        return float('-inf')
-                    
-           # If would exceed weekend limit, reject immediately
-            if self._would_exceed_weekend_limit(worker_id, date):
-                return float('-inf')
-            
-            # --- Weekend Scoring Component ---
-            if date.weekday() >= 4:  # Friday, Saturday, Sunday
-                # Get count of weekend days in recent assignments
-                weekend_assignments = sum(
-                    1 for d in self.worker_assignments[worker_id]
-                    if d.weekday() >= 4
-                )
-                # Lower score for workers with more weekend assignments
-                score -= weekend_assignments * 300
         
-            # --- Hard Constraints ---
-            if (self._is_worker_unavailable(worker_id, date) or
-                date in self.schedule and worker_id in self.schedule[date]):
+            # First check hard constraints
+            if not self._can_assign_worker(worker_id, date, post):
                 return float('-inf')
         
+            # --- Target Progress ---
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = worker.get('target_shifts', 0)
         
-            # --- Target Progress Score ---
-            shift_difference = target_shifts - current_shifts
+            if current_shifts >= target_shifts:
+                return float('-inf')
         
-            if shift_difference <= 0:  # This might be the problem!
-                return float('-inf')  # Never exceed target
-            
-            # Higher priority for workers further from their target
-            score += shift_difference * 1000
+            # Score based on remaining shifts needed
+            remaining_shifts = target_shifts - current_shifts
+            score += remaining_shifts * 1000
         
-            # Add post rotation score
+            # --- Weekend Balance ---
+            if date.weekday() >= 4:  # Friday, Saturday, Sunday
+                weekend_shifts = sum(1 for d in self.worker_assignments[worker_id] 
+                                   if d.weekday() >= 4)
+                score -= weekend_shifts * 500  # Penalize more weekend shifts
+        
+            # --- Post Rotation ---
             post_counts = self._get_post_counts(worker_id)
-            total_assignments = sum(post_counts.values())
-            if total_assignments > 0:
-                target_per_post = total_assignments / self.num_shifts
-                new_count = post_counts.get(post, 0) + 1
-                if abs(new_count - target_per_post) <= 1:
-                    score += 1000
-
-            # Add penalty for weekend assignments
-            if date.weekday() in [4, 5, 6]:
-                score -= 1000
-
-            # Log the score calculation
-            logging.debug(f"Score for worker {worker_id}: {score} "
-                         f"(current: {current_shifts}, target: {target_shifts}, "
-                         f"post counts: {post_counts})")
-                     
+            if post_counts:
+                avg_posts = sum(post_counts.values()) / len(post_counts)
+                current_post_count = post_counts.get(post, 0)
+                if current_post_count < avg_posts:
+                    score += 200  # Bonus for underutilized posts
+        
             return score
-
+        
         except Exception as e:
-            logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
+            logging.error(f"Error calculating score: {str(e)}")
             return None
 
     # ------------------------
@@ -826,60 +800,45 @@ class Scheduler:
 
     def _can_assign_worker(self, worker_id, date, post):
         """
-        Check if a worker can be assigned to a shift
+        Check if a worker can be assigned to a shift.
+        Must prevent both incompatible workers and excessive weekend assignments.
         """
         try:
-            # Log all constraint checks
-            logging.debug(f"\nChecking worker {worker_id} for {date}, post {post}")
-
-            # Check worker compatibility
-            if not self._check_day_compatibility(worker_id, date):
+            # 1. Basic availability check
+            if not super()._can_assign_worker(worker_id, date, post):
+                logging.debug(f"Worker {worker_id} failed basic availability check for {date}")
                 return False
-        
-            # 1. Check max shifts
-            if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
-                logging.debug(f"- Failed: Max shifts reached ({self.max_shifts_per_worker})")
-                return False
+            
+            # 2. Check incompatibilities - prevent incompatible workers on same day
+            if date in self.schedule:
+                worker = next(w for w in self.workers_data if w['id'] == worker_id)
+                if worker.get('has_incompatibility', False):
+                    for assigned_worker_id in self.schedule[date]:
+                        assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_worker_id)
+                        if assigned_worker.get('has_incompatibility', False):
+                            logging.debug(f"Cannot assign worker {worker_id} - incompatible with assigned worker {assigned_worker_id}")
+                            return False
 
-            # 2. Check availability
-            if self._is_worker_unavailable(worker_id, date):
-                logging.debug(f"- Failed: Worker unavailable")
-                return False
+            # 3. Weekend limit check - max 3 weekend days in any 3-week period
+            if date.weekday() >= 4:  # Friday, Saturday, Sunday
+                weekend_dates = {d for d in self.worker_assignments[worker_id] 
+                               if d.weekday() >= 4}
+                weekend_dates.add(date)
+            
+                # Check all 3-week windows
+                for check_date in weekend_dates:
+                    window_start = check_date - timedelta(days=10)
+                    window_end = check_date + timedelta(days=10)
+                    weekend_count = sum(1 for d in weekend_dates 
+                                      if window_start <= d <= window_end)
+                    if weekend_count > 3:
+                        logging.debug(f"Cannot assign worker {worker_id} - would exceed 3 weekends in 3 weeks")
+                        return False
 
-            # 3. Check minimum gap
-            assignments = sorted(list(self.worker_assignments[worker_id]))
-            if assignments:
-                days_since_last = (date - assignments[-1]).days
-                if days_since_last < 2:
-                    logging.debug(f"- Failed: Insufficient gap ({days_since_last} days)")
-                    return False
-
-            # 4. Check monthly targets
-            month_key = f"{date.year}-{date.month:02d}"
-            if hasattr(self, 'monthly_targets') and month_key in self.monthly_targets.get(worker_id, {}):
-                current_month_assignments = sum(1 for d in self.worker_assignments[worker_id] 
-                                             if d.strftime("%Y-%m") == date.strftime("%Y-%m"))
-                if current_month_assignments >= self.monthly_targets[worker_id][month_key]:
-                    logging.debug(f"- Failed: Monthly target reached ({current_month_assignments} >= {self.monthly_targets[worker_id][month_key]})")
-                    return False
-
-            # 5. Check post rotation
-            post_counts = self._get_post_counts(worker_id)
-            total_assignments = sum(post_counts.values())
-            if total_assignments > 0:
-                target_per_post = total_assignments / self.num_shifts
-                new_count = post_counts.get(post, 0) + 1
-                if abs(new_count - target_per_post) > 1:
-                    logging.debug(f"- Failed: Post rotation (new count: {new_count}, target: {target_per_post:.1f})")
-                    return False
-
-            # Check weekend limit - primary constraint
-            if self._would_exceed_weekend_limit(worker_id, date):
-                return False
             return True
 
         except Exception as e:
-            logging.error(f"Error in _can_assign_worker for worker {worker_id}: {str(e)}", exc_info=True)
+            logging.error(f"Error in _can_assign_worker: {str(e)}")
             return False
             
     def _are_workers_incompatible(self, worker1_id, worker2_id):
