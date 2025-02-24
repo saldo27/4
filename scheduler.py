@@ -213,29 +213,74 @@ class Scheduler:
         logging.info("=== Starting schedule generation ===")
         try:
             self._reset_schedule()
-    
-            # Step 1: Calculate target shifts
-            logging.info("Step 1: Calculating target shifts...")
-            self._calculate_target_shifts()
-    
-            # Step 2: Assign mandatory days
-            logging.info("Step 2: Assigning mandatory days...")
+        
+            # Calculate monthly targets first
+            self._calculate_monthly_targets()
+        
+            # Initialize monthly assignment tracking
+            monthly_assignments = {
+                worker['id']: {
+                    month: 0 for month in self.monthly_targets[worker['id']]
+                } for worker in self.workers_data
+            }
+        
+            # Process mandatory assignments first
             self._assign_mandatory_guards()
-    
-            # Step 3: Proceed with regular shift assignments
-            logging.info("Step 3: Proceeding with regular shift assignments...")
+        
+            # Update monthly assignments for mandatory guards
+            for date, workers in self.schedule.items():
+                month_key = f"{date.year}-{date.month:02d}"
+                for worker_id in workers:
+                    if month_key in monthly_assignments[worker_id]:
+                        monthly_assignments[worker_id][month_key] += 1
+        
+            # Process remaining days with monthly targets in mind
             current_date = self.start_date
             while current_date <= self.end_date:
-                self._assign_day_shifts(current_date)
+                if current_date not in self.schedule:
+                    self.schedule[current_date] = []
+            
+                month_key = f"{current_date.year}-{current_date.month:02d}"
+            
+                # Fill remaining shifts for this day
+                remaining_shifts = self.num_shifts - len(self.schedule[current_date])
+                for _ in range(remaining_shifts):
+                    best_worker = None
+                    best_score = float('-inf')
+                
+                    for worker in self.workers_data:
+                        worker_id = worker['id']
+                    
+                        # Skip if monthly target reached
+                        if (monthly_assignments[worker_id][month_key] >= 
+                            self.monthly_targets[worker_id][month_key]):
+                            continue
+                    
+                        # Check constraints and calculate score
+                        if self._can_assign_worker(worker_id, current_date, len(self.schedule[current_date])):
+                            score = self._calculate_worker_score(worker, current_date, len(self.schedule[current_date]))
+                            if score is not None and score > best_score:
+                                best_worker = worker
+                                best_score = score
+                
+                    if best_worker:
+                        worker_id = best_worker['id']
+                        self.schedule[current_date].append(worker_id)
+                        self.worker_assignments[worker_id].add(current_date)
+                        monthly_assignments[worker_id][month_key] += 1
+                        self._update_tracking_data(worker_id, current_date, len(self.schedule[current_date]) - 1)
+                    else:
+                        logging.warning(f"Could not find suitable worker for {current_date}")
+            
                 current_date += timedelta(days=1)
-
+        
             self._cleanup_schedule()
             self._validate_final_schedule()
-    
+        
             return self.schedule
-
+        
         except Exception as e:
-            logging.error("Schedule generation failed", exc_info=True)
+            logging.error(f"Schedule generation error: {str(e)}")
             raise SchedulerError(f"Failed to generate schedule: {str(e)}")
 
     def _get_schedule_months(self):
@@ -905,6 +950,37 @@ class Scheduler:
             logging.error(f"Error checking monthly balance for worker {worker_id}: {str(e)}")
             return True, 0.0
 
+    def _calculate_monthly_targets(self):
+        """Pre-calculate target shifts per month for each worker"""
+        self.monthly_targets = {}
+        total_days = (self.end_date - self.start_date).days + 1
+    
+        # Calculate available days per month
+        month_days = {}
+        current = self.start_date
+        while current <= self.end_date:
+            month_key = f"{current.year}-{current.month:02d}"
+            if month_key not in month_days:
+                month_days[month_key] = 0
+            month_days[month_key] += 1
+            current += timedelta(days=1)
+    
+        # Calculate targets for each worker
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            target_shifts = worker.get('target_shifts', 0)
+            self.monthly_targets[worker_id] = {}
+        
+            # Distribute target shifts proportionally to days in month
+            remaining_shifts = target_shifts
+            for month, days in month_days.items():
+                # Calculate proportional target for this month
+                month_target = round((days / total_days) * target_shifts)
+                # Ensure we don't exceed total target due to rounding
+                month_target = min(month_target, remaining_shifts)
+                self.monthly_targets[worker_id][month] = month_target
+                remaining_shifts -= month_target
+                
     def _check_weekday_balance(self, worker_id, date):
         """
         Check if assigning this date would maintain weekday balance
