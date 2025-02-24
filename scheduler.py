@@ -482,8 +482,19 @@ class Scheduler:
                     if self._are_workers_incompatible(worker_id, other_worker):
                         return float('-inf')
                     
-            if self._would_create_consecutive_weekends(worker_id, date):
+           # If would exceed weekend limit, reject immediately
+            if self._would_exceed_weekend_limit(worker_id, date):
                 return float('-inf')
+            
+            # --- Weekend Scoring Component ---
+            if date.weekday() >= 4:  # Friday, Saturday, Sunday
+                # Get count of weekend days in recent assignments
+                weekend_assignments = sum(
+                    1 for d in self.worker_assignments[worker_id]
+                    if d.weekday() >= 4
+                )
+                # Lower score for workers with more weekend assignments
+                score -= weekend_assignments * 300
         
             # --- Hard Constraints ---
             if (self._is_worker_unavailable(worker_id, date) or
@@ -643,41 +654,111 @@ class Scheduler:
                     return False
         return True
 
-    def _has_three_consecutive_weekends(self, worker_id, date):
+    def _would_exceed_weekend_limit(self, worker_id, date):
         """
-        Check if assigning this date would result in more than 3 consecutive weekends
+        Check if assigning this date would exceed the weekend/holiday limit:
+        Max 3 weekend/holiday days in any 3-week period.
+        Weekend days include: Friday, Saturday, Sunday
         """
-        if not self._is_weekend_day(date):
-            return False
-
-        def get_weekend_start(d):
-            if self._is_pre_holiday(d):
-                return d
-            elif self._is_holiday(d):
-                return d - timedelta(days=1)
-            else:
-                return d - timedelta(days=d.weekday() - 4)
-
-        current_weekend = get_weekend_start(date)
-        weekends = sorted(self.worker_weekends[worker_id])
+        try:
+            # Check if this is a weekend day (Fri, Sat, Sun)
+            if not date.weekday() >= 4:  # Not Fri(4), Sat(5), or Sun(6)
+                return False
+            
+            # Get all weekend assignments for this worker
+            weekend_dates = set(d for d in self.worker_assignments[worker_id] 
+                              if d.weekday() >= 4)  # Existing weekend days
+            weekend_dates.add(date)  # Add the proposed date
         
-        if current_weekend not in weekends:
-            weekends = sorted(weekends + [current_weekend])
+            # For each date, check the 3-week window
+            for check_date in weekend_dates:
+                window_start = check_date - timedelta(days=10)  # 10 days before
+                window_end = check_date + timedelta(days=10)    # 10 days after
+            
+                # Count weekend days in this window
+                weekend_count = sum(
+                    1 for d in weekend_dates
+                    if window_start <= d <= window_end
+                )
+            
+                if weekend_count > 3:
+                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
+                                f"{weekend_count} weekend days in 3-week window "
+                                f"around {check_date}")
+                    return True
+                
+            return False
+        
+        except Exception as e:
+            logging.error(f"Error checking weekend limit: {str(e)}")
+            return True  # Fail safe
 
-        consecutive_count = 1
-        for i in range(len(weekends) - 1, -1, -1):
-            if i > 0:
-                days_diff = abs((weekends[i] - weekends[i-1]).days)
-                if days_diff == 7:
-                    consecutive_count += 1
-                    if consecutive_count > 3:
-                        logging.debug(f"Worker {worker_id} would exceed 3 consecutive weekends")
-                        return True
+    def _has_three_consecutive_weekends(self, worker_id, date=None):
+        """
+        Validation method to check if a worker has three or more consecutive weekends
+        Used for schedule validation rather than assignment decisions
+        """
+        try:
+            # Get all weekend dates for this worker
+            weekend_dates = sorted([
+                d for d in self.worker_assignments[worker_id] 
+                if d.weekday() >= 5  # Only Saturday(5) and Sunday(6)
+            ])
+        
+            if date and date.weekday() >= 5:
+                weekend_dates.append(date)
+                weekend_dates.sort()
+            
+            # Group dates by weekend (assuming Sat/Sun pairs)
+            weekends = []
+            current_weekend = []
+        
+            for d in weekend_dates:
+                if not current_weekend or (d - current_weekend[-1]).days <= 1:
+                    current_weekend.append(d)
                 else:
-                    break
-
-        return False
-
+                    weekends.append(min(current_weekend))  # Store start of weekend
+                    current_weekend = [d]
+                
+            if current_weekend:
+                weekends.append(min(current_weekend))
+            
+            # Check for consecutive weekends
+            for i in range(len(weekends)-2):
+                days_between_first_last = (weekends[i+2] - weekends[i]).days
+                if days_between_first_last <= 14:  # 14 days = 2 weeks
+                    return True
+                
+            return False
+        
+        except Exception as e:
+            logging.error(f"Error checking consecutive weekends: {str(e)}")
+            return True  # Fail safe
+        
+    def _is_holiday_or_before(self, date):
+        """
+        Check if a date is a holiday or the day before a holiday
+        Returns True for holidays and days before holidays
+        """
+        try:
+            # You'll need to provide the holiday list in the format you prefer
+            holidays = set()  # Add your holidays here
+        
+            # Check if date is a holiday
+            if date in holidays:
+                return True
+            
+            # Check if next day is a holiday
+            next_day = date + timedelta(days=1)
+            if next_day in holidays:
+                return True
+            
+            return False
+        
+        except Exception as e:
+            logging.error(f"Error checking holiday: {str(e)}")
+            return False
+        
     def _parse_dates(self, date_str):
         """Parse semicolon-separated dates"""
         if not date_str:
@@ -751,13 +832,9 @@ class Scheduler:
             # Log all constraint checks
             logging.debug(f"\nChecking worker {worker_id} for {date}, post {post}")
 
-            # Check incompatibilities with already assigned workers
-            if date in self.schedule:
-                assigned_workers = self.schedule[date]
-                for other_worker in assigned_workers:
-                    if self._are_workers_incompatible(worker_id, other_worker):
-                        logging.debug(f"Workers {worker_id} and {other_worker} are incompatible")
-                        return False
+            # Check worker compatibility
+            if not self._check_day_compatibility(worker_id, date):
+                return False
         
             # 1. Check max shifts
             if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
@@ -796,24 +873,46 @@ class Scheduler:
                     logging.debug(f"- Failed: Post rotation (new count: {new_count}, target: {target_per_post:.1f})")
                     return False
 
-            logging.debug("- All checks passed")
+            # Check weekend limit - primary constraint
+            if self._would_exceed_weekend_limit(worker_id, date):
+                return False
             return True
 
         except Exception as e:
             logging.error(f"Error in _can_assign_worker for worker {worker_id}: {str(e)}", exc_info=True)
             return False
-    def _are_workers_incompatible(self, worker1, worker2):
-        """Check if two workers cannot work together"""
-        # Known incompatible pairs
-        incompatible_pairs = {
-            (1, 4), (1, 25),
-            (4, 7), (4, 25),
-            (7, 8), (7, 14),
-            (8, 25)
-        }
-    
-        pair = tuple(sorted([worker1, worker2]))
-        return pair in incompatible_pairs
+            
+    def _are_workers_incompatible(self, worker1_id, worker2_id):
+        """
+        Check if two workers are incompatible based on shared incompatibility property.
+        If both workers have the incompatibility flag, they cannot work together.
+        """
+        try:
+            # Get workers' data
+            worker1 = next(w for w in self.workers_data if w['id'] == worker1_id)
+            worker2 = next(w for w in self.workers_data if w['id'] == worker2_id)
+        
+            # Check if both workers have the incompatibility property
+            has_incompatibility1 = worker1.get('has_incompatibility', False)
+            has_incompatibility2 = worker2.get('has_incompatibility', False)
+        
+            # If both have the property, they are incompatible
+            return has_incompatibility1 and has_incompatibility2
+        
+        except Exception as e:
+            logging.error(f"Error checking worker incompatibility: {str(e)}")
+            return False  # Default to compatible in case of error
+
+    def _check_day_compatibility(self, worker_id, date):
+        """Check if worker is compatible with all workers already assigned to this date"""
+        if date not in self.schedule:
+            return True
+        
+        for assigned_worker in self.schedule[date]:
+            if self._are_workers_incompatible(worker_id, assigned_worker):
+                logging.debug(f"Worker {worker_id} is incompatible with assigned worker {assigned_worker}")
+                return False
+        return True
         
     def _is_worker_unavailable(self, worker_id, date):
         """
@@ -855,31 +954,44 @@ class Scheduler:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
             return True  # Assume unavailable in case of error
             
-    def _would_create_consecutive_weekends(self, worker_id, date):
-        """Check if assigning this date would create too many consecutive weekends"""
-        if not date.weekday() in [5, 6]:  # Not a weekend
+        def _would_exceed_weekend_limit(self, worker_id, date):
+        """
+        Check if assigning this date would exceed the weekend/holiday limit:
+        Max 3 weekend/holiday days in any 3-week period.
+        Weekend days include: Friday, Saturday, Sunday, and days before holidays
+        """
+        try:
+            # Check if this is a weekend day (Fri, Sat, Sun)
+            if not date.weekday() >= 4:  # Not Fri(4), Sat(5), or Sun(6)
+                return False
+            
+            # Get all weekend assignments for this worker
+            weekend_dates = set(d for d in self.worker_assignments[worker_id] 
+                              if d.weekday() >= 4)  # Existing weekend days
+            weekend_dates.add(date)  # Add the proposed date
+        
+            # For each date, check the 3-week window
+            for check_date in weekend_dates:
+                window_start = check_date - timedelta(days=10)  # 10 days before
+                window_end = check_date + timedelta(days=10)    # 10 days after
+            
+                # Count weekend days in this window
+                weekend_count = sum(
+                    1 for d in weekend_dates
+                    if window_start <= d <= window_end
+                )    
+            
+                if weekend_count > 3:
+                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
+                                f"{weekend_count} weekend days in 3-week window "
+                                f"around {check_date}")
+                    return True
+                
             return False
         
-        # Get all weekend dates for this worker
-        weekend_dates = sorted([d for d in self.worker_assignments[worker_id] 
-                              if d.weekday() in [5, 6]])
-    
-        # Add the new date
-        weekend_dates.append(date)
-        weekend_dates.sort()
-    
-        # Check for consecutive weekends
-        consecutive_count = 1
-        for i in range(1, len(weekend_dates)):
-            if (weekend_dates[i] - weekend_dates[i-1]).days <= 7:
-                consecutive_count += 1
-            else:
-                consecutive_count = 1
-            
-            if consecutive_count >= 3:  # Lower this from 4 to 3 to prevent reaching 4
-                return True
-            
-        return False
+        except Exception as e:
+            logging.error(f"Error checking weekend limit: {str(e)}")
+            return True  # Fail safe - assume limit would be exceeded
 
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
