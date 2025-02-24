@@ -868,7 +868,7 @@ class Scheduler:
             'avg_gap': sum(gaps) / len(gaps)
         }
     
-   def _cleanup_schedule(self):
+    def _cleanup_schedule(self):
         """Clean up the schedule by removing incomplete assignments"""
         logging.info("Cleaning up schedule...")
         dates_to_remove = self._find_incomplete_days()
