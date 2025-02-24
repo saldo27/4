@@ -476,13 +476,11 @@ class Scheduler:
             worker_id = worker['id']
             score = 0
 
-            # Check incompatibilities and weekends first - STRICT ENFORCEMENT
-            if date in self.schedule:
-                for other_worker in self.schedule[date]:
-                    if self._are_workers_incompatible(worker_id, other_worker):
-                        return float('-inf')
+           # First check incompatibility - reject immediately if incompatible
+            if not self._check_incompatibility(worker_id, date):
+                return float('-inf')
                     
-            # If would exceed weekend limit, reject immediately
+            # Check weekend limit - reject if would exceed
             if self._would_exceed_weekend_limit(worker_id, date):
                 return float('-inf')
             
@@ -613,13 +611,18 @@ class Scheduler:
 
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
         
+            # Check against all workers already assigned to this date
             for assigned_id in self.schedule[date]:
                 assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_id)
             
-                # If both workers have incompatibility flag set to True, they cannot work together
-                if worker.get('is_incompatible', False) and assigned_worker.get('is_incompatible', False):
-                        logging.debug(f"Workers {worker_id} and {assigned_id} are incompatible and cannot work together")
-                        return False
+                # If either worker has the incompatibility flag, they cannot work together
+                if any([
+                    worker.get('is_incompatible', False) and assigned_worker.get('is_incompatible', False),
+                    assigned_id in worker.get('incompatible_workers', []),
+                    worker_id in assigned_worker.get('incompatible_workers', [])
+                ]):
+                    logging.debug(f"Workers {worker_id} and {assigned_id} are incompatible")
+                    return False
 
             return True
 
@@ -812,22 +815,22 @@ class Scheduler:
             # Log all constraint checks
             logging.debug(f"\nChecking worker {worker_id} for {date}, post {post}")
 
-            # Check worker compatibility on a day-specific basis (if any other logic applies here)
-            if not self._check_day_compatibility(worker_id, date):
-                logging.debug("- Failed: Day compatibility check failed")
+            # 1. First check - Incompatibility
+            if not self._check_incompatibility(worker_id, date):
+                logging.debug(f"- Failed: Worker {worker_id} is incompatible with assigned workers")
                 return False
-        
-            # 1. Check max shifts
+
+            # 2. Check max shifts
             if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
                 logging.debug(f"- Failed: Max shifts reached ({self.max_shifts_per_worker})")
                 return False
 
-            # 2. Check availability
+            # 3. Check availability
             if self._is_worker_unavailable(worker_id, date):
                 logging.debug(f"- Failed: Worker unavailable")
                 return False
 
-            # 3. Check minimum gap
+            # 4. Check minimum gap
             assignments = sorted(list(self.worker_assignments[worker_id]))
             if assignments:
                 days_since_last = (date - assignments[-1]).days
@@ -835,33 +838,18 @@ class Scheduler:
                     logging.debug(f"- Failed: Insufficient gap ({days_since_last} days)")
                     return False
 
-            # 4. Check monthly targets
+            # 5. Check monthly targets
             month_key = f"{date.year}-{date.month:02d}"
             if hasattr(self, 'monthly_targets') and month_key in self.monthly_targets.get(worker_id, {}):
                 current_month_assignments = sum(1 for d in self.worker_assignments[worker_id] 
-                                             if d.strftime("%Y-%m") == date.strftime("%Y-%m"))
+                                           if d.strftime("%Y-%m") == date.strftime("%Y-%m"))
                 if current_month_assignments >= self.monthly_targets[worker_id][month_key]:
-                    logging.debug(f"- Failed: Monthly target reached ({current_month_assignments} >= {self.monthly_targets[worker_id][month_key]})")
+                    logging.debug(f"- Failed: Monthly target reached")
                     return False
 
-            # 5. Check post rotation
-            post_counts = self._get_post_counts(worker_id)
-            total_assignments = sum(post_counts.values())
-            if total_assignments > 0:
-                target_per_post = total_assignments / self.num_shifts
-                new_count = post_counts.get(post, 0) + 1
-                if abs(new_count - target_per_post) > 1:
-                    logging.debug(f"- Failed: Post rotation (new count: {new_count}, target: {target_per_post:.1f})")
-                    return False
-                
-            # NEW: Check incompatibility with workers already assigned on the same day.
-            for other_worker in self.get_assigned_workers(date):
-                if self._are_workers_incompatible(worker_id, other_worker):
-                    logging.debug(f"- Failed: Worker {worker_id} is incompatible with worker {other_worker} already scheduled on {date}")
-                    return False
-
-            # Check weekend limit - primary constraint
+            # 6. Check weekend limit
             if self._would_exceed_weekend_limit(worker_id, date):
+                logging.debug(f"- Failed: Would exceed weekend limit")
                 return False
             
             return True
