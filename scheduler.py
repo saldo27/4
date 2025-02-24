@@ -213,25 +213,25 @@ class Scheduler:
         logging.info("=== Starting schedule generation ===")
         try:
             self._reset_schedule()
-        
+    
             # Step 1: Calculate target shifts
             logging.info("Step 1: Calculating target shifts...")
             self._calculate_target_shifts()
-        
+    
             # Step 2: Assign mandatory days
             logging.info("Step 2: Assigning mandatory days...")
             self._assign_mandatory_guards()
-        
+    
             # Step 3: Proceed with regular shift assignments
             logging.info("Step 3: Proceeding with regular shift assignments...")
             current_date = self.start_date
             while current_date <= self.end_date:
-                self._assign_day_shifts(current_date)  # This method handles post assignment
+                self._assign_day_shifts(current_date)
                 current_date += timedelta(days=1)
 
             self._cleanup_schedule()
             self._validate_final_schedule()
-        
+    
             return self.schedule
 
         except Exception as e:
@@ -390,19 +390,37 @@ class Scheduler:
             elif progress < 100:
                 score += 10000
             
-           # Monthly balance score
+           # Monthly balance score - Highest priority
             month_key = f"{date.year}-{date.month:02d}"
             month_counts = {}
             for d in self.worker_assignments[worker_id]:
                 mk = f"{d.year}-{d.month:02d}"
                 month_counts[mk] = month_counts.get(mk, 0) + 1
+        
             current_month_shifts = month_counts.get(month_key, 0)
-            other_months_max = max(month_counts.values()) if month_counts else 0
-            
-            if current_month_shifts <= other_months_max:
-                score += 8000  # Strongly prefer under-assigned months
+            other_months = [c for m, c in month_counts.items() if m != month_key]
+        
+            if other_months:
+                avg_other_months = sum(other_months) / len(other_months)
+                if current_month_shifts < avg_other_months:
+                    score += 15000  # Highest priority for underutilized months
+                elif current_month_shifts == avg_other_months:
+                    score += 10000  # Good priority for balanced months
+            else:
+                score += 5000  # Base score for first month
 
-            # Weekday balance score
+            # Progress towards target
+            progress = (current_shifts / target_shifts) * 100 if target_shifts > 0 else 0
+            if progress < 60:
+                score += 8000
+            elif progress < 80:
+                score += 6000
+            elif progress < 90:
+                score += 4000
+            elif progress < 100:
+                score += 2000
+
+           # Weekday balance score
             weekday = date.weekday()
             current_weekday_count = self.worker_weekdays[worker_id][weekday]
             other_weekdays_max = max(count for day, count in self.worker_weekdays[worker_id].items() if day != weekday)
@@ -417,9 +435,21 @@ class Scheduler:
             
             if current_post_count <= other_posts_max:
                 score += 4000  # Prefer under-assigned posts
-                                    
+                
+            # --- Gap Analysis ---
+            recent_assignments = sorted(list(self.worker_assignments[worker_id]))
+            if recent_assignments:
+                days_since_last = (date - recent_assignments[-1]).days
+                if days_since_last < 2:
+                    return float('-inf')  # Maintain minimum 2-day gap
+                elif days_since_last <= 3:
+                    score += 2000
+                elif days_since_last <= 5:
+                    score += 4000
+                else:
+                    score += 6000                        
             return score
-        
+      
         except Exception as e:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
             return None
@@ -732,55 +762,7 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
             return True  # Assume unavailable in case of error
-
-    def _calculate_weekday_imbalance(self, worker_id, date):
-        """Calculate how much this assignment would affect weekday balance"""
-        weekday = date.weekday()
-        counts = self.worker_weekdays[worker_id].copy()
-        counts[weekday] += 1
-        return max(counts.values()) - min(counts.values())
-
-    def _calculate_post_imbalance(self, worker_id, post):
-        """Calculate how much this assignment would affect post balance"""
-        post_counts = {i: 0 for i in range(self.num_shifts)}
-        for assigned_date in self.worker_assignments[worker_id]:
-            if assigned_date in self.schedule:
-                assigned_post = self.schedule[assigned_date].index(worker_id)
-                post_counts[assigned_post] += 1
-        post_counts[post] += 1
-        return max(post_counts.values()) - min(post_counts.values())
-
-    def _try_balance_assignment(self, date, post):
-        """
-        Try to find a worker that would improve balance
-        Returns the worker that would create the least imbalance
-        """
-        candidates = []
     
-        for worker in self.workers_data:
-            worker_id = worker['id']
-        
-            # Skip if worker is unavailable
-            if not self._check_constraints(worker_id, date, skip_constraints=False)[0]:
-                continue
-            
-            # Calculate imbalance scores
-            weekday_imbalance = self._calculate_weekday_imbalance(worker_id, date)
-            post_imbalance = self._calculate_post_imbalance(worker_id, post)
-            
-            # Calculate monthly imbalance
-            month_key = f"{date.year}-{date.month:02d}"
-            _, monthly_imbalance = self._check_monthly_balance(worker_id, date)
-        
-            # Lower score is better
-            total_imbalance = weekday_imbalance + post_imbalance + (monthly_imbalance * 2)
-            candidates.append((worker, total_imbalance))
-    
-        if candidates:
-            # Return worker with lowest imbalance
-            return min(candidates, key=lambda x: x[1])[0]
-        return None
-
     # ------------------------
     # 4. Balance and Distribution Methods
     # ------------------------
@@ -869,31 +851,19 @@ class Scheduler:
             new_distribution = distribution.copy()
             new_distribution[month_key] = new_distribution.get(month_key, 0) + 1
 
-            # Calculate target shifts per month
-            worker = next(w for w in self.workers_data if w['id'] == worker_id)
-            target_shifts = worker.get('target_shifts', 0)
-            months_in_schedule = self._get_schedule_months()
-            target_per_month = target_shifts / months_in_schedule
-
+            # Check balance with stricter tolerance
             if new_distribution:
                 max_shifts = max(new_distribution.values())
                 min_shifts = min(new_distribution.values())
                 imbalance = max_shifts - min_shifts
-
-                # Stricter balance checks
-                if imbalance > 1:  # Allow only 1 shift difference between months
+            
+                # Calculate allowed imbalance based on worker's target
+                worker = next(w for w in self.workers_data if w['id'] == worker_id)
+                target = worker.get('target_shifts', 0)
+                allowed_imbalance = max(1, target // 12)  # Allow 1 shift difference or target/12
+            
+                if imbalance > allowed_imbalance:
                     logging.debug(f"Monthly balance violated for worker {worker_id}: {new_distribution}")
-                    return False, imbalance
-
-                # Check against target per month
-                month_average = sum(new_distribution.values()) / len(new_distribution)
-                if abs(month_average - target_per_month) > 1:
-                    logging.debug(f"Monthly average too far from target for worker {worker_id}")
-                    return False, imbalance
-
-                # Check if this month is getting too many shifts
-                if new_distribution[month_key] > (target_per_month + 1):
-                    logging.debug(f"Month {month_key} exceeding target for worker {worker_id}")
                     return False, imbalance
 
             return True, 0.0
@@ -1763,20 +1733,20 @@ class Scheduler:
     def _calculate_balance_score(self):
         """Calculate overall balance score based on various factors"""
         scores = []
-        
+    
         # Post rotation balance
         for worker_id in self.worker_assignments:
             post_counts = self._get_post_counts(worker_id)
             if post_counts.values():
                 post_imbalance = max(post_counts.values()) - min(post_counts.values())
                 scores.append(max(0, 100 - (post_imbalance * 20)))
-        
+    
         # Weekday distribution balance
         for worker_id, weekdays in self.worker_weekdays.items():
             if weekdays.values():
                 weekday_imbalance = max(weekdays.values()) - min(weekdays.values())
                 scores.append(max(0, 100 - (weekday_imbalance * 20)))
-        
+    
         return sum(scores) / len(scores) if scores else 0
 
     def _count_constraint_violations(self):
