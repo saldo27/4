@@ -238,6 +238,36 @@ class Scheduler:
             logging.error("Schedule generation failed", exc_info=True)
             raise SchedulerError(f"Failed to generate schedule: {str(e)}")
 
+    def _get_schedule_months(self):
+        """
+        Calculate number of months in schedule period considering partial months
+    
+        Returns:
+            dict: Dictionary with month keys and their available days count
+        """
+        month_days = {}
+        current = self.start_date
+        while current <= self.end_date:
+            month_key = f"{current.year}-{current.month:02d}"
+        
+            # Calculate available days for this month
+            month_start = max(
+                current.replace(day=1),
+                self.start_date
+            )
+            month_end = min(
+                (current.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1),
+                self.end_date
+            )
+        
+            days_in_month = (month_end - month_start).days + 1
+            month_days[month_key] = days_in_month
+        
+            # Move to first day of next month
+            current = (current.replace(day=1) + timedelta(days=32)).replace(day=1)
+    
+        return month_days
+    
     def _calculate_target_shifts(self):
         """Calculate target number of shifts for each worker based on their percentage"""
         total_days = (self.end_date - self.start_date).days + 1
@@ -836,35 +866,38 @@ class Scheduler:
 
     def _check_monthly_balance(self, worker_id, date):
         """
-        Check if assigning this date would maintain monthly balance
-        Returns: (bool, float) - (passed, imbalance_score)
+        Check if assigning this date would maintain monthly balance based on available days
         """
         try:
-            # Get current monthly distribution
+            # Get monthly distribution
             distribution = {}
+            month_days = self._get_schedule_months()
+        
+            # Count current assignments
             for assigned_date in self.worker_assignments[worker_id]:
                 month_key = f"{assigned_date.year}-{assigned_date.month:02d}"
                 distribution[month_key] = distribution.get(month_key, 0) + 1
 
-            # Add the new date to distribution
+            # Add potential new assignment
             month_key = f"{date.year}-{date.month:02d}"
             new_distribution = distribution.copy()
             new_distribution[month_key] = new_distribution.get(month_key, 0) + 1
 
-            # Check balance with stricter tolerance
             if new_distribution:
-                max_shifts = max(new_distribution.values())
-                min_shifts = min(new_distribution.values())
-                imbalance = max_shifts - min_shifts
-            
-                # Calculate allowed imbalance based on worker's target
-                worker = next(w for w in self.workers_data if w['id'] == worker_id)
-                target = worker.get('target_shifts', 0)
-                allowed_imbalance = max(1, target // 12)  # Allow 1 shift difference or target/12
-            
-                if imbalance > allowed_imbalance:
-                    logging.debug(f"Monthly balance violated for worker {worker_id}: {new_distribution}")
-                    return False, imbalance
+                # Calculate ratios of shifts per available day for each month
+                ratios = {}
+                for m_key, shifts in new_distribution.items():
+                    available_days = month_days[m_key]
+                    ratios[m_key] = shifts / available_days
+
+                if ratios:
+                    max_ratio = max(ratios.values())
+                    min_ratio = min(ratios.values())
+                
+                    # Allow maximum 20% difference in ratios
+                    if (max_ratio - min_ratio) > 0.2:
+                        logging.debug(f"Monthly balance violated for worker {worker_id}: {ratios}")
+                        return False, max_ratio - min_ratio
 
             return True, 0.0
 
