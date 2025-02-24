@@ -837,35 +837,6 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
             return True  # Assume unavailable in case of error
-    
-    # ------------------------
-    # 4. Balance and Distribution Methods
-    # ------------------------
-
-    def _get_worker_monthly_shifts(self, worker_id, include_date=None, include_month=None):
-        """
-        Get the number of shifts per month for a worker
-        
-        Args:
-            worker_id: The worker's ID
-            include_date: Optional date to include in the count (for calculating potential assignments)
-            include_month: The month key (YYYY-MM) of include_date
-        
-        Returns:
-            dict: Monthly shift counts {YYYY-MM: count}
-        """
-        monthly_shifts = {}
-        
-        # Count existing assignments
-        for date in self.worker_assignments[worker_id]:
-            month_key = f"{date.year}-{date.month:02d}"
-            monthly_shifts[month_key] = monthly_shifts.get(month_key, 0) + 1
-        
-        # Include potential new assignment if date provided
-        if include_date and include_month:
-            monthly_shifts[include_month] = monthly_shifts.get(include_month, 0) + 1
-        
-        return monthly_shifts
 
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
