@@ -647,12 +647,15 @@ class Scheduler:
             if current_shifts >= target_shifts:
                 return False
             
-            # Check incompatibility constraints
-            if not self._check_incompatibility(worker_id, date):
-                return False
-            
-            # Check minimum gap constraint
-            if not self._check_gap_constraint(worker_id, date, self.min_gap_days):
+            # Check weekday balance
+            weekday = date.weekday()
+            weekdays = self.worker_weekdays[worker_id]
+            current_count = weekdays[weekday]
+            other_counts = [count for day, count in weekdays.items() if day != weekday]
+            max_other = max(other_counts) if other_counts else 0
+        
+            # Allow only +/- 1 difference in weekday assignments
+            if current_count > max_other + 1:
                 return False
             
             return True
