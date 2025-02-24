@@ -893,9 +893,18 @@ class Scheduler:
             if assigned_date in self.schedule:
                 assigned_post = self.schedule[assigned_date].index(worker_id)
                 post_counts[assigned_post] += 1
+            
+        # Add potential new assignment
         post_counts[post] += 1
-        return max(post_counts.values()) - min(post_counts.values())
-
+    
+        # Calculate target per post
+        total = sum(post_counts.values())
+        target_per_post = total / self.num_shifts
+    
+        # Return maximum deviation from target
+        max_deviation = max(abs(count - target_per_post) for count in post_counts.values())
+        return max_deviation
+        
     def _try_balance_assignment(self, date, post):
         """Try to find a worker that would improve balance"""
         candidates = []
@@ -1023,30 +1032,45 @@ class Scheduler:
 
     def _check_post_rotation(self, worker_id, post):
         """
-        Check if assigning this post would maintain proper rotation
+        Check post rotation with strict +/- 1 deviation limit
     
+        Args:
+            worker_id: Worker's ID
+            post: Post number being considered
         Returns:
             bool: True if assignment maintains balance, False otherwise
         """
         try:
             # Get current post counts
             post_counts = self._get_post_counts(worker_id)
-            post_counts[post] = post_counts.get(post, 0) + 1
-
-            # Calculate maximum difference
-            if post_counts:
-                max_posts = max(post_counts.values())
-                min_posts = min(post_counts.values())
-                if max_posts - min_posts > 1:  # Allow maximum 1 post difference
-                    logging.debug(f"Post rotation violated for worker {worker_id}: {post_counts}")
+        
+            # Add the potential new assignment
+            new_counts = post_counts.copy()
+            new_counts[post] = new_counts.get(post, 0) + 1
+        
+            # Calculate total assignments including the new one
+            total_assignments = sum(new_counts.values())
+        
+            if total_assignments == 0:
+                return True
+            
+            # Calculate the ideal distribution (target per post)
+            target_per_post = total_assignments / self.num_shifts
+        
+            # Check that no post deviates by more than 1 from target
+            for p, count in new_counts.items():
+                if abs(count - target_per_post) > 1:
+                    logging.debug(f"Post rotation check failed for worker {worker_id}: "
+                                f"Post {p} has {count} assignments (target: {target_per_post:.1f}, "
+                                f"allowed range: [{max(0, target_per_post-1):.1f}, {target_per_post+1:.1f}])")
                     return False
-
+                
             return True
 
         except Exception as e:
             logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
             return True
-
+            
     # ------------------------
     # 5. Date/Time Helper Methods
     # ------------------------
