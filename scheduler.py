@@ -36,7 +36,7 @@ class Scheduler:
             
             # Initialize tracking dictionaries
             self.schedule = {}
-            self.worker_assignments = {w['id']: [] for w in self.workers_data}
+            self.worker_assignments = {w['id']: set() for w in self.workers_data}
             self.worker_posts = {w['id']: set() for w in self.workers_data}
             self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
@@ -200,9 +200,8 @@ class Scheduler:
                 
                     if (worker_id not in self.schedule[date] and 
                         len(self.schedule[date]) < self.num_shifts):
-                        # Force assignment for mandatory days
                         self.schedule[date].append(worker_id)
-                        self.worker_assignments[worker_id].append(date)
+                        self.worker_assignments[worker_id].add(date)  # Changed from append to add
                     
                         # Update tracking data
                         post = len(self.schedule[date]) - 1
@@ -763,7 +762,7 @@ class Scheduler:
             if best_worker:
                 worker_id = best_worker['id']
                 self.schedule[date].append(worker_id)
-                self.worker_assignments[worker_id].append(date)
+                self.worker_assignments[worker_id].add(date)  # Changed from append to add
                 self._update_tracking_data(worker_id, date, post)
             else:
                 logging.error(f"Could not find suitable worker for shift {post + 1}")
@@ -882,10 +881,10 @@ class Scheduler:
         """Remove assignments for a specific day and update statistics"""
         if date not in self.schedule:
             return
-        
+    
         for worker_id in self.schedule[date]:
             # Remove from worker assignments
-            self.worker_assignments[worker_id].discard(date)
+            self.worker_assignments[worker_id].discard(date)  # This will now work with sets
         
             # Update weekday counts
             self._update_worker_stats(worker_id, date, removing=True)
