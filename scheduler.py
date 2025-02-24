@@ -869,33 +869,38 @@ class Scheduler:
             new_distribution = distribution.copy()
             new_distribution[month_key] = new_distribution.get(month_key, 0) + 1
 
-            # Calculate max allowed shifts per month based on target
+            # Calculate target shifts per month
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
             target_shifts = worker.get('target_shifts', 0)
             months_in_schedule = self._get_schedule_months()
             target_per_month = target_shifts / months_in_schedule
 
-            # Check balance with stricter limits
             if new_distribution:
                 max_shifts = max(new_distribution.values())
                 min_shifts = min(new_distribution.values())
                 imbalance = max_shifts - min_shifts
-            
-            # Don't allow more than 1 shift difference between months
-            if imbalance > 1:
-                logging.debug(f"Monthly balance violated for worker {worker_id}: {new_distribution}")
-                return False, imbalance
-            
-            # Don't exceed monthly target by more than 1
-            if max_shifts > (target_per_month + 1):
-                logging.debug(f"Monthly target exceeded for worker {worker_id}")
-                return False, imbalance
+
+                # Stricter balance checks
+                if imbalance > 1:  # Allow only 1 shift difference between months
+                    logging.debug(f"Monthly balance violated for worker {worker_id}: {new_distribution}")
+                    return False, imbalance
+
+                # Check against target per month
+                month_average = sum(new_distribution.values()) / len(new_distribution)
+                if abs(month_average - target_per_month) > 1:
+                    logging.debug(f"Monthly average too far from target for worker {worker_id}")
+                    return False, imbalance
+
+                # Check if this month is getting too many shifts
+                if new_distribution[month_key] > (target_per_month + 1):
+                    logging.debug(f"Month {month_key} exceeding target for worker {worker_id}")
+                    return False, imbalance
 
             return True, 0.0
 
         except Exception as e:
             logging.error(f"Error checking monthly balance for worker {worker_id}: {str(e)}")
-            return True, 0.0  # Allow assignment in case of error
+            return True, 0.0
 
     def _check_weekday_balance(self, worker_id, date):
         """
