@@ -470,7 +470,7 @@ class Scheduler:
             assignments = sorted(list(self.worker_assignments[worker_id]))
             if assignments:
                 days_since_last = (date - assignments[-1]).days
-                if days_since_last < 3:  # Changed from 2 to 3
+                if days_since_last < 3:
                     return float('-inf')
                 
             # Check weekend limit - reject if would exceed
@@ -509,7 +509,7 @@ class Scheduler:
             # --- Target Progress Score ---
             shift_difference = target_shifts - current_shifts
     
-            if shift_difference <= 0:  # This might be the problem!
+            if shift_difference <= 0:
                 return float('-inf')  # Never exceed target
         
             # Higher priority for workers further from their target
@@ -520,7 +520,7 @@ class Scheduler:
             if post == last_post:
                 post_counts = self._get_post_counts(worker_id)
                 total_assignments = sum(post_counts.values()) + 1
-                target_last_post = total_assignments / self.num_shifts
+                target_last_post = total_assignments * (1 / self.num_shifts)
                 current_last_post = post_counts.get(last_post, 0)
             
                 # Encourage assignments when below target
@@ -538,7 +538,7 @@ class Scheduler:
             logging.debug(f"Score for worker {worker_id}: {score} "
                          f"(current: {current_shifts}, target: {target_shifts}")
 
-            return score
+                return score
 
         except Exception as e:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
@@ -1840,11 +1840,21 @@ class Scheduler:
     def _validate_post_rotation(self, worker_id, warnings):
         """Validate post rotation balance for a worker"""
         post_counts = self._get_post_counts(worker_id)
-        max_diff = max(post_counts.values()) - min(post_counts.values())
-        if max_diff > 2:
+        total_assignments = sum(post_counts.values())
+        last_post = self.num_shifts - 1
+        target_last_post = total_assignments * (1 / self.num_shifts)
+        actual_last_post = post_counts.get(last_post, 0)
+    
+        # Allow for some deviation
+        allowed_deviation = max(1, total_assignments * 0.1)
+    
+        if abs(actual_last_post - target_last_post) > allowed_deviation:
             warnings.append(
-                f"Worker {worker_id} post rotation imbalance: {post_counts}"
+                f"Worker {worker_id} post rotation imbalance: {post_counts}. "
+                f"Last post assignments: {actual_last_post}, Target: {target_last_post:.2f}, "
+                f"Allowed deviation: ±{allowed_deviation:.2f}"
             )
+                )
 
     def _validate_monthly_distribution(self, worker_id, warnings):
         """Validate monthly shift distribution for a worker"""
