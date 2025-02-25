@@ -471,11 +471,11 @@ class Scheduler:
                 days_since_last = (date - assignments[-1]).days
                 if days_since_last < 3:
                     return float('-inf')
-                    
+                
             # Check weekend limit - reject if would exceed
             if self._would_exceed_weekend_limit(worker_id, date):
                 return float('-inf')
-            
+        
             # --- Weekend Scoring Component ---
             if date.weekday() >= 4:  # Friday, Saturday, Sunday
                 weekend_assignments = sum(
@@ -489,10 +489,10 @@ class Scheduler:
             weekday = date.weekday()
             weekday_counts = self.worker_weekdays[worker_id].copy()
             weekday_counts[weekday] += 1  # Simulate adding this assignment
-        
+    
             max_weekday = max(weekday_counts.values())
             min_weekday = min(weekday_counts.values())
-        
+    
             # If this assignment would create more than 1 day difference, reject it
             if (max_weekday - min_weekday) > 1:
                 return float('-inf')
@@ -501,19 +501,19 @@ class Scheduler:
             if (self._is_worker_unavailable(worker_id, date) or
                 date in self.schedule and worker_id in self.schedule[date]):
                 return float('-inf')
-        
+    
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = worker.get('target_shifts', 0)
-        
+    
             # --- Target Progress Score ---
             shift_difference = target_shifts - current_shifts
-        
+    
             if shift_difference <= 0:
                 return float('-inf')  # Never exceed target
-            
+        
             # Higher priority for workers further from their target
             score += shift_difference * 1000
-        
+    
             # Post rotation score - focus on last post distribution
             last_post = self.num_shifts - 1
             if post == last_post:
@@ -521,7 +521,7 @@ class Scheduler:
                 total_assignments = sum(post_counts.values()) + 1
                 target_last_post = total_assignments * (1 / self.num_shifts)
                 current_last_post = post_counts.get(last_post, 0)
-                
+            
                 # Encourage assignments when below target
                 if current_last_post < target_last_post - 1:
                     score += 1000
@@ -1843,10 +1843,10 @@ class Scheduler:
         last_post = self.num_shifts - 1
         target_last_post = total_assignments * (1 / self.num_shifts)
         actual_last_post = post_counts.get(last_post, 0)
-        
+    
         # Allow for some deviation
         allowed_deviation = 1
-        
+    
         if abs(actual_last_post - target_last_post) > allowed_deviation:
             warnings.append(
                 f"Worker {worker_id} post rotation imbalance: {post_counts}. "
