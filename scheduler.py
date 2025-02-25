@@ -227,7 +227,7 @@ class Scheduler:
     # ------------------------
 
     def generate_schedule(self):
-        """Generate the complete schedule"""
+        """Generate the complete schedule with possibility of unfilled shifts"""
         logging.info("=== Starting schedule generation ===")
         try:
             self._reset_schedule()
@@ -237,59 +237,24 @@ class Scheduler:
             logging.info("Processing mandatory guards...")
             self._assign_mandatory_guards()
         
-            # Update eligibility tracker with mandatory assignments
-            for date, workers in self.schedule.items():
-                for worker_id in workers:
-                    self.eligibility_tracker.update_worker_status(worker_id, date)
-        
             # Process remaining days
             current_date = self.start_date
             while current_date <= self.end_date:
-                if current_date not in self.schedule:
-                    self.schedule[current_date] = []
-            
-                month_key = f"{current_date.year}-{current_date.month:02d}"
-                remaining_shifts = self.num_shifts - len(self.schedule[current_date])
-            
-                # Changed this loop to explicitly use post number
-                for post in range(remaining_shifts):
-                    # Get eligible workers for this date
-                    eligible_workers = self.eligibility_tracker.get_eligible_workers(
-                        current_date,
-                        self.schedule[current_date]
-                    )
-                
-                    # Find best worker among eligible ones
-                    best_worker = None
-                    best_score = float('-inf')
-                
-                    for worker in eligible_workers:
-                        worker_id = worker['id']
-                    
-                        # Skip if monthly target reached
-                        if self._check_monthly_target(worker_id, month_key):
-                            continue
-                    
-                        # Calculate score only for eligible workers
-                        # Pass the current post number to the scoring function
-                        score = self._calculate_worker_score(worker, current_date, post)
-                        if score > best_score:
-                            best_worker = worker
-                            best_score = score
-                
-                    if best_worker:
-                        worker_id = best_worker['id']
-                        self.schedule[current_date].append(worker_id)
-                        self.worker_assignments[worker_id].add(current_date)
-                        self._update_tracking_data(worker_id, current_date, post)
-                        self.eligibility_tracker.update_worker_status(worker_id, current_date)
-                    else:
-                        logging.warning(f"Could not find suitable worker for {current_date}, post {post}")
-            
+                self._assign_day_shifts(current_date)
                 current_date += timedelta(days=1)
         
             self._cleanup_schedule()
             self._validate_final_schedule()
+        
+            # Log schedule statistics
+            total_shifts = sum(len(shifts) for shifts in self.schedule.values())
+            filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+            coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
+        
+            logging.info(f"Schedule generation completed:")
+            logging.info(f"Total shifts: {total_shifts}")
+            logging.info(f"Filled shifts: {filled_shifts}")
+            logging.info(f"Coverage: {coverage:.2f}%")
         
             return self.schedule
         
@@ -411,7 +376,7 @@ class Scheduler:
                         self._update_tracking_data(worker_id, date, post)
 
     def _assign_day_shifts(self, date):
-        """Modified assignment method that considers weekday balance"""
+        """Modified assignment method that allows for unfilled shifts"""
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
 
         if date not in self.schedule:
@@ -420,25 +385,40 @@ class Scheduler:
         remaining_shifts = self.num_shifts - len(self.schedule[date])
 
         for post in range(remaining_shifts):
+            assigned = False
             candidates = []
-        
+    
             for worker in self.workers_data:
-                if self._can_assign_worker(worker['id'], date, post):
-                    balance_score = self._get_weekday_balance_score(worker['id'], date)
-                    score = self._calculate_worker_score(worker, date, post)
+                worker_id = worker['id']
+            
+                # Skip if already assigned to this date
+                if worker_id in self.schedule[date]:
+                    continue
                 
-                    if score > float('-inf') and balance_score > 0:
-                        candidates.append((worker, score * balance_score))
-
+                # Skip if would exceed weekend limit
+                if self._would_exceed_weekend_limit(worker_id, date):
+                    continue
+            
+                # Check other constraints
+                if self._can_assign_worker(worker_id, date, post):
+                    score = self._calculate_worker_score(worker, date, post)
+                    if score > float('-inf'):
+                        candidates.append((worker, score))
+    
             if candidates:
-                # Select worker with best combined score
+                # Select worker with best score
                 best_worker = max(candidates, key=lambda x: x[1])[0]
                 worker_id = best_worker['id']
                 self.schedule[date].append(worker_id)
                 self.worker_assignments[worker_id].add(date)
                 self._update_tracking_data(worker_id, date, post)
-            else:
-                logging.error(f"Could not find suitable worker for shift {post + 1}")
+                assigned = True
+                logging.info(f"Assigned worker {worker_id} to {date}, post {post}")
+        
+            if not assigned:
+                # Leave the shift empty if no suitable worker found
+                self.schedule[date].append(None)
+                logging.warning(f"No suitable worker found for {date}, post {post} - leaving shift unfilled")
                 
     def _get_candidates(self, date, post, skip_constraints=False, try_part_time=False):
         """Get suitable candidates with their scores"""
@@ -1736,10 +1716,7 @@ class Scheduler:
         logging.info(f"Schedule cleanup complete. Removed {len(incomplete_days)} empty days.")
 
     def _validate_final_schedule(self):
-        """
-        Comprehensive schedule validation including all balance requirements
-        Raises SchedulerError if critical issues are found
-        """
+        """Modified validation to allow for unfilled shifts"""
         errors = []
         warnings = []
 
@@ -1747,22 +1724,59 @@ class Scheduler:
 
         # Check each date in schedule
         for date in sorted(self.schedule.keys()):
-            self._validate_daily_assignments(date, errors, warnings)
+            assigned_workers = [w for w in self.schedule[date] if w is not None]
+        
+            # Check worker incompatibilities
+            for i, worker_id in enumerate(assigned_workers):
+                for other_id in assigned_workers[i+1:]:
+                    if self._are_workers_incompatible(worker_id, other_id):
+                        errors.append(
+                            f"Incompatible workers {worker_id} and {other_id} "
+                            f"on {date.strftime('%Y-%m-%d')}"
+                        )
+
+            # Check understaffing (now a warning instead of error)
+            filled_shifts = len([w for w in self.schedule[date] if w is not None])
+            if filled_shifts < self.num_shifts:
+                warnings.append(
+                    f"Understaffed on {date.strftime('%Y-%m-%d')}: "
+                    f"{filled_shifts} of {self.num_shifts} shifts filled"
+                )
 
         # Check worker-specific constraints
         for worker in self.workers_data:
             worker_id = worker['id']
-            self._validate_worker_constraints(worker_id, errors, warnings)
+            assignments = sorted([
+                date for date, workers in self.schedule.items()
+                if worker_id in workers
+            ])
+        
+            # Check weekend constraints
+            for date in assignments:
+                if self._is_weekend_day(date):
+                    window_start = date - timedelta(days=10)
+                    window_end = date + timedelta(days=10)
+                
+                    weekend_count = sum(
+                        1 for d in assignments
+                        if window_start <= d <= window_end and self._is_weekend_day(d)
+                     )    
+                
+                    if weekend_count > 3:
+                        errors.append(
+                            f"Worker {worker_id} has {weekend_count} weekend/holiday "
+                            f"shifts in a 3-week period around {date.strftime('%Y-%m-%d')}"
+                        )
 
-        # Handle validation results
+        # Log all warnings
+        for warning in warnings:
+            logging.warning(warning)
+
+        # Handle errors
         if errors:
             error_msg = "Schedule validation failed:\n" + "\n".join(errors)
             logging.error(error_msg)
             raise SchedulerError(error_msg)
-        
-        if warnings:
-            for warning in warnings:
-                logging.warning(warning)
 
         logging.info("Schedule validation completed successfully")
 
