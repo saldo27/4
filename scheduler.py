@@ -549,12 +549,12 @@ class Scheduler:
             target_last_post = total_assignments / self.num_shifts
             current_last_post = post_counts.get(last_post, 0)
             
-                # Encourage assignments when below target
-                if current_last_post < target_last_post:
-                    score += 1000
-                # Discourage assignments when above target
-                elif current_last_post > target_last_post:
-                    score -= 1000 
+            # Encourage assignments when below target
+            if current_last_post < target_last_post:
+                score += 1000
+            # Discourage assignments when above target
+            elif current_last_post > target_last_post:
+                score -= 1000
              
             # Add penalty for weekend assignments
             if date.weekday() in [4, 5, 6]:
