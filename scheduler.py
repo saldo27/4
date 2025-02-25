@@ -493,7 +493,7 @@ class Scheduler:
                 weekend_assignments = sum(
                     1 for d in self.worker_assignments[worker_id]
                     if d.weekday() >= 4
-                )    
+                )
                 # Lower score for workers with more weekend assignments
                 score -= weekend_assignments * 300
 
