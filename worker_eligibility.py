@@ -4,6 +4,13 @@ class WorkerEligibilityTracker:
     """Helper class to track and manage worker eligibility for assignments"""
     
     def __init__(self, workers_data, holidays):
+        """
+        Initialize the worker eligibility tracker
+        
+        Args:
+            workers_data: List of worker dictionaries
+            holidays: List of holiday dates
+        """
         self.workers_data = workers_data
         self.holidays = holidays
         self.last_worked_date = {w['id']: None for w in workers_data}
@@ -11,7 +18,13 @@ class WorkerEligibilityTracker:
         self.recent_weekends = {w['id']: [] for w in workers_data}
     
     def update_worker_status(self, worker_id, date):
-        """Update tracking data when a worker is assigned"""
+        """
+        Update tracking data when a worker is assigned
+        
+        Args:
+            worker_id: ID of the worker
+            date: Date of the assignment
+        """
         self.last_worked_date[worker_id] = date
         self.total_assignments[worker_id] += 1
         
@@ -25,7 +38,15 @@ class WorkerEligibilityTracker:
             ]
     
     def get_eligible_workers(self, date, assigned_workers):
-        """Get list of workers eligible for assignment on given date"""
+        """
+        Get list of workers eligible for assignment on given date
+        
+        Args:
+            date: Date to check eligibility for
+            assigned_workers: List of workers already assigned to this date
+        Returns:
+            list: List of eligible workers
+        """
         eligible_workers = []
         
         for worker in self.workers_data:
@@ -44,7 +65,16 @@ class WorkerEligibilityTracker:
         return eligible_workers
     
     def _check_basic_eligibility(self, worker_id, date, assigned_workers):
-        """Quick checks for basic eligibility"""
+        """
+        Quick checks for basic eligibility
+        
+        Args:
+            worker_id: ID of the worker to check
+            date: Date to check
+            assigned_workers: List of workers already assigned to this date
+        Returns:
+            bool: True if worker passes basic eligibility checks
+        """
         # Check if already assigned that day
         if worker_id in assigned_workers:
             return False
@@ -57,7 +87,15 @@ class WorkerEligibilityTracker:
         return True
     
     def _check_weekend_constraints(self, worker_id, date):
-        """Check weekend-related constraints"""
+        """
+        Check weekend-related constraints
+        
+        Args:
+            worker_id: ID of the worker to check
+            date: Date to check
+        Returns:
+            bool: True if worker can be assigned to this weekend date
+        """
         if not self._is_weekend_day(date):
             return True
             
@@ -73,7 +111,14 @@ class WorkerEligibilityTracker:
         return weekend_count < 3
     
     def _is_weekend_day(self, date):
-        """Check if date is a weekend day or holiday"""
+        """
+        Check if date is a weekend day or holiday
+        
+        Args:
+            date: Date to check
+        Returns:
+            bool: True if date is a weekend day or holiday
+        """
         return (
             date.weekday() >= 4 or  # Friday, Saturday, Sunday
             date in self.holidays or
