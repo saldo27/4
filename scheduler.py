@@ -478,7 +478,7 @@ class Scheduler:
             worker_id = worker['id']
             score = 0
 
-           # First check incompatibility - reject immediately if incompatible
+            # First check incompatibility - reject immediately if incompatible
             if not self._check_incompatibility(worker_id, date):
                 return float('-inf')
 
@@ -492,10 +492,9 @@ class Scheduler:
             # Check weekend limit - reject if would exceed
             if self._would_exceed_weekend_limit(worker_id, date):
                 return float('-inf')
-            
+        
             # --- Weekend Scoring Component ---
             if date.weekday() >= 4:  # Friday, Saturday, Sunday
-                # Get count of weekend days in recent assignments
                 weekend_assignments = sum(
                     1 for d in self.worker_assignments[worker_id]
                     if d.weekday() >= 4
@@ -507,64 +506,54 @@ class Scheduler:
             weekday = date.weekday()
             weekday_counts = self.worker_weekdays[worker_id].copy()
             weekday_counts[weekday] += 1  # Simulate adding this assignment
-        
+    
             max_weekday = max(weekday_counts.values())
             min_weekday = min(weekday_counts.values())
-        
+    
             # If this assignment would create more than 1 day difference, reject it
             if (max_weekday - min_weekday) > 1:
                 return float('-inf')
 
-            # Favor assignments that improve balance
-            current_max = max(self.worker_weekdays[worker_id].values())
-            current_min = min(self.worker_weekdays[worker_id].values())
-            current_imbalance = current_max - current_min
-            new_imbalance = max_weekday - min_weekday
-        
-            if new_imbalance < current_imbalance:
-                score += 2000  # High bonus for improving balance
-        
             # --- Hard Constraints ---
             if (self._is_worker_unavailable(worker_id, date) or
                 date in self.schedule and worker_id in self.schedule[date]):
                 return float('-inf')
-        
+    
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = worker.get('target_shifts', 0)
-        
+    
             # --- Target Progress Score ---
             shift_difference = target_shifts - current_shifts
-        
+    
             if shift_difference <= 0:  # This might be the problem!
                 return float('-inf')  # Never exceed target
-            
+        
             # Higher priority for workers further from their target
             score += shift_difference * 1000
-        
-        # Post rotation score - focus on last post distribution
-        last_post = self.num_shifts - 1
-        if post == last_post:
-            post_counts = self._get_post_counts(worker_id)
-            total_assignments = sum(post_counts.values()) + 1
-            target_last_post = total_assignments / self.num_shifts
-            current_last_post = post_counts.get(last_post, 0)
+    
+            # Post rotation score - focus on last post distribution
+            last_post = self.num_shifts - 1
+            if post == last_post:
+                post_counts = self._get_post_counts(worker_id)
+                total_assignments = sum(post_counts.values()) + 1
+                target_last_post = total_assignments / self.num_shifts
+                current_last_post = post_counts.get(last_post, 0)
             
-            # Encourage assignments when below target
-            if current_last_post < target_last_post:
-                score += 1000
-            # Discourage assignments when above target
-            elif current_last_post > target_last_post:
-                score -= 1000
-             
+                # Encourage assignments when below target
+                if current_last_post < target_last_post:
+                    score += 1000
+                # Discourage assignments when above target
+                elif current_last_post > target_last_post:
+                    score -= 1000
+
             # Add penalty for weekend assignments
             if date.weekday() in [4, 5, 6]:
                 score -= 1000
 
             # Log the score calculation
             logging.debug(f"Score for worker {worker_id}: {score} "
-                         f"(current: {current_shifts}, target: {target_shifts}, "
-                         f"post counts: {post_counts})")
-                     
+                         f"(current: {current_shifts}, target: {target_shifts}")
+
             return score
 
         except Exception as e:
