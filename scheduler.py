@@ -398,18 +398,18 @@ class Scheduler:
         for post in range(remaining_shifts):
             assigned = False
             candidates = []
-        
+    
             for worker in self.workers_data:
                 worker_id = worker['id']
-                
+            
                 # Skip if already assigned to this date
                 if worker_id in self.schedule[date]:
                     continue
-                    
+                
                 # Skip if would exceed weekend limit
                 if self._would_exceed_weekend_limit(worker_id, date):
                     continue
-                
+            
                 # Check other constraints
                 if self._can_assign_worker(worker_id, date, post):
                     score = self._calculate_worker_score(worker, date, post)
@@ -425,7 +425,7 @@ class Scheduler:
                 self._update_tracking_data(worker_id, date, post)
                 assigned = True
                 logging.info(f"Assigned worker {worker_id} to {date}, post {post}")
-            
+        
             if not assigned:
                 # Leave the shift empty if no suitable worker found
                 self.schedule[date].append(None)
