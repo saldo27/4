@@ -98,7 +98,7 @@ class Scheduler:
                 self.holidays
             )
 
-            self._loginitialization()
+            self._log_initialization()
 
         except Exception as e:
             logging.error(f"Initialization error: {str(e)}")
