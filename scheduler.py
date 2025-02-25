@@ -223,7 +223,7 @@ class Scheduler:
     # 2. Schedule Generation Methods
     # ------------------------
 
-    def generate_schedule(self, num_attempts=10):
+    def generate_schedule(self, num_attempts=20):
         """Generate the complete schedule with possibility of unfilled shifts"""
         logging.info("=== Starting schedule generation ===")
         try:
@@ -234,25 +234,25 @@ class Scheduler:
                 logging.info(f"Attempt {attempt + 1} of {num_attempts}")
                 self._reset_schedule()
                 self._calculate_monthly_targets()
-                
+            
                 # Process mandatory assignments first
                 logging.info("Processing mandatory guards...")
                 self._assign_mandatory_guards()
-                
+            
                 # Process remaining days
                 current_date = self.start_date
                 while current_date <= self.end_date:
                     self._assign_day_shifts(current_date)
                     current_date += timedelta(days=1)
-                
+            
                 self._cleanup_schedule()
                 self._validate_final_schedule()
-                
+            
                 # Calculate coverage
                 total_shifts = sum(len(shifts) for shifts in self.schedule.values())
                 filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
                 coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
-                
+            
                 logging.info(f"Attempt {attempt + 1} coverage: {coverage:.2f}%")
 
                 # Check if this is the best schedule so far
@@ -268,7 +268,7 @@ class Scheduler:
                 raise SchedulerError("Failed to generate a valid schedule")
 
             return self.schedule
-            
+        
         except Exception as e:
             logging.error(f"Schedule generation error: {str(e)}")
             raise SchedulerError(f"Failed to generate schedule: {str(e)}")
@@ -483,17 +483,17 @@ class Scheduler:
                 days_since_last = (date - assignments[-1]).days
                 if days_since_last < 3:
                     return float('-inf')
-                    
+                
             # Check weekend limit - reject if would exceed
             if self._would_exceed_weekend_limit(worker_id, date):
                 return float('-inf')
-            
+        
             # --- Weekend Scoring Component ---
             if date.weekday() >= 4:  # Friday, Saturday, Sunday
                 weekend_assignments = sum(
                     1 for d in self.worker_assignments[worker_id]
                     if d.weekday() >= 4
-                )
+                )    
                 # Lower score for workers with more weekend assignments
                 score -= weekend_assignments * 300
 
@@ -501,10 +501,10 @@ class Scheduler:
             weekday = date.weekday()
             weekday_counts = self.worker_weekdays[worker_id].copy()
             weekday_counts[weekday] += 1  # Simulate adding this assignment
-        
+    
             max_weekday = max(weekday_counts.values())
             min_weekday = min(weekday_counts.values())
-        
+    
             # If this assignment would create more than 1 day difference, reject it
             if (max_weekday - min_weekday) > 1:
                 return float('-inf')
@@ -513,19 +513,19 @@ class Scheduler:
             if (self._is_worker_unavailable(worker_id, date) or
                 date in self.schedule and worker_id in self.schedule[date]):
                 return float('-inf')
-        
+    
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = worker.get('target_shifts', 0)
-        
+    
             # --- Target Progress Score ---
             shift_difference = target_shifts - current_shifts
-        
+    
             if shift_difference <= 0:
                 return float('-inf')  # Never exceed target
-            
+        
             # Higher priority for workers further from their target
             score += shift_difference * 1000
-        
+    
             # Post rotation score - focus on last post distribution
             last_post = self.num_shifts - 1
             if post == last_post:
@@ -533,7 +533,7 @@ class Scheduler:
                 total_assignments = sum(post_counts.values()) + 1
                 target_last_post = total_assignments * (1 / self.num_shifts)
                 current_last_post = post_counts.get(last_post, 0)
-                
+            
                 # Encourage assignments when below target
                 if current_last_post < target_last_post - 1:
                     score += 1000
