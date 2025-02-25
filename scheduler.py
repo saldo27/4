@@ -1,3 +1,4 @@
+
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import calendar
@@ -231,48 +232,51 @@ class Scheduler:
         try:
             self._reset_schedule()
             self._calculate_monthly_targets()
-            
+        
             # Process mandatory assignments first
+            logging.info("Processing mandatory guards...")
             self._assign_mandatory_guards()
-            
+        
             # Update eligibility tracker with mandatory assignments
             for date, workers in self.schedule.items():
                 for worker_id in workers:
                     self.eligibility_tracker.update_worker_status(worker_id, date)
-            
+        
             # Process remaining days
             current_date = self.start_date
             while current_date <= self.end_date:
                 if current_date not in self.schedule:
                     self.schedule[current_date] = []
-                
+            
                 month_key = f"{current_date.year}-{current_date.month:02d}"
                 remaining_shifts = self.num_shifts - len(self.schedule[current_date])
-                
-                for _ in range(remaining_shifts):
+            
+                # Changed this loop to explicitly use post number
+                for post in range(remaining_shifts):
                     # Get eligible workers for this date
                     eligible_workers = self.eligibility_tracker.get_eligible_workers(
                         current_date,
                         self.schedule[current_date]
                     )
-                    
+                
                     # Find best worker among eligible ones
                     best_worker = None
                     best_score = float('-inf')
-                    
+                
                     for worker in eligible_workers:
                         worker_id = worker['id']
-                        
+                    
                         # Skip if monthly target reached
                         if self._check_monthly_target(worker_id, month_key):
                             continue
-                        
+                    
                         # Calculate score only for eligible workers
+                        # Pass the current post number to the scoring function
                         score = self._calculate_worker_score(worker, current_date, post)
                         if score > best_score:
                             best_worker = worker
                             best_score = score
-                    
+                
                     if best_worker:
                         worker_id = best_worker['id']
                         self.schedule[current_date].append(worker_id)
@@ -281,12 +285,12 @@ class Scheduler:
                         self.eligibility_tracker.update_worker_status(worker_id, current_date)
                     else:
                         logging.warning(f"Could not find suitable worker for {current_date}, post {post}")
-                
-                current_date += timedelta(days=1)
             
+                current_date += timedelta(days=1)
+        
             self._cleanup_schedule()
             self._validate_final_schedule()
-            
+        
             return self.schedule
         
         except Exception as e:
