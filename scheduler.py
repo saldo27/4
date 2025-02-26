@@ -224,7 +224,7 @@ class Scheduler:
     # 2. Schedule Generation Methods
     # ------------------------
 
-    def generate_schedule(self, num_attempts=20, allow_feedback_improvement=True, improvement_attempts=10):
+    def generate_schedule(self, num_attempts=50, allow_feedback_improvement=True, improvement_attempts=10):
         """
         Generate the complete schedule with possibility of unfilled shifts
     
