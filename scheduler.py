@@ -4,6 +4,7 @@ import calendar
 import logging
 import sys
 import requests
+import random
 from worker_eligibility import WorkerEligibilityTracker
 
 # Configure logging
@@ -229,22 +230,45 @@ class Scheduler:
         try:
             best_schedule = None
             best_coverage = 0
+            best_worker_assignments = None
+            best_worker_posts = None
+            best_worker_weekdays = None
+            best_worker_weekends = None
+            best_constraint_skips = None
             coverage_stats = []
 
             for attempt in range(num_attempts):
+                # Set a seed based on the attempt number to ensure different runs
+                random.seed(attempt + 1)
+            
                 logging.info(f"Attempt {attempt + 1} of {num_attempts}")
                 self._reset_schedule()
                 self._calculate_monthly_targets()
+            
+                # Choose direction for this attempt: forward or backward
+                forward = random.choice([True, False])
+                logging.info(f"Direction: {'forward' if forward else 'backward'}")
             
                 # Process mandatory assignments first
                 logging.info("Processing mandatory guards...")
                 self._assign_mandatory_guards()
             
-                # Process remaining days
-                current_date = self.start_date
-                while current_date <= self.end_date:
-                    self._assign_day_shifts(current_date)
-                    current_date += timedelta(days=1)
+                # Process remaining days - either forward or backward
+                dates_to_process = []
+                if forward:
+                    current_date = self.start_date
+                    while current_date <= self.end_date:
+                        dates_to_process.append(current_date)
+                        current_date += timedelta(days=1)
+                else:
+                    current_date = self.end_date
+                    while current_date >= self.start_date:
+                        dates_to_process.append(current_date)
+                        current_date -= timedelta(days=1)
+                    
+                # Process the days
+                for date in dates_to_process:
+                    self._assign_day_shifts(date, attempt)
             
                 self._cleanup_schedule()
                 self._validate_final_schedule()
@@ -266,33 +290,55 @@ class Scheduler:
                     'attempt': attempt + 1,
                     'coverage': coverage,
                     'post_rotation_score': post_rotation_stats['overall_score'],
-                    'unfilled_shifts': total_shifts - filled_shifts
+                    'unfilled_shifts': total_shifts - filled_shifts,
+                    'direction': 'forward' if forward else 'backward'
                 })
 
                 # Check if this is the best schedule so far
-                if coverage > best_coverage:
+                if coverage > best_coverage or (coverage == best_coverage and post_rotation_stats['overall_score'] > best_post_rotation):
                     best_coverage = coverage
+                    best_post_rotation = post_rotation_stats['overall_score']
                     best_schedule = self.schedule.copy()
+                    best_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
+                    best_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}
+                    best_worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.worker_weekdays.items()}
+                    best_worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.worker_weekends.items()}
+                    best_constraint_skips = {
+                        w_id: {
+                            'gap': skips['gap'].copy(),
+                            'incompatibility': skips['incompatibility'].copy(),
+                            'reduced_gap': skips['reduced_gap'].copy(),
+                        }
+                        for w_id, skips in self.constraint_skips.items()
+                    }
 
             # Use the best schedule found
             self.schedule = best_schedule
+            self.worker_assignments = best_worker_assignments
+            self.worker_posts = best_worker_posts
+            self.worker_weekdays = best_worker_weekdays
+            self.worker_weekends = best_worker_weekends
+            self.constraint_skips = best_constraint_skips
+        
             logging.info(f"Best coverage achieved: {best_coverage:.2f}%")
+            logging.info(f"Best post rotation score: {best_post_rotation:.2f}%")
         
             # Log coverage statistics summary
             logging.info("=== Coverage Statistics Summary ===")
             for stats in coverage_stats:
-                logging.info(f"Attempt {stats['attempt']}: Coverage={stats['coverage']:.2f}%, "
+                logging.info(f"[Attempt {stats['attempt']:2d}   ] Coverage={stats['coverage']:.2f}%, "
                             f"Post Rotation Score={stats['post_rotation_score']:.2f}%, "
-                            f"Unfilled Shifts={stats['unfilled_shifts']}")
+                            f"Unfilled Shifts={stats['unfilled_shifts']}, "
+                            f"Direction={stats['direction']}")
         
             # Calculate averages
             avg_coverage = sum(stats['coverage'] for stats in coverage_stats) / len(coverage_stats)
             avg_post_rotation = sum(stats['post_rotation_score'] for stats in coverage_stats) / len(coverage_stats)
             avg_unfilled = sum(stats['unfilled_shifts'] for stats in coverage_stats) / len(coverage_stats)
         
-            logging.info(f"Average Coverage: {avg_coverage:.2f}%")
-            logging.info(f"Average Post Rotation Score: {avg_post_rotation:.2f}%")
-            logging.info(f"Average Unfilled Shifts: {avg_unfilled:.2f}")
+            logging.info(f"[Average Coverage] {avg_coverage:.2f}%")
+            logging.info(f"[Average Post Rotation Score] {avg_post_rotation:.2f}%")
+            logging.info(f"[Average Unfilled Shifts] {avg_unfilled:.2f}")
 
             if self.schedule is None:
                 raise SchedulerError("Failed to generate a valid schedule")
@@ -416,8 +462,8 @@ class Scheduler:
                         post = len(self.schedule[date]) - 1
                         self._update_tracking_data(worker_id, date, post)
 
-    def _assign_day_shifts(self, date):
-        """Modified assignment method that allows for unfilled shifts"""
+    def _assign_day_shifts(self, date, attempt_number=0):
+        """Modified assignment method that allows for unfilled shifts with variability"""
         logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
 
         if date not in self.schedule:
@@ -428,18 +474,18 @@ class Scheduler:
         for post in range(remaining_shifts):
             assigned = False
             candidates = []
-        
+    
             for worker in self.workers_data:
                 worker_id = worker['id']
-                
+            
                 # Skip if already assigned to this date
                 if worker_id in self.schedule[date]:
                     continue
-                    
+                
                 # Skip if would exceed weekend limit
                 if self._would_exceed_weekend_limit(worker_id, date):
                     continue
-                
+            
                 # Check other constraints
                 if self._can_assign_worker(worker_id, date, post):
                     score = self._calculate_worker_score(worker, date, post)
@@ -447,15 +493,34 @@ class Scheduler:
                         candidates.append((worker, score))
 
             if candidates:
-                # Select worker with best score
-                best_worker = max(candidates, key=lambda x: x[1])[0]
+                # Group candidates by score
+                candidates_by_score = {}
+                for worker, score in candidates:
+                    if score not in candidates_by_score:
+                        candidates_by_score[score] = []
+                    candidates_by_score[score].append(worker)
+            
+                # Sort scores in descending order
+                sorted_scores = sorted(candidates_by_score.keys(), reverse=True)
+            
+                # Get workers with the highest score
+                best_score = sorted_scores[0]
+                best_workers = candidates_by_score[best_score]
+            
+                # Introduce variability: shuffle the best workers based on the attempt number
+                shuffled_workers = best_workers.copy()
+                random.Random(attempt_number + date.toordinal()).shuffle(shuffled_workers)
+            
+                # Select the first worker from the shuffled list
+                best_worker = shuffled_workers[0]
+            
                 worker_id = best_worker['id']
                 self.schedule[date].append(worker_id)
                 self.worker_assignments[worker_id].add(date)
                 self._update_tracking_data(worker_id, date, post)
                 assigned = True
                 logging.info(f"Assigned worker {worker_id} to {date}, post {post}")
-            
+        
             if not assigned:
                 # Leave the shift empty if no suitable worker found
                 self.schedule[date].append(None)
