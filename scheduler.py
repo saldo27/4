@@ -234,25 +234,25 @@ class Scheduler:
                 logging.info(f"Attempt {attempt + 1} of {num_attempts}")
                 self._reset_schedule()
                 self._calculate_monthly_targets()
-            
+                
                 # Process mandatory assignments first
                 logging.info("Processing mandatory guards...")
                 self._assign_mandatory_guards()
-            
+                
                 # Process remaining days
                 current_date = self.start_date
                 while current_date <= self.end_date:
                     self._assign_day_shifts(current_date)
                     current_date += timedelta(days=1)
-            
+                
                 self._cleanup_schedule()
                 self._validate_final_schedule()
-            
+                
                 # Calculate coverage
                 total_shifts = sum(len(shifts) for shifts in self.schedule.values())
                 filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
                 coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
-            
+                
                 logging.info(f"Attempt {attempt + 1} coverage: {coverage:.2f}%")
 
                 # Check if this is the best schedule so far
@@ -268,7 +268,7 @@ class Scheduler:
                 raise SchedulerError("Failed to generate a valid schedule")
 
             return self.schedule
-        
+            
         except Exception as e:
             logging.error(f"Schedule generation error: {str(e)}")
             raise SchedulerError(f"Failed to generate schedule: {str(e)}")
@@ -398,18 +398,18 @@ class Scheduler:
         for post in range(remaining_shifts):
             assigned = False
             candidates = []
-    
+        
             for worker in self.workers_data:
                 worker_id = worker['id']
-            
+                
                 # Skip if already assigned to this date
                 if worker_id in self.schedule[date]:
                     continue
-                
+                    
                 # Skip if would exceed weekend limit
                 if self._would_exceed_weekend_limit(worker_id, date):
                     continue
-            
+                
                 # Check other constraints
                 if self._can_assign_worker(worker_id, date, post):
                     score = self._calculate_worker_score(worker, date, post)
@@ -425,12 +425,12 @@ class Scheduler:
                 self._update_tracking_data(worker_id, date, post)
                 assigned = True
                 logging.info(f"Assigned worker {worker_id} to {date}, post {post}")
-        
+            
             if not assigned:
                 # Leave the shift empty if no suitable worker found
                 self.schedule[date].append(None)
                 logging.warning(f"No suitable worker found for {date}, post {post} - leaving shift unfilled")
-                
+
     def _get_candidates(self, date, post, skip_constraints=False, try_part_time=False):
         """Get suitable candidates with their scores"""
         candidates = []
@@ -483,11 +483,11 @@ class Scheduler:
                 days_since_last = (date - assignments[-1]).days
                 if days_since_last < 3:
                     return float('-inf')
-                
+                    
             # Check weekend limit - reject if would exceed
             if self._would_exceed_weekend_limit(worker_id, date):
                 return float('-inf')
-        
+            
             # --- Weekend Scoring Component ---
             if date.weekday() >= 4:  # Friday, Saturday, Sunday
                 weekend_assignments = sum(
@@ -501,10 +501,10 @@ class Scheduler:
             weekday = date.weekday()
             weekday_counts = self.worker_weekdays[worker_id].copy()
             weekday_counts[weekday] += 1  # Simulate adding this assignment
-    
+        
             max_weekday = max(weekday_counts.values())
             min_weekday = min(weekday_counts.values())
-    
+        
             # If this assignment would create more than 1 day difference, reject it
             if (max_weekday - min_weekday) > 1:
                 return float('-inf')
@@ -513,19 +513,19 @@ class Scheduler:
             if (self._is_worker_unavailable(worker_id, date) or
                 date in self.schedule and worker_id in self.schedule[date]):
                 return float('-inf')
-    
+        
             current_shifts = len(self.worker_assignments[worker_id])
             target_shifts = worker.get('target_shifts', 0)
-    
+        
             # --- Target Progress Score ---
             shift_difference = target_shifts - current_shifts
-    
+        
             if shift_difference <= 0:
                 return float('-inf')  # Never exceed target
-        
+            
             # Higher priority for workers further from their target
             score += shift_difference * 1000
-    
+        
             # Post rotation score - focus on last post distribution
             last_post = self.num_shifts - 1
             if post == last_post:
@@ -533,7 +533,7 @@ class Scheduler:
                 total_assignments = sum(post_counts.values()) + 1
                 target_last_post = total_assignments * (1 / self.num_shifts)
                 current_last_post = post_counts.get(last_post, 0)
-            
+                
                 # Encourage assignments when below target
                 if current_last_post < target_last_post - 1:
                     score += 1000
@@ -1779,18 +1779,11 @@ class Scheduler:
                             f"shifts in a 3-week period around {date.strftime('%Y-%m-%d')}"
                         )
 
+            # Validate post rotation
+            self._validate_post_rotation(worker_id, warnings)
+
         # Log all warnings
-        for warning in warnings:
-            logging.warning(warning)
-
-        # Handle errors
-        if errors:
-            error_msg = "Schedule validation failed:\n" + "\n".join(errors)
-            logging.error(error_msg)
-            raise SchedulerError(error_msg)
-
-        logging.info("Schedule validation completed successfully")
-
+        for
     def _validate_daily_assignments(self, date, errors, warnings):
         """
         Validate assignments for a specific date
@@ -1855,10 +1848,10 @@ class Scheduler:
         last_post = self.num_shifts - 1
         target_last_post = total_assignments * (1 / self.num_shifts)
         actual_last_post = post_counts.get(last_post, 0)
-    
+        
         # Allow for some deviation
         allowed_deviation = 1
-    
+        
         if abs(actual_last_post - target_last_post) > allowed_deviation:
             warnings.append(
                 f"Worker {worker_id} post rotation imbalance: {post_counts}. "
