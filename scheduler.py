@@ -1783,7 +1783,17 @@ class Scheduler:
             self._validate_post_rotation(worker_id, warnings)
 
         # Log all warnings
-        for
+        for warning in warnings:
+            logging.warning(warning)
+
+        # Handle errors
+        if errors:
+            error_msg = "Schedule validation failed:\n" + "\n".join(errors)
+            logging.error(error_msg)
+            raise SchedulerError(error_msg)
+
+        logging.info("Schedule validation completed successfully")
+        
     def _validate_daily_assignments(self, date, errors, warnings):
         """
         Validate assignments for a specific date
