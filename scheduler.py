@@ -513,7 +513,7 @@ class Scheduler:
                 
                     if not assignments or all((date - d).days >= min_gap and (d - date).days >= min_gap for d in assignments):
                         # Calculate a score for this worker
-                        score = self._calculate_improvement_score(worker, date, post)
+                        score = self._calculate_ment_score(worker, date, post)
                         if score > float('-inf'):
                             candidates.append((worker, score))
         
@@ -555,9 +555,246 @@ class Scheduler:
         for worker in self.workers_data:
             worker_id = worker['id']
             post_counts = self._get_post_counts(worker_id)
+            total_assignments = sum(post_counts.values())
         
-            # Skip workers with no assignments
-            if sum(post_counts.values
+            # Skip workers with no or few assignments
+            if total_assignments < self.num_shifts:
+                continue
+        
+            # Calculate expected distribution
+            expected_per_post = total_assignments / self.num_shifts
+        
+            # Calculate deviation from ideal distribution
+            deviation = 0
+            for post in range(self.num_shifts):
+                post_count = post_counts.get(post, 0)
+                deviation += abs(post_count - expected_per_post)
+        
+            # Normalize deviation by total assignments
+            normalized_deviation = deviation / total_assignments
+        
+            # Add to imbalanced list if deviation is significant
+            if normalized_deviation > 0.2:  # 20% deviation threshold
+                imbalanced_workers.append((worker_id, post_counts, normalized_deviation))
+    
+        # Sort workers by deviation (most imbalanced first)
+        imbalanced_workers.sort(key=lambda x: x[2], reverse=True)
+    
+        # Try to fix the most imbalanced workers
+        fixes_attempted = 0
+        fixes_made = 0
+    
+        for worker_id, post_counts, deviation in imbalanced_workers:
+            if fixes_attempted >= 10:  # Limit number of fix attempts
+                break
+            
+            logging.info(f"Trying to improve post rotation for worker {worker_id} (deviation: {deviation:.2f})")
+        
+            # Find overassigned and underassigned posts
+            total_assignments = sum(post_counts.values())
+            expected_per_post = total_assignments / self.num_shifts
+        
+            overassigned_posts = []
+            underassigned_posts = []
+        
+            for post in range(self.num_shifts):
+                post_count = post_counts.get(post, 0)
+                if post_count > expected_per_post + 0.5:
+                    overassigned_posts.append((post, post_count))
+                elif post_count < expected_per_post - 0.5:
+                    underassigned_posts.append((post, post_count))
+        
+            # Sort by most overassigned/underassigned
+            overassigned_posts.sort(key=lambda x: x[1], reverse=True)
+            underassigned_posts.sort(key=lambda x: x[1])
+        
+            fixes_attempted += 1
+        
+            if not overassigned_posts or not underassigned_posts:
+                continue
+        
+            # Try to swap a shift from overassigned post to underassigned post
+            for over_post, _ in overassigned_posts:
+                for under_post, _ in underassigned_posts:
+                    # Find all dates where this worker has the overassigned post
+                    possible_swap_dates = []
+                
+                    for date, workers in self.schedule.items():
+                        if len(workers) > over_post and workers[over_post] == worker_id:
+                            possible_swap_dates.append(date)
+                
+                    # Shuffle the dates to introduce randomness
+                    random.shuffle(possible_swap_dates)
+                
+                    # Try each date
+                    for date in possible_swap_dates:
+                        # Look for a date where this worker isn't assigned but could be
+                        for other_date in sorted(self.schedule.keys()):
+                            # Skip if it's the same date
+                            if other_date == date:
+                                continue
+                            
+                            # Skip if worker is already assigned to this date
+                            if worker_id in self.schedule[other_date]:
+                                continue
+                        
+                            # Skip if the target post already has someone
+                            if len(self.schedule[other_date]) > under_post and self.schedule[other_date][under_post] is not None:
+                                continue
+                            
+                            # Check if this would be a valid assignment
+                            if not self._can_swap_assignments(worker_id, date, over_post, other_date, under_post):
+                                continue
+                        
+                            # Perform the swap
+                            old_worker = self.schedule[date][over_post]
+                        
+                            # Handle the case where we need to extend the other date's shifts list
+                            while len(self.schedule[other_date]) <= under_post:
+                                self.schedule[other_date].append(None)
+                        
+                            # Make the swap
+                            self.schedule[date][over_post] = None
+                            self.schedule[other_date][under_post] = worker_id
+                        
+                            # Update tracking data
+                            self.worker_assignments[worker_id].remove(date)
+                            self.worker_assignments[worker_id].add(other_date)
+                            self._update_tracking_data(worker_id, other_date, under_post)
+                        
+                            logging.info(f"Improved post rotation: Moved worker {worker_id} from {date.strftime('%Y-%m-%d')} "
+                                        f"post {over_post} to {other_date.strftime('%Y-%m-%d')} post {under_post}")
+                        
+                            fixes_made += 1
+                            break
+                    
+                        if fixes_made > fixes_attempted * 0.5:  # If we've made enough fixes, stop
+                            break
+                        
+                    if fixes_made > fixes_attempted * 0.5:  # If we've made enough fixes, stop
+                        break
+                    
+                if fixes_made > fixes_attempted * 0.5:  # If we've made enough fixes, stop
+                    break
+    
+        logging.info(f"Post rotation improvement: attempted {fixes_attempted} fixes, made {fixes_made} changes")
+    
+        return fixes_made > 0  # Return whether we made any improvements
+
+    def _can_swap_assignments(self, worker_id, from_date, from_post, to_date, to_post):
+        """
+        Check if a worker can be reassigned from one date/post to another
+    
+        Checks all relevant constraints:
+        - Worker availability (days off)
+        - Mandatory assignments
+        - Worker incompatibilities
+        - Minimum gap requirements
+        - Weekend limits
+        """
+        # Check if worker is unavailable on the target date (days off)
+        if self._is_worker_unavailable(worker_id, to_date):
+            return False
+    
+        # Check if from_date was mandatory for this worker
+        worker_data = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        mandatory_days = worker_data.get('mandatory_days', []) if worker_data else []
+        mandatory_dates = self._parse_dates(mandatory_days)
+    
+        # Don't reassign from a mandatory date
+        if from_date in mandatory_dates:
+            return False
+    
+        # Check worker incompatibilities at the target date
+        for other_worker_id in self.schedule[to_date]:
+            if other_worker_id is not None and self._are_workers_incompatible(worker_id, other_worker_id):
+                return False
+    
+        # Check minimum gap requirement
+        assignments = list(self.worker_assignments[worker_id])
+        assignments.remove(from_date)  # Remove the date we're swapping from
+        assignments.append(to_date)  # Add the date we're swapping to
+    
+        # Get sorted list of assignments
+        sorted_assignments = sorted(assignments)
+    
+        # Check gaps between consecutive assignments
+        for i in range(1, len(sorted_assignments)):
+            gap_days = (sorted_assignments[i] - sorted_assignments[i-1]).days
+        
+            # Skip reduced gap check on holidays if not part-time worker
+            if (worker_data and worker_data.get('work_percentage', 100) >= 100 and
+                (self._is_holiday(sorted_assignments[i]) or self._is_holiday(sorted_assignments[i-1]))):
+                continue
+            
+            # Determine minimum gap based on worker status
+            min_gap = 2 if worker_data and worker_data.get('work_percentage', 100) < 100 else 3
+        
+            if gap_days < min_gap:
+                return False
+    
+        # Check weekend limit
+        if self._is_weekend_day(to_date) and not self._is_weekend_day(from_date):
+            # We're adding a weekend, check if it would exceed limits
+            current_month = to_date.month
+            month_start = datetime(to_date.year, current_month, 1)
+        
+            if current_month == 12:
+                month_end = datetime(to_date.year + 1, 1, 1) - timedelta(days=1)
+            else:
+                month_end = datetime(to_date.year, current_month + 1, 1) - timedelta(days=1)
+        
+            # Count weekend days for this worker in the month
+            weekend_count = sum(
+                1 for d in self.worker_assignments[worker_id]
+                if month_start <= d <= month_end and self._is_weekend_day(d) and d != from_date
+            )
+        
+            # Add the new weekend assignment
+            weekend_count += 1
+        
+            # Check against limit
+            max_weekends = 2  # Default limit
+        i    f worker_data:
+                # Adjust limit based on work percentage
+                work_percentage = worker_data.get('work_percentage', 100)
+                if work_percentage < 100:
+                    max_weekends = max(1, int(max_weekends * work_percentage / 100))
+        
+            if weekend_count > max_weekends:
+                return False
+    
+        # Check post balance - ensure we're not making another post even more imbalanced
+        post_counts = self._get_post_counts(worker_id)
+    
+        # Simulate the swap
+        if from_post in post_counts:
+            post_counts[from_post] -= 1
+        if to_post in post_counts:
+            post_counts[to_post] += 1
+        else:
+            post_counts[to_post] = 1
+    
+        # Check if this swap would worsen imbalance
+        total_assignments = sum(post_counts.values())
+        expected_per_post = total_assignments / self.num_shifts
+    
+        # Calculate deviation before and after
+        current_deviation = 0
+        for post in range(self.num_shifts):
+            post_count = self._get_post_counts(worker_id).get(post, 0)
+            current_deviation += abs(post_count - expected_per_post)
+    
+        new_deviation = 0
+        for post in range(self.num_shifts):
+            post_count = post_counts.get(post, 0)
+            new_deviation += abs(post_count - expected_per_post)
+    
+        # Don't allow swaps that make post distribution worse
+        if new_deviation > current_deviation:
+            return False
+    
+        return True
                
     def _get_schedule_months(self):
         """
