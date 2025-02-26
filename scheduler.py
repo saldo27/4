@@ -229,31 +229,45 @@ class Scheduler:
         try:
             best_schedule = None
             best_coverage = 0
+            coverage_stats = []
 
             for attempt in range(num_attempts):
                 logging.info(f"Attempt {attempt + 1} of {num_attempts}")
                 self._reset_schedule()
                 self._calculate_monthly_targets()
-                
+            
                 # Process mandatory assignments first
                 logging.info("Processing mandatory guards...")
                 self._assign_mandatory_guards()
-                
+            
                 # Process remaining days
                 current_date = self.start_date
                 while current_date <= self.end_date:
                     self._assign_day_shifts(current_date)
                     current_date += timedelta(days=1)
-                
+            
                 self._cleanup_schedule()
                 self._validate_final_schedule()
-                
+            
                 # Calculate coverage
                 total_shifts = sum(len(shifts) for shifts in self.schedule.values())
                 filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
                 coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
-                
+            
+                # Calculate post rotation scores
+                post_rotation_stats = self._calculate_post_rotation_coverage()
+            
+                # Log detailed coverage information
                 logging.info(f"Attempt {attempt + 1} coverage: {coverage:.2f}%")
+                logging.info(f"Post rotation coverage: {post_rotation_stats['overall_score']:.2f}%")
+            
+                # Store coverage stats for summary
+                coverage_stats.append({
+                    'attempt': attempt + 1,
+                    'coverage': coverage,
+                    'post_rotation_score': post_rotation_stats['overall_score'],
+                    'unfilled_shifts': total_shifts - filled_shifts
+                })
 
                 # Check if this is the best schedule so far
                 if coverage > best_coverage:
@@ -263,12 +277,28 @@ class Scheduler:
             # Use the best schedule found
             self.schedule = best_schedule
             logging.info(f"Best coverage achieved: {best_coverage:.2f}%")
+        
+            # Log coverage statistics summary
+            logging.info("=== Coverage Statistics Summary ===")
+            for stats in coverage_stats:
+                logging.info(f"Attempt {stats['attempt']}: Coverage={stats['coverage']:.2f}%, "
+                            f"Post Rotation Score={stats['post_rotation_score']:.2f}%, "
+                            f"Unfilled Shifts={stats['unfilled_shifts']}")
+        
+            # Calculate averages
+            avg_coverage = sum(stats['coverage'] for stats in coverage_stats) / len(coverage_stats)
+            avg_post_rotation = sum(stats['post_rotation_score'] for stats in coverage_stats) / len(coverage_stats)
+            avg_unfilled = sum(stats['unfilled_shifts'] for stats in coverage_stats) / len(coverage_stats)
+        
+            logging.info(f"Average Coverage: {avg_coverage:.2f}%")
+            logging.info(f"Average Post Rotation Score: {avg_post_rotation:.2f}%")
+            logging.info(f"Average Unfilled Shifts: {avg_unfilled:.2f}")
 
             if self.schedule is None:
                 raise SchedulerError("Failed to generate a valid schedule")
 
             return self.schedule
-            
+        
         except Exception as e:
             logging.error(f"Schedule generation error: {str(e)}")
             raise SchedulerError(f"Failed to generate schedule: {str(e)}")
@@ -1238,6 +1268,43 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
             return True
+
+    def _calculate_post_rotation_coverage(self):
+        """Calculate how well the post rotation is working across all workers"""
+        worker_scores = {}
+        total_score = 0
+    
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            post_counts = self._get_post_counts(worker_id)
+            total_assignments = sum(post_counts.values())
+        
+            if total_assignments == 0:
+                worker_scores[worker_id] = 100  # No assignments, perfect score
+                continue
+            
+            post_imbalance = 0
+            expected_per_post = total_assignments / self.num_shifts
+        
+            for post in range(self.num_shifts):
+                post_count = post_counts.get(post, 0)
+                post_imbalance += abs(post_count - expected_per_post)
+        
+            # Calculate a score where 0 imbalance = 100%
+            imbalance_ratio = post_imbalance / total_assignments
+            worker_score = max(0, 100 - (imbalance_ratio * 100))
+            worker_scores[worker_id] = worker_score
+        
+        # Calculate overall score
+        if worker_scores:
+            total_score = sum(worker_scores.values()) / len(worker_scores)
+        else:
+            total_score = 0
+        
+        return {
+            'overall_score': total_score,
+            'worker_scores': worker_scores
+        }
             
     # ------------------------
     # 5. Date/Time Helper Methods
