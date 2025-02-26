@@ -224,12 +224,20 @@ class Scheduler:
     # 2. Schedule Generation Methods
     # ------------------------
 
-    def generate_schedule(self, num_attempts=20):
-        """Generate the complete schedule with possibility of unfilled shifts"""
-        logging.info("=== Starting schedule generation ===")
+    def generate_schedule(self, num_attempts=20, allow_feedback_improvement=True, improvement_attempts=10):
+        """
+        Generate the complete schedule with possibility of unfilled shifts
+    
+        Args:
+            num_attempts: Number of initial attempts to generate a schedule
+            allow_feedback_improvement: Whether to allow feedback-based improvement
+            improvement_attempts: Number of attempts to improve the best schedule
+        """
+        logging.info("=== Starting initial schedule generation ===")
         try:
             best_schedule = None
             best_coverage = 0
+            best_post_rotation = 0
             best_worker_assignments = None
             best_worker_posts = None
             best_worker_weekdays = None
@@ -237,6 +245,7 @@ class Scheduler:
             best_constraint_skips = None
             coverage_stats = []
 
+            # Initial attempts to generate schedules
             for attempt in range(num_attempts):
                 # Set a seed based on the attempt number to ensure different runs
                 random.seed(attempt + 1)
@@ -320,11 +329,7 @@ class Scheduler:
             self.worker_weekends = best_worker_weekends
             self.constraint_skips = best_constraint_skips
         
-            logging.info(f"Best coverage achieved: {best_coverage:.2f}%")
-            logging.info(f"Best post rotation score: {best_post_rotation:.2f}%")
-        
-            # Log coverage statistics summary
-            logging.info("=== Coverage Statistics Summary ===")
+            logging.info("=== Initial Coverage Statistics Summary ===")
             for stats in coverage_stats:
                 logging.info(f"[Attempt {stats['attempt']:2d}   ] Coverage={stats['coverage']:.2f}%, "
                             f"Post Rotation Score={stats['post_rotation_score']:.2f}%, "
@@ -339,6 +344,55 @@ class Scheduler:
             logging.info(f"[Average Coverage] {avg_coverage:.2f}%")
             logging.info(f"[Average Post Rotation Score] {avg_post_rotation:.2f}%")
             logging.info(f"[Average Unfilled Shifts] {avg_unfilled:.2f}")
+            logging.info(f"[Best Result] Coverage={best_coverage:.2f}%, Post Rotation Score={best_post_rotation:.2f}%")
+
+            # Ask for permission to try improvement if allowed
+            if allow_feedback_improvement:
+                logging.info("\n=== Best schedule found. Starting targeted improvement phase... ===")
+            
+                # Save the current best metrics
+                initial_best_coverage = best_coverage
+                initial_best_post_rotation = best_post_rotation
+            
+                # Try to improve the schedule through targeted modifications
+                for i in range(improvement_attempts):
+                    logging.info(f"Improvement attempt {i+1}/{improvement_attempts}")
+                
+                    # Create a copy of the best schedule to work with
+                    self._backup_best_schedule()
+                
+                    # Apply targeted improvements
+                    self._apply_targeted_improvements(i)
+                
+                    # Evaluate the new schedule
+                    self._validate_final_schedule()
+                
+                    # Calculate coverage
+                    total_shifts = sum(len(shifts) for shifts in self.schedule.values())
+                    filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+                    coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
+                
+                    # Calculate post rotation scores
+                    post_rotation_stats = self._calculate_post_rotation_coverage()
+                
+                    logging.info(f"Improved coverage: {coverage:.2f}%, Post Rotation: {post_rotation_stats['overall_score']:.2f}%")
+                
+                    # Check if this improvement is better than the best so far
+                    if coverage > best_coverage or (coverage == best_coverage and post_rotation_stats['overall_score'] > best_post_rotation):
+                        best_coverage = coverage
+                        best_post_rotation = post_rotation_stats['overall_score']
+                        self._save_current_as_best()
+                    else:
+                        # Restore the previous best schedule
+                        self._restore_best_schedule()
+            
+                if best_coverage > initial_best_coverage or best_post_rotation > initial_best_post_rotation:
+                    improvement = f"Coverage improved by {best_coverage - initial_best_coverage:.2f}%, " \
+                                 f"Post Rotation improved by {best_post_rotation - initial_best_post_rotation:.2f}%"
+                    logging.info(f"=== Schedule successfully improved! ===")
+                    logging.info(improvement)
+                else:
+                    logging.info("=== No improvements found over initial schedule ===")
 
             if self.schedule is None:
                 raise SchedulerError("Failed to generate a valid schedule")
@@ -349,6 +403,162 @@ class Scheduler:
             logging.error(f"Schedule generation error: {str(e)}")
             raise SchedulerError(f"Failed to generate schedule: {str(e)}")
 
+    def _backup_best_schedule(self):
+        """Save a backup of the current best schedule"""
+        self.backup_schedule = self.schedule.copy()
+        self.backup_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
+        self.backup_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}
+        self.backup_worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.worker_weekdays.items()}
+        self.backup_worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.worker_weekends.items()}
+        self.backup_constraint_skips = {
+            w_id: {
+                'gap': skips['gap'].copy(),
+                'incompatibility': skips['incompatibility'].copy(),
+                'reduced_gap': skips['reduced_gap'].copy(),
+            }
+            for w_id, skips in self.constraint_skips.items()
+        }    
+
+    def _restore_best_schedule(self):
+        """Restore from backup of the best schedule"""
+        self.schedule = self.backup_schedule.copy()
+        self.worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.backup_worker_assignments.items()}
+        self.worker_posts = {w_id: posts.copy() for w_id, posts in self.backup_worker_posts.items()}
+        self.worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.backup_worker_weekdays.items()}
+        self.worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.backup_worker_weekends.items()}
+        self.constraint_skips = {
+            w_id: {
+                'gap': skips['gap'].copy(),
+                'incompatibility': skips['incompatibility'].copy(),
+                'reduced_gap': skips['reduced_gap'].copy(),
+            }
+            for w_id, skips in self.backup_constraint_skips.items()
+        }
+
+    def _save_current_as_best(self):
+        """Save current schedule as the best"""
+        self.backup_schedule = self.schedule.copy()
+        self.backup_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
+        self.backup_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}
+        self.backup_worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.worker_weekdays.items()}
+        self.backup_worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.worker_weekends.items()}
+        self.backup_constraint_skips = {
+            w_id: {
+                'gap': skips['gap'].copy(),
+                'incompatibility': skips['incompatibility'].copy(),
+                'reduced_gap': skips['reduced_gap'].copy(),
+            }
+            for w_id, skips in self.constraint_skips.items()
+        }
+
+    def _apply_targeted_improvements(self, attempt_number):
+        """
+        Apply targeted improvements to the schedule
+    
+        This method looks for specific issues in the current best schedule
+        and tries to fix them through strategic reassignments
+        """
+        # Set a seed for this improvement attempt
+        random.seed(1000 + attempt_number)
+    
+        # 1. Try to fill empty shifts by relaxing some constraints
+        self._try_fill_empty_shifts()
+    
+        # 2. Try to improve post rotation by swapping assignments
+        self._improve_post_rotation()
+    
+        # 3. Try to improve weekend distribution
+        self._improve_weekend_distribution()
+    
+        # 4. Try to balance workload distribution
+        self._balance_workloads()
+
+    def _try_fill_empty_shifts(self):
+        """Try to fill empty shifts by relaxing certain constraints"""
+        empty_shifts = []
+    
+        # Find all empty shifts
+        for date, workers in self.schedule.items():
+            for post, worker in enumerate(workers):
+                if worker is None:
+                    empty_shifts.append((date, post))
+    
+        if not empty_shifts:
+            logging.info("No empty shifts to fill")
+            return
+    
+        logging.info(f"Attempting to fill {len(empty_shifts)} empty shifts")
+    
+        # Shuffle the empty shifts to introduce randomness
+        random.shuffle(empty_shifts)
+    
+        # Try to fill each empty shift
+        for date, post in empty_shifts:
+            filled = False
+            candidates = []
+        
+            # Find possible workers for this shift with relaxed constraints
+            for worker in self.workers_data:
+                worker_id = worker['id']
+            
+                # Skip if already assigned to this date
+                if worker_id in self.schedule[date]:
+                    continue
+            
+                # Check base eligibility (ignoring some constraints)
+                if not self._is_worker_unavailable(worker_id, date):
+                    # Allow smaller gaps between assignments
+                    assignments = sorted(list(self.worker_assignments[worker_id]))
+                    min_gap = 2  # Reduced from 3
+                
+                    if not assignments or all((date - d).days >= min_gap and (d - date).days >= min_gap for d in assignments):
+                        # Calculate a score for this worker
+                        score = self._calculate_improvement_score(worker, date, post)
+                        if score > float('-inf'):
+                            candidates.append((worker, score))
+        
+            if candidates:
+                # Group candidates by score
+                candidates_by_score = {}
+                for worker, score in candidates:
+                    if score not in candidates_by_score:
+                        candidates_by_score[score] = []
+                    candidates_by_score[score].append(worker)
+            
+                # Sort scores in descending order
+                sorted_scores = sorted(candidates_by_score.keys(), reverse=True)
+            
+                # Get workers with the highest score
+                best_score = sorted_scores[0]
+                best_workers = candidates_by_score[best_score]
+            
+                # Shuffle the best workers
+                random.shuffle(best_workers)
+                best_worker = best_workers[0]
+                worker_id = best_worker['id']
+            
+                # Assign the worker to this shift
+                self.schedule[date][post] = worker_id
+                self.worker_assignments[worker_id].add(date)
+                self._update_tracking_data(worker_id, date, post)
+                filled = True
+                logging.info(f"Filled empty shift on {date.strftime('%Y-%m-%d')}, post {post} with worker {worker_id}")
+        
+            if not filled:
+                logging.info(f"Could not fill empty shift on {date.strftime('%Y-%m-%d')}, post {post}")
+
+    def _improve_post_rotation(self):
+        """Improve post rotation by swapping assignments"""
+        # Find workers with imbalanced post distribution
+        imbalanced_workers = []
+    
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            post_counts = self._get_post_counts(worker_id)
+        
+            # Skip workers with no assignments
+            if sum(post_counts.values
+               
     def _get_schedule_months(self):
         """
         Calculate number of months in schedule period considering partial months
