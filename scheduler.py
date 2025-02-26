@@ -795,6 +795,299 @@ class Scheduler:
             return False
     
         return True
+
+    def _improve_weekend_distribution(self):
+        """
+        Improve weekend distribution by balancing weekend shifts more evenly among workers
+        and attempting to resolve weekend overloads
+        """
+        logging.info("Attempting to improve weekend distribution")
+    
+        # Count weekend assignments for each worker by month
+        weekend_counts_by_month = {}
+    
+        # Group dates by month
+        months = {}
+        current_date = self.start_date
+        while current_date <= self.end_date:
+            month_key = (current_date.year, current_date.month)
+            if month_key not in months:
+                months[month_key] = []
+            months[month_key].append(current_date)
+            current_date += timedelta(days=1)
+    
+        # Count weekend assignments by month for each worker
+        for month_key, dates in months.items():
+            weekend_counts = {}
+            for worker in self.workers_data:
+                worker_id = worker['id']
+                weekend_count = sum(1 for date in dates if date in self.worker_assignments[worker_id] and self._is_weekend_day(date))
+                weekend_counts[worker_id] = weekend_count
+            weekend_counts_by_month[month_key] = weekend_counts
+    
+        changes_made = 0
+    
+        # Identify months with overloaded workers
+        for month_key, weekend_counts in weekend_counts_by_month.items():
+            overloaded_workers = []
+            underloaded_workers = []
+        
+            for worker in self.workers_data:
+                worker_id = worker['id']
+                work_percentage = worker.get('work_percentage', 100)
+            
+                # Calculate weekend limit based on work percentage
+                max_weekends = 2  # Default for full-time
+                if work_percentage < 100:
+                    max_weekends = max(1, int(2 * work_percentage / 100))
+            
+                weekend_count = weekend_counts.get(worker_id, 0)
+            
+                if weekend_count > max_weekends:
+                    overloaded_workers.append((worker_id, weekend_count, max_weekends))
+                elif weekend_count < max_weekends:
+                    available_slots = max_weekends - weekend_count
+                    underloaded_workers.append((worker_id, weekend_count, available_slots))
+        
+            # Sort by most overloaded and most available
+            overloaded_workers.sort(key=lambda x: x[1] - x[2], reverse=True)
+            underloaded_workers.sort(key=lambda x: x[2], reverse=True)
+        
+            # Get dates in this month
+            month_dates = months[month_key]
+            weekend_dates = [date for date in month_dates if self._is_weekend_day(date)]
+        
+            # Try to redistribute weekend shifts
+            for over_worker_id, over_count, over_limit in overloaded_workers:
+                if not underloaded_workers:
+                    break
+                
+                for weekend_date in weekend_dates:
+                    # Skip if this worker isn't assigned on this date
+                    if over_worker_id not in self.schedule[weekend_date]:
+                        continue
+                
+                    # Find the post this worker is assigned to
+                    post = self.schedule[weekend_date].index(over_worker_id)
+                
+                    # Try to find a suitable replacement
+                    for under_worker_id, _, _ in underloaded_workers:
+                        # Skip if this worker is already assigned on this date
+                        if under_worker_id in self.schedule[weekend_date]:
+                            continue
+                    
+                        # Check if we can assign this worker to this shift
+                        if self._can_assign_worker(under_worker_id, weekend_date, post):
+                            # Make the swap
+                            self.schedule[weekend_date][post] = under_worker_id
+                            self.worker_assignments[over_worker_id].remove(weekend_date)
+                            self.worker_assignments[under_worker_id].add(weekend_date)
+                        
+                            # Update tracking data
+                            self._update_tracking_data(under_worker_id, weekend_date, post)
+                        
+                            # Update counts
+                            weekend_counts[over_worker_id] -= 1
+                            weekend_counts[under_worker_id] += 1
+                        
+                            changes_made += 1
+                            logging.info(f"Improved weekend distribution: Moved weekend shift on {weekend_date.strftime('%Y-%m-%d')} "
+                                        f"from worker {over_worker_id} to worker {under_worker_id}")
+                        
+                            # Update worker lists
+                            if weekend_counts[over_worker_id] <= over_limit:
+                                # This worker is no longer overloaded
+                                overloaded_workers = [(w, c, l) for w, c, l in overloaded_workers if w != over_worker_id]
+                        
+                            # Check if under worker is now fully loaded
+                            for i, (w_id, count, slots) in enumerate(underloaded_workers):
+                                if w_id == under_worker_id:
+                                    if weekend_counts[w_id] >= count + slots:
+                                        # Remove from underloaded
+                                        underloaded_workers.pop(i)
+                                    break
+                        
+                            # Break to try next overloaded worker
+                            break
+    
+        logging.info(f"Weekend distribution improvement: made {changes_made} changes")
+        return changes_made > 0
+
+    def _balance_workloads(self):
+        """
+        Balance the total number of assignments among workers based on their work percentages
+        """
+        logging.info("Attempting to balance worker workloads")
+    
+        # Count total assignments for each worker
+        assignment_counts = {}
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            work_percentage = worker.get('work_percentage', 100)
+        
+            # Count assignments
+            count = len(self.worker_assignments[worker_id])
+        
+            # Normalize by work percentage
+            normalized_count = count * 100 / work_percentage if work_percentage > 0 else 0
+        
+            assignment_counts[worker_id] = {
+                'worker_id': worker_id,
+                'count': count,
+                'work_percentage': work_percentage,
+                'normalized_count': normalized_count
+            }    
+    
+        # Calculate average normalized count
+        total_normalized = sum(data['normalized_count'] for data in assignment_counts.values())
+        avg_normalized = total_normalized / len(assignment_counts) if assignment_counts else 0
+    
+        # Identify overloaded and underloaded workers
+        overloaded = []
+        underloaded = []
+    
+        for worker_id, data in assignment_counts.items():
+            # Allow 10% deviation from average
+            if data['normalized_count'] > avg_normalized * 1.1:
+                overloaded.append((worker_id, data))
+            elif data['normalized_count'] < avg_normalized * 0.9:
+                underloaded.append((worker_id, data))
+    
+        # Sort by most overloaded/underloaded
+        overloaded.sort(key=lambda x: x[1]['normalized_count'], reverse=True)
+        underloaded.sort(key=lambda x: x[1]['normalized_count'])
+    
+        changes_made = 0
+        max_changes = 5  # Limit number of changes to avoid disrupting the schedule too much
+    
+        # Try to redistribute shifts from overloaded to underloaded workers
+        for over_worker_id, over_data in overloaded:
+            if changes_made >= max_changes or not underloaded:
+                break
+            
+            # Find shifts that can be reassigned from this overloaded worker
+            possible_shifts = []
+        
+            for date in sorted(self.worker_assignments[over_worker_id]):
+                # Skip if today's date is mandatory for this worker
+                worker_data = next((w for w in self.workers_data if w['id'] == over_worker_id), None)
+                mandatory_days = worker_data.get('mandatory_days', []) if worker_data else []
+                mandatory_dates = self._parse_dates(mandatory_days)
+            
+                if date in mandatory_dates:
+                    continue
+                
+                # Find the post this worker is assigned to
+                post = self.schedule[date].index(over_worker_id)
+            
+                possible_shifts.append((date, post))
+        
+            # Shuffle to introduce randomness
+            random.shuffle(possible_shifts)
+        
+            # Try each shift
+            for date, post in possible_shifts:
+                reassigned = False
+            
+                # Try each underloaded worker
+                for under_worker_id, _ in underloaded:
+                    # Skip if this worker is already assigned on this date
+                    if under_worker_id in self.schedule[date]:
+                        continue
+                
+                    # Check if we can assign this worker to this shift
+                    if self._can_assign_worker(under_worker_id, date, post):
+                        # Make the reassignment
+                        self.schedule[date][post] = under_worker_id
+                        self.worker_assignments[over_worker_id].remove(date)
+                        self.worker_assignments[under_worker_id].add(date)
+                    
+                        # Update tracking data
+                        self._update_tracking_data(under_worker_id, date, post)
+                    
+                        changes_made += 1
+                        logging.info(f"Balanced workload: Moved shift on {date.strftime('%Y-%m-%d')} post {post} "
+                                    f"from worker {over_worker_id} to worker {under_worker_id}")
+                    
+                        # Update counts
+                        assignment_counts[over_worker_id]['count'] -= 1
+                        assignment_counts[over_worker_id]['normalized_count'] = (
+                            assignment_counts[over_worker_id]['count'] * 100 / 
+                            assignment_counts[over_worker_id]['work_percentage']
+                        )
+                    
+                        assignment_counts[under_worker_id]['count'] += 1
+                        assignment_counts[under_worker_id]['normalized_count'] = (
+                            assignment_counts[under_worker_id]['count'] * 100 / 
+                            assignment_counts[under_worker_id]['work_percentage']
+                        )
+                    
+                        reassigned = True
+                    
+                        # Check if workers are still overloaded/underloaded
+                        if assignment_counts[over_worker_id]['normalized_count'] <= avg_normalized * 1.1:
+                            # No longer overloaded
+                            overloaded = [(w, d) for w, d in overloaded if w != over_worker_id]
+                    
+                        if assignment_counts[under_worker_id]['normalized_count'] >= avg_normalized * 0.9:
+                            # No longer underloaded
+                            underloaded = [(w, d) for w, d in underloaded if w != under_worker_id]
+                    
+                        break
+            
+                if reassigned:
+                    break
+                
+                if changes_made >= max_changes:
+                    break
+    
+        logging.info(f"Workload balancing: made {changes_made} changes")
+        return changes_made > 0
+
+    def _calculate_improvement_score(self, worker, date, post):
+        """
+        Calculate a score for a worker assignment during the improvement phase.
+    
+        This uses a more lenient scoring approach to encourage filling empty shifts.
+        """
+        worker_id = worker['id']
+    
+        # Base score from standard calculation
+        base_score = self._calculate_worker_score(worker, date, post)
+    
+        # If base score is negative infinity, the assignment is invalid
+        if base_score == float('-inf'):
+            return float('-inf')
+    
+        # Bonus for balancing post rotation
+        post_counts = self._get_post_counts(worker_id)
+        total_assignments = sum(post_counts.values())
+    
+        # Skip post balance check for workers with few assignments
+        if total_assignments >= self.num_shifts:
+            expected_per_post = total_assignments / self.num_shifts
+            current_count = post_counts.get(post, 0)
+        
+            # Give bonus if this post is underrepresented for this worker
+            if current_count < expected_per_post:
+                base_score += 10 * (expected_per_post - current_count)
+    
+        # Bonus for balancing workload
+        work_percentage = worker.get('work_percentage', 100)
+        current_assignments = len(self.worker_assignments[worker_id])
+    
+        # Calculate average assignments per worker, adjusted for work percentage
+        total_assignments_all = sum(len(self.worker_assignments[w['id']]) for w in self.workers_data)
+        total_work_percentage = sum(w.get('work_percentage', 100) for w in self.workers_data)
+    
+        # Expected assignments based on work percentage
+        expected_assignments = (total_assignments_all / (total_work_percentage / 100)) * (work_percentage / 100)
+    
+        # Bonus for underloaded workers
+        if current_assignments < expected_assignments:
+            base_score += 5 * (expected_assignments - current_assignments)
+    
+        return base_score
                
     def _get_schedule_months(self):
         """
