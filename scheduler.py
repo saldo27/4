@@ -513,7 +513,7 @@ class Scheduler:
                 
                     if not assignments or all((date - d).days >= min_gap and (d - date).days >= min_gap for d in assignments):
                         # Calculate a score for this worker
-                        score = self._calculate_ment_score(worker, date, post)
+                        score = self._calculate_improvement_score(worker, date, post)
                         if score > float('-inf'):
                             candidates.append((worker, score))
         
