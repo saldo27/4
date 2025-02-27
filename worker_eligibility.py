@@ -89,15 +89,26 @@ class WorkerEligibilityTracker:
     def _check_weekend_constraints(self, worker_id, date):
         """
         Check weekend-related constraints
-    
+        
         Args:
             worker_id: ID of the worker to check
             date: Date to check
         Returns:
             bool: True if worker can be assigned to this weekend date
         """
-        # Delegate to the more comprehensive implementation
-        return self._check_weekend_constraints_thorough(worker_id, date)
+        if not self._is_weekend_day(date):
+            return True
+            
+        # Count recent weekend days
+        window_start = date - timedelta(days=10)
+        window_end = date + timedelta(days=10)
+        
+        weekend_count = sum(
+            1 for d in self.recent_weekends[worker_id]
+            if window_start <= d <= window_end
+        )
+        
+        return weekend_count < 3
     
     def _is_weekend_day(self, date):
         """
@@ -113,50 +124,3 @@ class WorkerEligibilityTracker:
             date in self.holidays or
             date + timedelta(days=1) in self.holidays
         )
-
-    def _check_weekend_constraints_thorough(self, worker_id, date):
-        """
-        Check weekend-related constraints more thoroughly
-    
-        Args:
-            worker_id: ID of the worker to check
-            date: Date to check
-        Returns:
-            bool: True if worker can be assigned to this weekend date
-        """
-        if not self._is_weekend_day(date):
-            return True
-    
-        # Get all recent weekend assignments 
-        weekend_assignments = self.recent_weekends[worker_id].copy()
-
-        # Add the proposed date for checking
-        test_assignments = weekend_assignments + [date]
-        test_assignments.sort()  # Sort chronologically
-
-        # Check for each weekend date if adding the new date would create a violation
-        for test_date in test_assignments:
-            # Define 3-week window around this date
-            window_start = test_date - timedelta(days=10)
-            window_end = test_date + timedelta(days=10)
-    
-            # Count weekend/holiday shifts in this window
-            weekend_count = sum(
-                1 for d in test_assignments
-                if window_start <= d <= window_end
-            )
-    
-            if weekend_count > 3:
-                return False
-        
-        # Check for three consecutive weekends
-        if len(test_assignments) >= 3:
-            for i in range(len(test_assignments) - 2):
-                first_weekend = test_assignments[i]
-                third_weekend = test_assignments[i + 2]
-        
-                # If the time between first and third is ≤ 14 days, they are consecutive
-                if (third_weekend - first_weekend).days <= 14:
-                    return False
-
-        return True
