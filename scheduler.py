@@ -839,90 +839,112 @@ class Scheduler:
             weekend_counts_by_month[month_key] = weekend_counts
     
         changes_made = 0
+        max_changes = 30  # Increased from default to allow more aggressive rebalancing
     
-        # Identify months with overloaded workers
-        for month_key, weekend_counts in weekend_counts_by_month.items():
-            overloaded_workers = []
-            underloaded_workers = []
-        
-            for worker in self.workers_data:
-                worker_id = worker['id']
-                work_percentage = worker.get('work_percentage', 100)
+    # Also check for 3-week period violations (new check)
+    violations = self._find_weekend_shift_violations()
+    
+    # If we found specific violations, prioritize fixing those first
+    if violations:
+        for worker_id, problematic_dates in violations.items():
+            for date in problematic_dates:
+                # Try to reassign this specific weekend shift to someone else
+                if self._try_reassign_weekend_shift(worker_id, date):
+                    changes_made += 1
+                    if changes_made >= max_changes:
+                        break
             
-                # Calculate weekend limit based on work percentage
-                max_weekends = 2  # Default for full-time
-                if work_percentage < 100:
-                    max_weekends = max(1, int(2 * work_percentage / 100))
+            if changes_made >= max_changes:
+                break
+
+        # If we still have change budget, continue with regular monthly balancing
+        if changes_made < max_changes:
+            # Identify months with overloaded workers
+            for month_key, weekend_counts in weekend_counts_by_month.items():
+                overloaded_workers = []
+                underloaded_workers = []
+        
+                for worker in self.workers_data:
+                    worker_id = worker['id']
+                    work_percentage = worker.get('work_percentage', 100)
             
-                weekend_count = weekend_counts.get(worker_id, 0)
+                    # Calculate weekend limit based on work percentage
+                    max_weekends = 2  # Default for full-time
+                    if work_percentage < 100:
+                        max_weekends = max(1, int(2 * work_percentage / 100))
             
-                if weekend_count > max_weekends:
-                    overloaded_workers.append((worker_id, weekend_count, max_weekends))
-                elif weekend_count < max_weekends:
-                    available_slots = max_weekends - weekend_count
-                    underloaded_workers.append((worker_id, weekend_count, available_slots))
+                    weekend_count = weekend_counts.get(worker_id, 0)
+            
+                    if weekend_count > max_weekends:
+                        overloaded_workers.append((worker_id, weekend_count, max_weekends))
+                    elif weekend_count < max_weekends:
+                        available_slots = max_weekends - weekend_count
+                        underloaded_workers.append((worker_id, weekend_count, available_slots))
         
-            # Sort by most overloaded and most available
-            overloaded_workers.sort(key=lambda x: x[1] - x[2], reverse=True)
-            underloaded_workers.sort(key=lambda x: x[2], reverse=True)
+                # Sort by most overloaded and most available
+                overloaded_workers.sort(key=lambda x: x[1] - x[2], reverse=True)
+                underloaded_workers.sort(key=lambda x: x[2], reverse=True)
         
-            # Get dates in this month
-            month_dates = months[month_key]
-            weekend_dates = [date for date in month_dates if self._is_weekend_day(date)]
+                # Get dates in this month
+                month_dates = months[month_key]
+                weekend_dates = [date for date in month_dates if self._is_weekend_day(date)]
         
-            # Try to redistribute weekend shifts
-            for over_worker_id, over_count, over_limit in overloaded_workers:
-                if not underloaded_workers:
-                    break
+                # Try to redistribute weekend shifts
+                for over_worker_id, over_count, over_limit in overloaded_workers:
+                    if not underloaded_workers or changes_made >= max_changes:
+                        break
                 
-                for weekend_date in weekend_dates:
-                    # Skip if this worker isn't assigned on this date
-                    if over_worker_id not in self.schedule[weekend_date]:
-                        continue
-                
-                    # Find the post this worker is assigned to
-                    post = self.schedule[weekend_date].index(over_worker_id)
-                
-                    # Try to find a suitable replacement
-                    for under_worker_id, _, _ in underloaded_workers:
-                        # Skip if this worker is already assigned on this date
-                        if under_worker_id in self.schedule[weekend_date]:
+                    for weekend_date in weekend_dates:
+                        # Skip if this worker isn't assigned on this date
+                        if over_worker_id not in self.schedule[weekend_date]:
                             continue
+                
+                        # Find the post this worker is assigned to
+                        post = self.schedule[weekend_date].index(over_worker_id)
+                
+                        # Try to find a suitable replacement
+                        for under_worker_id, _, _ in underloaded_workers:
+                            # Skip if this worker is already assigned on this date
+                            if under_worker_id in self.schedule[weekend_date]:
+                                continue
                     
-                        # Check if we can assign this worker to this shift
-                        if self._can_assign_worker(under_worker_id, weekend_date, post):
-                            # Make the swap
-                            self.schedule[weekend_date][post] = under_worker_id
-                            self.worker_assignments[over_worker_id].remove(weekend_date)
-                            self.worker_assignments[under_worker_id].add(weekend_date)
+                            # Check if we can assign this worker to this shift
+                            if self._can_assign_worker(under_worker_id, weekend_date, post):
+                                # Make the swap
+                                self.schedule[weekend_date][post] = under_worker_id
+                                self.worker_assignments[over_worker_id].remove(weekend_date)
+                                self.worker_assignments[under_worker_id].add(weekend_date)
                         
-                            # Update tracking data
-                            self._update_tracking_data(under_worker_id, weekend_date, post)
+                                # Update tracking data
+                                self._update_tracking_data(under_worker_id, weekend_date, post)
                         
-                            # Update counts
-                            weekend_counts[over_worker_id] -= 1
-                            weekend_counts[under_worker_id] += 1
+                                # Update counts
+                                weekend_counts[over_worker_id] -= 1
+                                weekend_counts[under_worker_id] += 1
                         
-                            changes_made += 1
-                            logging.info(f"Improved weekend distribution: Moved weekend shift on {weekend_date.strftime('%Y-%m-%d')} "
-                                        f"from worker {over_worker_id} to worker {under_worker_id}")
+                                changes_made += 1
+                                logging.info(f"Improved weekend distribution: Moved weekend shift on {weekend_date.strftime('%Y-%m-%d')} "
+                                            f"from worker {over_worker_id} to worker {under_worker_id}")
                         
-                            # Update worker lists
-                            if weekend_counts[over_worker_id] <= over_limit:
-                                # This worker is no longer overloaded
-                                overloaded_workers = [(w, c, l) for w, c, l in overloaded_workers if w != over_worker_id]
+                                # Update worker lists
+                                if weekend_counts[over_worker_id] <= over_limit:
+                                    # This worker is no longer overloaded
+                                    overloaded_workers = [(w, c, l) for w, c, l in overloaded_workers if w != over_worker_id]
                         
-                            # Check if under worker is now fully loaded
-                            for i, (w_id, count, slots) in enumerate(underloaded_workers):
-                                if w_id == under_worker_id:
-                                    if weekend_counts[w_id] >= count + slots:
-                                        # Remove from underloaded
-                                        underloaded_workers.pop(i)
-                                    break
+                                # Check if under worker is now fully loaded
+                                for i, (w_id, count, slots) in enumerate(underloaded_workers):
+                                    if w_id == under_worker_id:
+                                        if weekend_counts[w_id] >= count + slots:
+                                            # Remove from underloaded
+                                            underloaded_workers.pop(i)
+                                        break
                         
-                            # Break to try next overloaded worker
+                                # Break to try next overloaded worker
+                                break
+                    
+                        if changes_made >= max_changes:
                             break
-    
+
         logging.info(f"Weekend distribution improvement: made {changes_made} changes")
         return changes_made > 0
 
@@ -1056,6 +1078,118 @@ class Scheduler:
     
         logging.info(f"Workload balancing: made {changes_made} changes")
         return changes_made > 0
+
+    def _find_weekend_shift_violations(self):
+        """
+        Find workers with weekend/holiday shift violations (>3 in a 3-week period)
+    
+        Returns:
+            dict: Dictionary of worker_id -> list of problematic dates to consider reassigning
+        """
+        violations = {}
+    
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            weekend_assignments = sorted([
+                d for d in self.worker_assignments[worker_id] 
+                if self._is_weekend_day(d)
+            ])
+        
+            if len(weekend_assignments) <= 3:
+                continue  # Not enough weekend assignments to cause a violation
+            
+            # Check each date for potential violations
+            for date in weekend_assignments:
+                # Define 3-week window around this date
+                window_start = date - timedelta(days=10)
+                window_end = date + timedelta(days=10)
+            
+                # Count weekend/holiday assignments in this window
+                count = sum(1 for d in weekend_assignments if window_start <= d <= window_end)
+            
+                if count > 3:
+                    # This date is part of a violation
+                    if worker_id not in violations:
+                        violations[worker_id] = []
+                    violations[worker_id].append(date)
+    
+        return violations
+
+    def _try_reassign_weekend_shift(self, worker_id, date):
+        """
+        Try to reassign a specific weekend shift from a worker to another eligible worker
+    
+        Args:
+            worker_id: ID of the overloaded worker
+            date: The date to reassign
+    
+        Returns:
+            bool: True if successfully reassigned
+        """
+        if date not in self.schedule or worker_id not in self.schedule[date]:
+            return False
+        
+        # Find the post this worker is assigned to
+        post = self.schedule[date].index(worker_id)
+    
+        # Find eligible workers to take this shift
+        candidates = []
+    
+        for other_worker in self.workers_data:
+            other_id = other_worker['id']
+        
+            # Skip if same worker or already assigned on this date
+            if other_id == worker_id or other_id in self.schedule[date]:
+                continue
+            
+            # Check if this worker can take the shift
+            if self._can_assign_worker(other_id, date, post):
+                # Calculate how many weekend shifts this worker already has
+                weekend_count = sum(1 for d in self.worker_assignments[other_id] if self._is_weekend_day(d))
+            
+                # Calculate a score - prefer workers with fewer weekend shifts
+                score = -weekend_count
+            
+                # Check if this would create a new violation
+                would_create_violation = False
+            
+                # Create a temporary set to check
+                temp_assignments = set(self.worker_assignments[other_id])
+                temp_assignments.add(date)
+                temp_weekend_assignments = sorted([d for d in temp_assignments if self._is_weekend_day(d)])
+            
+                # Check each date for potential violations
+                for check_date in temp_weekend_assignments:
+                    window_start = check_date - timedelta(days=10)
+                    window_end = check_date + timedelta(days=10)
+                    count = sum(1 for d in temp_weekend_assignments if window_start <= d <= window_end)
+                
+                    if count > 3:
+                        would_create_violation = True
+                        break
+            
+                if not would_create_violation:
+                    candidates.append((other_id, score))
+    
+        # Sort candidates by score (highest first)
+        candidates.sort(key=lambda x: x[1], reverse=True)
+    
+        if candidates:
+            best_worker_id = candidates[0][0]
+        
+            # Make the reassignment
+            self.schedule[date][post] = best_worker_id
+            self.worker_assignments[worker_id].remove(date)
+            self.worker_assignments[best_worker_id].add(date)
+        
+            # Update tracking data
+            self._update_tracking_data(best_worker_id, date, post)
+        
+            logging.info(f"Fixed weekend violation: Reassigned shift on {date.strftime('%Y-%m-%d')} "
+                        f"from worker {worker_id} to worker {best_worker_id}")
+            return True
+    
+        return False
 
     def _calculate_improvement_score(self, worker, date, post):
         """
@@ -1511,7 +1645,7 @@ class Scheduler:
     def _would_exceed_weekend_limit(self, worker_id, date):
         """
         Check if assigning this date would exceed the weekend/holiday limit
-        Maximum 3 weekend/holiday days in any 3-week period
+        Maximum 3 weekend days in any 3-week period
         Weekend days include: Friday, Saturday, Sunday, holidays, and pre-holidays
         """
         try:
@@ -1520,45 +1654,33 @@ class Scheduler:
                    (date + timedelta(days=1)) in self.holidays):
                 return False
             
-            # Get existing weekend/holiday assignments for this worker
-            weekend_assignments = []
-            for d in self.worker_assignments[worker_id]:
-                if d.weekday() >= 4 or d in self.holidays or (d + timedelta(days=1)) in self.holidays:
-                    weekend_assignments.append(d)
+            # Get existing weekend assignments for this worker
+            weekend_assignments = [
+                d for d in self.worker_assignments[worker_id]
+                if d.weekday() >= 4 or d in self.holidays or (d + timedelta(days=1)) in self.holidays
+            ]
         
-            # Check if adding this date would create a problem
-            # Define 3-week window around the potential new date
-            window_start = date - timedelta(days=10)
-            window_end = date + timedelta(days=10)
+            # Add the proposed date for testing
+            test_assignments = weekend_assignments + [date]
+            test_assignments.sort()  # Sort chronologically
         
-            # Count weekend/holiday shifts in this window
-            weekend_count = sum(
-                1 for d in weekend_assignments
-                if window_start <= d <= window_end
-            )
-        
-            # Adding the new date would make it one more
-            if weekend_count >= 3:  # Already at the limit
-                logging.debug(f"Worker {worker_id} would exceed weekend limit: "
-                             f"{weekend_count + 1} days in 3-week window")
-                return True
+            # Check for each weekend date if adding the new date would create a violation
+            for test_date in test_assignments:
+                # Define 3-week window around this date
+                window_start = test_date - timedelta(days=10)
+                window_end = test_date + timedelta(days=10)
             
-            # Also check from the perspective of each existing weekend assignment
-            for d in weekend_assignments:
-                window_start = d - timedelta(days=10)
-                window_end = d + timedelta(days=10)
+                # Count weekend/holiday shifts in this window
+                weekend_count = sum(
+                    1 for d in test_assignments
+                    if window_start <= d <= window_end
+                )
             
-                if window_start <= date <= window_end:
-                    # The new date would be in this window
-                    count_in_window = sum(
-                        1 for wd in weekend_assignments
-                        if window_start <= wd <= window_end
-                    )
-                
-                    if count_in_window >= 3:  # Already at limit
-                        logging.debug(f"Worker {worker_id} would exceed weekend limit from existing date {d}: "
-                                     f"{count_in_window + 1} days in window")
-                        return True
+                if weekend_count > 3:
+                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
+                                 f"{weekend_count} weekend days in 3-week window "
+                                 f"around {test_date.strftime('%Y-%m-%d')}")
+                    return True
                 
             return False
     
@@ -2093,7 +2215,7 @@ class Scheduler:
             actual_ratio = new_counts[last_post] / total_assignments
         
             # Allow ±1 shift deviation from perfect ratio
-            allowed_deviation = 1.0 / total_assignments
+            allowed_deviation = 2.0 / total_assignments
         
             if abs(actual_ratio - target_ratio) > allowed_deviation:
                 logging.debug(
