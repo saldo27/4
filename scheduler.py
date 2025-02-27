@@ -1511,7 +1511,7 @@ class Scheduler:
     def _would_exceed_weekend_limit(self, worker_id, date):
         """
         Check if assigning this date would exceed the weekend/holiday limit
-        Maximum 3 weekend days in any 3-week period
+        Maximum 3 weekend/holiday days in any 3-week period
         Weekend days include: Friday, Saturday, Sunday, holidays, and pre-holidays
         """
         try:
@@ -1520,33 +1520,45 @@ class Scheduler:
                    (date + timedelta(days=1)) in self.holidays):
                 return False
             
-            # Get existing weekend assignments for this worker
-            weekend_assignments = [
-                d for d in self.worker_assignments[worker_id]
-                if d.weekday() >= 4 or d in self.holidays or (d + timedelta(days=1)) in self.holidays
-            ]
+            # Get existing weekend/holiday assignments for this worker
+            weekend_assignments = []
+            for d in self.worker_assignments[worker_id]:
+                if d.weekday() >= 4 or d in self.holidays or (d + timedelta(days=1)) in self.holidays:
+                    weekend_assignments.append(d)
         
-            # Add the proposed date for testing
-            test_assignments = weekend_assignments + [date]
-            test_assignments.sort()  # Sort chronologically
+            # Check if adding this date would create a problem
+            # Define 3-week window around the potential new date
+            window_start = date - timedelta(days=10)
+            window_end = date + timedelta(days=10)
         
-            # Check for each weekend date if adding the new date would create a violation
-            for test_date in test_assignments:
-                # Define 3-week window around this date
-                window_start = test_date - timedelta(days=10)
-                window_end = test_date + timedelta(days=10)
+            # Count weekend/holiday shifts in this window
+            weekend_count = sum(
+                1 for d in weekend_assignments
+                if window_start <= d <= window_end
+            )
+        
+            # Adding the new date would make it one more
+            if weekend_count >= 3:  # Already at the limit
+                logging.debug(f"Worker {worker_id} would exceed weekend limit: "
+                             f"{weekend_count + 1} days in 3-week window")
+                return True
             
-                # Count weekend/holiday shifts in this window
-                weekend_count = sum(
-                    1 for d in test_assignments
-                    if window_start <= d <= window_end
-                )
+            # Also check from the perspective of each existing weekend assignment
+            for d in weekend_assignments:
+                window_start = d - timedelta(days=10)
+                window_end = d + timedelta(days=10)
             
-                if weekend_count > 3:
-                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
-                                 f"{weekend_count} weekend days in 3-week window "
-                                 f"around {test_date.strftime('%Y-%m-%d')}")
-                    return True
+                if window_start <= date <= window_end:
+                    # The new date would be in this window
+                    count_in_window = sum(
+                        1 for wd in weekend_assignments
+                        if window_start <= wd <= window_end
+                    )
+                
+                    if count_in_window >= 3:  # Already at limit
+                        logging.debug(f"Worker {worker_id} would exceed weekend limit from existing date {d}: "
+                                     f"{count_in_window + 1} days in window")
+                        return True
                 
             return False
     
