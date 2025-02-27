@@ -224,7 +224,7 @@ class Scheduler:
     # 2. Schedule Generation Methods
     # ------------------------
 
-    def generate_schedule(self, num_attempts=50, allow_feedback_improvement=True, improvement_attempts=10):
+    def generate_schedule(self, num_attempts=80, allow_feedback_improvement=True, improvement_attempts=50):
         """
         Generate the complete schedule with possibility of unfilled shifts
     
@@ -585,7 +585,7 @@ class Scheduler:
         fixes_made = 0
     
         for worker_id, post_counts, deviation in imbalanced_workers:
-            if fixes_attempted >= 10:  # Limit number of fix attempts
+            if fixes_attempted >= 30:  # Limit number of fix attempts
                 break
             
             logging.info(f"Trying to improve post rotation for worker {worker_id} (deviation: {deviation:.2f})")
