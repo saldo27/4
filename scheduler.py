@@ -1455,6 +1455,33 @@ class Scheduler:
                 logging.debug(f"Worker {worker_id} is already assigned on {date}")
                 return True
 
+            # NEW CHECK: If this is a weekend day, check if worker already has 3 weekend shifts in any 3-week period
+            if self._is_weekend_day(date):
+                # Only perform this check for weekend days to improve performance
+                weekend_dates = sorted([
+                    d for d in self.worker_assignments[worker_id] 
+                    if (d.weekday() >= 4 or d in self.holidays or 
+                        (d + timedelta(days=1)) in self.holidays)
+                ])
+            
+                # For each existing weekend assignment, check if it forms part of 3 consecutive weekends
+                for check_date in weekend_dates:
+                    window_start = check_date - timedelta(days=10)  # 10 days before
+                    window_end = check_date + timedelta(days=10)    # 10 days after
+                
+                    # If the date we're considering is within this window
+                    if window_start <= date <= window_end:
+                        # Count weekend days in this window (excluding the new date)
+                        window_weekend_count = sum(
+                            1 for d in weekend_dates
+                            if window_start <= d <= window_end
+                        )
+                    
+                        # If worker already has 3 weekend shifts in this window, they're unavailable
+                        if window_weekend_count >= 3:
+                            logging.debug(f"Worker {worker_id} already has 3 weekend shifts in 3-week window around {check_date}")
+                            return True
+
             return False
 
         except Exception as e:
