@@ -2482,42 +2482,43 @@ class Scheduler:
                         self.worker_weekends[worker_id].append(weekend_start)
 
     def remove_worker_assignment(self, worker_id, date):
-    """
-    Remove a worker's assignment from a given date and update all tracking data
+        """
+        Remove a worker's assignment from a given date and update all tracking data
     
-    Args:
-        worker_id: The worker's ID
-        date: Date of the assignment to remove
-    """
-    try:
-        # Check if the worker is actually assigned to this date
-        if worker_id not in self.schedule.get(date, []):
-            logging.warning(f"Worker {worker_id} is not assigned to {date.strftime('%Y-%m-%d')}")
+        Args:
+            worker_id: The worker's ID
+            date: Date of the assignment to remove
+        """
+        try:
+            # Check if the worker is actually assigned to this date
+            if worker_id not in self.schedule.get(date, []):
+                logging.warning(f"Worker {worker_id} is not assigned to {date.strftime('%Y-%m-%d')}")
+                return False
+            
+            # Find the post the worker is assigned to
+            post = self.schedule[date].index(worker_id)
+        
+            # Remove worker from schedule
+            self.schedule[date][post] = None
+        
+            # Remove date from worker assignments
+            self.worker_assignments[worker_id].discard(date)
+        
+            # Update tracking data for the removed assignment
+            self._update_worker_stats(worker_id, date, removing=True)
+        
+            # If the worker has post assignments for this post, remove it if it's the last one
+            post_counts = self._get_post_counts(worker_id)
+            if post in post_counts and post_counts[post] == 0:
+                self.worker_posts[worker_id].discard(post)
+            
+            logging.info(f"Removed worker {worker_id} assignment from {date.strftime('%Y-%m-%d')}, post {post}")
+            return True
+        
+        except Exception as e:
+            logging.error(f"Error removing worker assignment: {str(e)}")
             return False
             
-        # Find the post the worker is assigned to
-        post = self.schedule[date].index(worker_id)
-        
-        # Remove worker from schedule
-        self.schedule[date][post] = None
-        
-        # Remove date from worker assignments
-        self.worker_assignments[worker_id].discard(date)
-        
-        # Update tracking data for the removed assignment
-        self._update_worker_stats(worker_id, date, removing=True)
-        
-        # If the worker has post assignments for this post, remove it if it's the last one
-        post_counts = self._get_post_counts(worker_id)
-        if post in post_counts and post_counts[post] == 0:
-            self.worker_posts[worker_id].discard(post)
-            
-        logging.info(f"Removed worker {worker_id} assignment from {date.strftime('%Y-%m-%d')}, post {post}")
-        return True
-        
-    except Exception as e:
-        logging.error(f"Error removing worker assignment: {str(e)}")
-        return False
     def _record_constraint_skip(self, worker_id, date, constraint_type, other_worker_id=None):
         """
         Record when a constraint is skipped for tracking purposes
