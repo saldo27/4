@@ -1509,24 +1509,31 @@ class Scheduler:
             if not (date.weekday() >= 4 or date in self.holidays or 
                 (date + timedelta(days=1)) in self.holidays):
                 return False
+        
+            # Get all weekend/holiday assignments EXCLUDING the current date
+            weekend_assignments = [
+                d for d in self.worker_assignments[worker_id]
+                if d != date and (d.weekday() >= 4 or d in self.holidays or 
+                    (d + timedelta(days=1)) in self.holidays)
+            ]
+        
+            # Add the new date
+            all_weekend_assignments = weekend_assignments + [date]
+        
+            # Check every date in the 3-week window
+            for check_date in all_weekend_assignments:
+                window_start = check_date - timedelta(days=10)
+                window_end = check_date + timedelta(days=10)
             
-            # Get all weekend/holiday assignments in a window centered on the date
-            window_start = date - timedelta(days=10)  # 10 days before
-            window_end = date + timedelta(days=10)    # 10 days after
-        
-            # Count existing weekend/holiday assignments in the window
-            weekend_count = sum(
-                1 for d in self.worker_assignments[worker_id]
-                if window_start <= d <= window_end and
-                (d.weekday() >= 4 or d in self.holidays or 
-                 (d + timedelta(days=1)) in self.holidays)
-            )    
-        
-            # Add 1 for the new assignment
-            if weekend_count + 1 > 3:
-                logging.debug(f"Worker {worker_id} would exceed weekend limit: "
-                            f"{weekend_count + 1} days in 3-week window")
-                return True
+                weekend_count = sum(
+                    1 for d in all_weekend_assignments
+                    if window_start <= d <= window_end
+                )
+            
+                if weekend_count > 3:
+                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
+                               f"{weekend_count} weekend days in 3-week window around {check_date}")
+                    return True
                 
             return False
         
@@ -1793,49 +1800,6 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
             return True  # Assume unavailable in case of error
-            
-        def _would_exceed_weekend_limit(self, worker_id, date):
-        """
-        Check if assigning this date would exceed the weekend limit
-        Maximum 3 weekend days in any 3-week period
-        Weekend days include: Friday, Saturday, Sunday, holidays, and pre-holidays
-        """
-        try:
-            # If it's not a weekend day or holiday, no need to check
-            if not (date.weekday() >= 4 or date in self.holidays or 
-                (date + timedelta(days=1)) in self.holidays):
-                return False
-        
-            # Get all weekend/holiday assignments EXCLUDING the current date
-            weekend_assignments = [
-                d for d in self.worker_assignments[worker_id]
-                if d != date and (d.weekday() >= 4 or d in self.holidays or 
-                    (d + timedelta(days=1)) in self.holidays)
-        ]    
-        
-            # Add the new date
-            all_weekend_assignments = weekend_assignments + [date]
-        
-            # Check every date in the 3-week window
-            for check_date in all_weekend_assignments:
-                window_start = check_date - timedelta(days=10)
-                window_end = check_date + timedelta(days=10)
-            
-                weekend_count = sum(
-                    1 for d in all_weekend_assignments
-                    if window_start <= d <= window_end
-                )    
-            
-                if weekend_count > 3:
-                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
-                               f"{weekend_count} weekend days in 3-week window around {check_date}")
-                    return True
-                
-            return False
-        
-        except Exception as e:
-            logging.error(f"Error checking weekend limit: {str(e)}")
-            return True  # Fail safe
 
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
@@ -2485,38 +2449,75 @@ class Scheduler:
             if weekend_start not in self.worker_weekends[worker_id]:
                 self.worker_weekends[worker_id].append(weekend_start)
 
-    def _update_worker_stats(self, worker_id, date, removing=False):
-        """
-        Update worker statistics for assignment or removal
+        def _update_worker_stats(self, worker_id, date, removing=False):
+            """
+            Update worker statistics for assignment or removal
         
-        Args:
-            worker_id: The worker's ID
-            date: Date of assignment
-            removing: Boolean indicating if this is a removal operation
-        """
-        effective_weekday = self._get_effective_weekday(date)
+            Args:
+                worker_id: The worker's ID
+                date: Date of assignment
+                removing: Boolean indicating if this is a removal operation
+            """
+            effective_weekday = self._get_effective_weekday(date)
     
-        if removing:
-            # Decrease weekday count
-            self.worker_weekdays[worker_id][effective_weekday] = max(
-                0, self.worker_weekdays[worker_id][effective_weekday] - 1
-            )
+            if removing:
+                # Decrease weekday count
+                self.worker_weekdays[worker_id][effective_weekday] = max(
+                    0, self.worker_weekdays[worker_id][effective_weekday] - 1
+                )
         
-            # Remove weekend if applicable
-            if self._is_weekend_day(date):
-                weekend_start = self._get_weekend_start(date)
-                if weekend_start in self.worker_weekends[worker_id]:
-                    self.worker_weekends[worker_id].remove(weekend_start)
-        else:
-            # Increase weekday count
-            self.worker_weekdays[worker_id][effective_weekday] += 1
+                # Remove weekend if applicable
+                if self._is_weekend_day(date):
+                    weekend_start = self._get_weekend_start(date)
+                    if weekend_start in self.worker_weekends[worker_id]:
+                        self.worker_weekends[worker_id].remove(weekend_start)
+            else:
+                # Increase weekday count
+                self.worker_weekdays[worker_id][effective_weekday] += 1
         
-            # Add weekend if applicable
-            if self._is_weekend_day(date):
-                weekend_start = self._get_weekend_start(date)
-                if weekend_start not in self.worker_weekends[worker_id]:
-                    self.worker_weekends[worker_id].append(weekend_start)
+                # Add weekend if applicable
+                if self._is_weekend_day(date):
+                    weekend_start = self._get_weekend_start(date)
+                    if weekend_start not in self.worker_weekends[worker_id]:
+                        self.worker_weekends[worker_id].append(weekend_start)
 
+    def remove_worker_assignment(self, worker_id, date):
+    """
+    Remove a worker's assignment from a given date and update all tracking data
+    
+    Args:
+        worker_id: The worker's ID
+        date: Date of the assignment to remove
+    """
+    try:
+        # Check if the worker is actually assigned to this date
+        if worker_id not in self.schedule.get(date, []):
+            logging.warning(f"Worker {worker_id} is not assigned to {date.strftime('%Y-%m-%d')}")
+            return False
+            
+        # Find the post the worker is assigned to
+        post = self.schedule[date].index(worker_id)
+        
+        # Remove worker from schedule
+        self.schedule[date][post] = None
+        
+        # Remove date from worker assignments
+        self.worker_assignments[worker_id].discard(date)
+        
+        # Update tracking data for the removed assignment
+        self._update_worker_stats(worker_id, date, removing=True)
+        
+        # If the worker has post assignments for this post, remove it if it's the last one
+        post_counts = self._get_post_counts(worker_id)
+        if post in post_counts and post_counts[post] == 0:
+            self.worker_posts[worker_id].discard(post)
+            
+        logging.info(f"Removed worker {worker_id} assignment from {date.strftime('%Y-%m-%d')}, post {post}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Error removing worker assignment: {str(e)}")
+        return False
     def _record_constraint_skip(self, worker_id, date, constraint_type, other_worker_id=None):
         """
         Record when a constraint is skipped for tracking purposes
