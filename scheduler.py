@@ -754,7 +754,7 @@ class Scheduler:
             weekend_count += 1
         
             # Check against limit
-            max_weekends = 2  # Default limit
+            max_weekends = 3  # Default limit
             if worker_data:
                 # Adjust limit based on work percentage
                 work_percentage = worker_data.get('work_percentage', 100)
@@ -837,9 +837,9 @@ class Scheduler:
                 work_percentage = worker.get('work_percentage', 100)
             
                 # Calculate weekend limit based on work percentage
-                max_weekends = 2  # Default for full-time
+                max_weekends = 3  # Default for full-time
                 if work_percentage < 100:
-                    max_weekends = max(1, int(2 * work_percentage / 100))
+                    max_weekends = max(1, int(3 * work_percentage / 100))
             
                 weekend_count = weekend_counts.get(worker_id, 0)
             
