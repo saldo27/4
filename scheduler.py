@@ -883,7 +883,10 @@ class Scheduler:
                             self.worker_assignments[over_worker_id].remove(weekend_date)
                             self.worker_assignments[under_worker_id].add(weekend_date)
                         
-                            # Update tracking data
+                            # Remove the weekend tracking for the over-loaded worker
+                            self._update_worker_stats(over_worker_id, weekend_date, removing=True)
+
+                            # Update tracking data for the under-loaded worker
                             self._update_tracking_data(under_worker_id, weekend_date, post)
                         
                             # Update counts
@@ -1792,43 +1795,47 @@ class Scheduler:
             return True  # Assume unavailable in case of error
             
         def _would_exceed_weekend_limit(self, worker_id, date):
-            """
-            Check if assigning this date would exceed the weekend/holiday limit:
-            Max 3 weekend/holiday days in any 3-week period.
-            Weekend days include: Friday, Saturday, Sunday, and days before holidays
-            """
-            try:
-                # Check if this is a weekend day (Fri, Sat, Sun)
-                if not date.weekday() >= 4:  # Not Fri(4), Sat(5), or Sun(6)
-                    return False
-            
-                # Get all weekend assignments for this worker
-                weekend_dates = set(d for d in self.worker_assignments[worker_id] 
-                                  if d.weekday() >= 4)  # Existing weekend days
-                weekend_dates.add(date)  # Add the proposed date
-        
-                # For each date, check the 3-week window
-                for check_date in weekend_dates:
-                    window_start = check_date - timedelta(days=10)  # 10 days before
-                    window_end = check_date + timedelta(days=10)    # 10 days after
-            
-                    # Count weekend days in this window
-                    weekend_count = sum(
-                        1 for d in weekend_dates
-                        if window_start <= d <= window_end
-                    )    
-            
-                    if weekend_count > 3:
-                        logging.debug(f"Worker {worker_id} would exceed weekend limit: "
-                                    f"{weekend_count} weekend days in 3-week window "
-                                    f"around {check_date}")
-                        return True
-                
+        """
+        Check if assigning this date would exceed the weekend limit
+        Maximum 3 weekend days in any 3-week period
+        Weekend days include: Friday, Saturday, Sunday, holidays, and pre-holidays
+        """
+        try:
+            # If it's not a weekend day or holiday, no need to check
+            if not (date.weekday() >= 4 or date in self.holidays or 
+                (date + timedelta(days=1)) in self.holidays):
                 return False
         
-            except Exception as e:
-                logging.error(f"Error checking weekend limit: {str(e)}")
-                return True  # Fail safe - assume limit would be exceeded
+            # Get all weekend/holiday assignments EXCLUDING the current date
+            weekend_assignments = [
+                d for d in self.worker_assignments[worker_id]
+                if d != date and (d.weekday() >= 4 or d in self.holidays or 
+                    (d + timedelta(days=1)) in self.holidays)
+        ]    
+        
+            # Add the new date
+            all_weekend_assignments = weekend_assignments + [date]
+        
+            # Check every date in the 3-week window
+            for check_date in all_weekend_assignments:
+                window_start = check_date - timedelta(days=10)
+                window_end = check_date + timedelta(days=10)
+            
+                weekend_count = sum(
+                    1 for d in all_weekend_assignments
+                    if window_start <= d <= window_end
+                )    
+            
+                if weekend_count > 3:
+                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
+                               f"{weekend_count} weekend days in 3-week window around {check_date}")
+                    return True
+                
+            return False
+        
+        except Exception as e:
+            logging.error(f"Error checking weekend limit: {str(e)}")
+            return True  # Fail safe
 
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
