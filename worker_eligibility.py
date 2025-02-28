@@ -20,22 +20,28 @@ class WorkerEligibilityTracker:
     def update_worker_status(self, worker_id, date):
         """
         Update tracking data when a worker is assigned
-        
+    
         Args:
             worker_id: ID of the worker
             date: Date of the assignment
         """
         self.last_worked_date[worker_id] = date
         self.total_assignments[worker_id] += 1
-        
+    
         if self._is_weekend_day(date):
-            self.recent_weekends[worker_id].append(date)
+            # Only add if not already in the list (prevent duplicates)
+            if date not in self.recent_weekends[worker_id]:
+                self.recent_weekends[worker_id].append(date)
+            
             # Keep only recent weekends (last 21 days)
             cutoff_date = date - timedelta(days=21)
             self.recent_weekends[worker_id] = [
                 d for d in self.recent_weekends[worker_id]
                 if d > cutoff_date
             ]
+        
+            # Ensure the list is sorted for consistent window calculations
+            self.recent_weekends[worker_id].sort()
     
     def get_eligible_workers(self, date, assigned_workers):
         """
@@ -88,27 +94,40 @@ class WorkerEligibilityTracker:
     
     def _check_weekend_constraints(self, worker_id, date):
         """
-        Check weekend-related constraints
-        
+        Check weekend-related constraints - ensuring max 3 weekend days in any 3-week period
+    
         Args:
             worker_id: ID of the worker to check
             date: Date to check
         Returns:
             bool: True if worker can be assigned to this weekend date
         """
+        # If not a weekend day, no constraint
         if not self._is_weekend_day(date):
             return True
-            
-        # Count recent weekend days
-        window_start = date - timedelta(days=10)
-        window_end = date + timedelta(days=10)
+    
+        # Create a temporary list including existing weekend days and the new one
+        all_weekend_dates = self.recent_weekends[worker_id].copy()
+    
+        # Avoid double counting if date is already in the list
+        if date not in all_weekend_dates:
+            all_weekend_dates.append(date)
+    
+        # Check for every date in the combined list
+        for check_date in all_weekend_dates:
+            window_start = check_date - timedelta(days=10)  # 10 days before
+            window_end = check_date + timedelta(days=10)    # 10 days after
         
-        weekend_count = sum(
-            1 for d in self.recent_weekends[worker_id]
-            if window_start <= d <= window_end
-        )
+            # Count weekend days in this window
+            weekend_count = sum(
+                1 for d in all_weekend_dates
+                if window_start <= d <= window_end
+        )    
         
-        return weekend_count < 3
+            if weekend_count > 3:
+                return False  # Exceeds limit
+    
+        return True  # Within limit
     
     def _is_weekend_day(self, date):
         """
@@ -124,3 +143,28 @@ class WorkerEligibilityTracker:
             date in self.holidays or
             date + timedelta(days=1) in self.holidays
         )
+
+    def remove_worker_assignment(self, worker_id, date):
+        """
+        Remove tracking data when a worker's assignment is removed
+    
+        Args:
+            worker_id: ID of the worker
+            date: Date of the assignment being removed
+        """
+        # Update last worked date if needed
+        if self.last_worked_date[worker_id] == date:
+            # Find the next most recent assignment
+            assignments = sorted([
+                d for d in self.worker_assignments[worker_id]
+                if d != date
+            ])
+            self.last_worked_date[worker_id] = assignments[-1] if assignments else None
+    
+        # Decrement total assignments
+        self.total_assignments[worker_id] = max(0, self.total_assignments[worker_id] - 1)
+    
+        # Remove from weekend tracking if applicable
+        if self._is_weekend_day(date) and date in self.recent_weekends[worker_id]:
+            self.recent_weekends[worker_id].remove(date)
+
