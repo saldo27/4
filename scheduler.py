@@ -1467,18 +1467,18 @@ class Scheduler:
             if date not in self.schedule:
                 return True
 
-            worker = next(w for w in self.workers_data if w['id'] == worker_id)
-        
+            # Get the worker's data
+            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+            if not worker:
+                logging.error(f"Worker {worker_id} not found in workers_data")
+                return False
+    
             # Check against all workers already assigned to this date
             for assigned_id in self.schedule[date]:
-                assigned_worker = next(w for w in self.workers_data if w['id'] == assigned_id)
-            
-                # If either worker has the incompatibility flag, they cannot work together
-                if any([
-                    worker.get('is_incompatible', False) and assigned_worker.get('is_incompatible', False),
-                    assigned_id in worker.get('incompatible_workers', []),
-                    worker_id in assigned_worker.get('incompatible_workers', [])
-                ]):
+                if assigned_id is None:
+                    continue
+                
+                if self._are_workers_incompatible(worker_id, assigned_id):
                     logging.debug(f"Workers {worker_id} and {assigned_id} are incompatible")
                     return False
 
@@ -1725,25 +1725,37 @@ class Scheduler:
             
     def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
-        Check if two workers are incompatible based on shared incompatibility property.
-        If both workers have the incompatibility flag, they cannot work together.
+        Check if two workers are incompatible based on incompatibility property or list.
         """
         try:
             # Get workers' data
-            worker1 = next(w for w in self.workers_data if w['id'] == worker1_id)
-            worker2 = next(w for w in self.workers_data if w['id'] == worker2_id)
+            worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
+            worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
         
-            # Check if both workers have the incompatibility property
-            has_incompatibility1 = worker1.get('has_incompatibility', False)
-            has_incompatibility2 = worker2.get('has_incompatibility', False)
+            if not worker1 or not worker2:
+                return False
+    
+            # Case 1: Check 'is_incompatible' property (both must have it for incompatibility)
+            has_incompatibility1 = worker1.get('is_incompatible', False)
+            has_incompatibility2 = worker2.get('is_incompatible', False)
+            if has_incompatibility1 and has_incompatibility2:
+                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible")
+                return True
+    
+            # Case 2: Check if either worker lists the other in 'incompatible_workers'
+            incompatible_list1 = worker1.get('incompatible_workers', [])
+            incompatible_list2 = worker2.get('incompatible_workers', [])
         
-            # If both have the property, they are incompatible
-            return has_incompatibility1 and has_incompatibility2
-        
+            if worker2_id in incompatible_list1 or worker1_id in incompatible_list2:
+                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible")
+                return True
+    
+            return False
+    
         except Exception as e:
             logging.error(f"Error checking worker incompatibility: {str(e)}")
             return False  # Default to compatible in case of error
-
+            
     def _check_day_compatibility(self, worker_id, date):
         """Check if worker is compatible with all workers already assigned to this date"""
         if date not in self.schedule:
@@ -2449,38 +2461,6 @@ class Scheduler:
             if weekend_start not in self.worker_weekends[worker_id]:
                 self.worker_weekends[worker_id].append(weekend_start)
 
-        def _update_worker_stats(self, worker_id, date, removing=False):
-            """
-            Update worker statistics for assignment or removal
-        
-            Args:
-                worker_id: The worker's ID
-                date: Date of assignment
-                removing: Boolean indicating if this is a removal operation
-            """
-            effective_weekday = self._get_effective_weekday(date)
-    
-            if removing:
-                # Decrease weekday count
-                self.worker_weekdays[worker_id][effective_weekday] = max(
-                    0, self.worker_weekdays[worker_id][effective_weekday] - 1
-                )
-        
-                # Remove weekend if applicable
-                if self._is_weekend_day(date):
-                    weekend_start = self._get_weekend_start(date)
-                    if weekend_start in self.worker_weekends[worker_id]:
-                        self.worker_weekends[worker_id].remove(weekend_start)
-            else:
-                # Increase weekday count
-                self.worker_weekdays[worker_id][effective_weekday] += 1
-        
-                # Add weekend if applicable
-                if self._is_weekend_day(date):
-                    weekend_start = self._get_weekend_start(date)
-                    if weekend_start not in self.worker_weekends[worker_id]:
-                        self.worker_weekends[worker_id].append(weekend_start)
-
     def remove_worker_assignment(self, worker_id, date):
         """
         Remove a worker's assignment from a given date and update all tracking data
@@ -2518,6 +2498,38 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error removing worker assignment: {str(e)}")
             return False
+
+    def _update_worker_stats(self, worker_id, date, removing=False):
+        """
+        Update worker statistics for assignment or removal
+    
+        Args:
+            worker_id: The worker's ID
+            date: Date of assignment
+            removing: Boolean indicating if this is a removal operation
+        """
+        effective_weekday = self._get_effective_weekday(date)
+
+        if removing:
+            # Decrease weekday count
+            self.worker_weekdays[worker_id][effective_weekday] = max(
+                0, self.worker_weekdays[worker_id][effective_weekday] - 1
+            )    
+    
+            # Remove weekend if applicable
+            if self._is_weekend_day(date):
+                weekend_start = self._get_weekend_start(date)
+                if weekend_start in self.worker_weekends[worker_id]:
+                    self.worker_weekends[worker_id].remove(weekend_start)
+        else:
+            # Increase weekday count
+            self.worker_weekdays[worker_id][effective_weekday] += 1
+    
+            # Add weekend if applicable
+            if self._is_weekend_day(date):
+                weekend_start = self._get_weekend_start(date)
+                if weekend_start not in self.worker_weekends[worker_id]:
+                    self.worker_weekends[worker_id].append(weekend_start)
             
     def _record_constraint_skip(self, worker_id, date, constraint_type, other_worker_id=None):
         """
