@@ -1577,11 +1577,26 @@ class Scheduler:
             if current_weekend:
                 weekends.append(min(current_weekend))
             
-            # Check for consecutive weekends
-            for i in range(len(weekends)-2):
-                days_between_first_last = (weekends[i+2] - weekends[i]).days
-                if days_between_first_last <= 14:  # 14 days = 2 weeks
-                    return True
+            # Include potential new date if it's a weekend day
+            if date and (date.weekday() >= 4 or date in self.holidays or 
+                       (date + timedelta(days=1)) in self.holidays):
+                if date not in weekend_dates:
+                    weekend_dates.append(date)
+                    weekend_dates.sort()
+        
+            # For consistency, use a 21-day window approach matching _would_exceed_weekend_limit
+            for check_date in weekend_dates:
+                window_start = check_date - timedelta(days=10)  # 10 days before
+                window_end = check_date + timedelta(days=10)    # 10 days after
+            
+                # Count weekend days in this window
+                window_weekend_count = sum(
+                    1 for d in weekend_dates
+                    if window_start <= d <= window_end
+                )
+            
+                if window_weekend_count > 3:
+                    return True  # More than 3 weekend shifts in a 3-week period
                 
             return False
         
