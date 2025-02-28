@@ -1554,10 +1554,12 @@ class Scheduler:
             # Get all weekend dates for this worker
             weekend_dates = sorted([
                 d for d in self.worker_assignments[worker_id] 
-                if d.weekday() >= 5  # Only Saturday(5) and Sunday(6)
+                if (d.weekday() >= 4 or d in self.holidays or  # Include Friday, Saturday, Sunday and holidays
+                    (d + timedelta(days=1)) in self.holidays)  # Include pre-holidays
             ])
-        
-            if date and date.weekday() >= 5:
+    
+            if date and (date.weekday() >= 4 or date in self.holidays or 
+                        (date + timedelta(days=1)) in self.holidays):
                 weekend_dates.append(date)
                 weekend_dates.sort()
             
