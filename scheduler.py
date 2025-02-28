@@ -1510,31 +1510,35 @@ class Scheduler:
                 (date + timedelta(days=1)) in self.holidays):
                 return False
         
-            # Get all weekend/holiday assignments EXCLUDING the current date
-            weekend_assignments = [
-                d for d in self.worker_assignments[worker_id]
-                if d != date and (d.weekday() >= 4 or d in self.holidays or 
+            # Get all weekend assignments INCLUDING the new date
+            all_weekend_assignments = [
+                d for d in self.worker_assignments[worker_id] 
+                if (d.weekday() >= 4 or d in self.holidays or 
                     (d + timedelta(days=1)) in self.holidays)
-            ]
+            ]    
         
-            # Add the new date
-            all_weekend_assignments = weekend_assignments + [date]
+            # Add the new date if it's not already in the list
+            if date not in all_weekend_assignments:
+                all_weekend_assignments.append(date)
         
-            # Check every date in the 3-week window
+            # For each weekend date, check if there are more than 3 weekend days 
+            # in the 21-day window centered on that date
             for check_date in all_weekend_assignments:
-                window_start = check_date - timedelta(days=10)
-                window_end = check_date + timedelta(days=10)
+                # Define a 21-day window centered on this date
+                window_start = check_date - timedelta(days=10)  # 10 days before
+                window_end = check_date + timedelta(days=10)    # 10 days after
             
-                weekend_count = sum(
+                # Count weekend days in this window
+                window_weekend_count = sum(
                     1 for d in all_weekend_assignments
                     if window_start <= d <= window_end
                 )
             
-                if weekend_count > 3:
+                if window_weekend_count > 3:
                     logging.debug(f"Worker {worker_id} would exceed weekend limit: "
-                               f"{weekend_count} weekend days in 3-week window around {check_date}")
+                                f"{window_weekend_count} weekend days in 3-week window around {check_date}")
                     return True
-                
+        
             return False
         
         except Exception as e:
