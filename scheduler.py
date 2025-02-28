@@ -1429,65 +1429,6 @@ class Scheduler:
 
         return True, ""
 
-    def _is_worker_unavailable(self, worker_id, date):
-        """
-        Check if worker is unavailable on a specific date
-        """
-        try:
-            worker = next(w for w in self.workers_data if w['id'] == worker_id)
-            
-            # Check days off
-            if worker.get('days_off'):
-                off_periods = self._parse_date_ranges(worker['days_off'])
-                if any(start <= date <= end for start, end in off_periods):
-                    logging.debug(f"Worker {worker_id} is off on {date}")
-                    return True
-
-            # Check work periods
-            if worker.get('work_periods'):
-                work_periods = self._parse_date_ranges(worker['work_periods'])
-                if not any(start <= date <= end for start, end in work_periods):
-                    logging.debug(f"Worker {worker_id} is not in work period on {date}")
-                    return True
-
-            # Check if worker is already assigned for this date
-            if date in self.worker_assignments[worker_id]:
-                logging.debug(f"Worker {worker_id} is already assigned on {date}")
-                return True
-
-            # NEW CHECK: If this is a weekend day, check if worker already has 3 weekend shifts in any 3-week period
-            if self._is_weekend_day(date):
-                # Only perform this check for weekend days to improve performance
-                weekend_dates = sorted([
-                    d for d in self.worker_assignments[worker_id] 
-                    if (d.weekday() >= 4 or d in self.holidays or 
-                        (d + timedelta(days=1)) in self.holidays)
-                ])
-            
-                # For each existing weekend assignment, check if it forms part of 3 consecutive weekends
-                for check_date in weekend_dates:
-                    window_start = check_date - timedelta(days=10)  # 10 days before
-                    window_end = check_date + timedelta(days=10)    # 10 days after
-                
-                    # If the date we're considering is within this window
-                    if window_start <= date <= window_end:
-                        # Count weekend days in this window (excluding the new date)
-                        window_weekend_count = sum(
-                            1 for d in weekend_dates
-                            if window_start <= d <= window_end
-                        )
-                    
-                        # If worker already has 3 weekend shifts in this window, they're unavailable
-                        if window_weekend_count >= 3:
-                            logging.debug(f"Worker {worker_id} already has 3 weekend shifts in 3-week window around {check_date}")
-                            return True
-
-            return False
-
-        except Exception as e:
-            logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
-            return True
-
     def _check_incompatibility(self, worker_id, date):
         """Check if worker is incompatible with already assigned workers"""
         try:
@@ -1824,13 +1765,6 @@ class Scheduler:
     def _is_worker_unavailable(self, worker_id, date):
         """
         Check if worker is unavailable on a specific date
-        
-        Args:
-            worker_id: The worker's ID
-            date: Date to check availability
-            
-        Returns:
-            bool: True if worker is unavailable, False otherwise
         """
         try:
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
@@ -1845,7 +1779,6 @@ class Scheduler:
             # Check work periods
             if worker.get('work_periods'):
                 work_periods = self._parse_date_ranges(worker['work_periods'])
-                # If work periods are specified, worker is unavailable if date is not in any work period
                 if not any(start <= date <= end for start, end in work_periods):
                     logging.debug(f"Worker {worker_id} is not in work period on {date}")
                     return True
@@ -1855,11 +1788,38 @@ class Scheduler:
                 logging.debug(f"Worker {worker_id} is already assigned on {date}")
                 return True
 
+            # NEW CHECK: If this is a weekend day, check if worker already has 3 weekend shifts in any 3-week period
+            if self._is_weekend_day(date):
+                # Only perform this check for weekend days to improve performance
+                weekend_dates = sorted([
+                    d for d in self.worker_assignments[worker_id] 
+                    if (d.weekday() >= 4 or d in self.holidays or 
+                        (d + timedelta(days=1)) in self.holidays)
+                ])
+            
+                # For each existing weekend assignment, check if it forms part of 3 consecutive weekends
+                for check_date in weekend_dates:
+                    window_start = check_date - timedelta(days=10)  # 10 days before
+                    window_end = check_date + timedelta(days=10)    # 10 days after
+                
+                    # If the date we're considering is within this window
+                    if window_start <= date <= window_end:
+                        # Count weekend days in this window (excluding the new date)
+                        window_weekend_count = sum(
+                            1 for d in weekend_dates
+                            if window_start <= d <= window_end
+                        )
+                    
+                        # If worker already has 3 weekend shifts in this window, they're unavailable
+                        if window_weekend_count >= 3:
+                            logging.debug(f"Worker {worker_id} already has 3 weekend shifts in 3-week window around {check_date}")
+                            return True
+
             return False
 
         except Exception as e:
             logging.error(f"Error checking worker {worker_id} availability: {str(e)}")
-            return True  # Assume unavailable in case of error
+            return True
 
     def _calculate_weekday_imbalance(self, worker_id, date):
         """Calculate how much this assignment would affect weekday balance"""
