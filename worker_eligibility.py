@@ -154,12 +154,9 @@ class WorkerEligibilityTracker:
         """
         # Update last worked date if needed
         if self.last_worked_date[worker_id] == date:
-            # Find the next most recent assignment
-            assignments = sorted([
-                d for d in self.worker_assignments[worker_id]
-                if d != date
-            ])
-            self.last_worked_date[worker_id] = assignments[-1] if assignments else None
+            # Since we don't track all assignments here, we can't determine the next most recent assignment
+            # Just set it to None to indicate no recent assignment
+            self.last_worked_date[worker_id] = None
     
         # Decrement total assignments
         self.total_assignments[worker_id] = max(0, self.total_assignments[worker_id] - 1)
