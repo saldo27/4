@@ -756,7 +756,7 @@ class Scheduler:
         self._ensure_data_integrity()
     
         # Verify and fix data consistency before proceeding
-       self._verify_assignment_consistency()        # Find workers with imbalanced post distribution
+        self._verify_assignment_consistency()        # Find workers with imbalanced post distribution
         imbalanced_workers = []
     
         for worker in self.workers_data:
