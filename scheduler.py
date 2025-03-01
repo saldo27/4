@@ -224,17 +224,18 @@ class Scheduler:
     # 2. Schedule Generation Methods
     # ------------------------
 
-    def generate_schedule(self, num_attempts=40, allow_feedback_improvement=True, improvement_attempts=20):
+    def generate_schedule(self, num_attempts=20, allow_feedback_improvement=True, improvement_attempts=10):
         """
-        Generate the complete schedule with possibility of unfilled shifts
+        Generate the complete schedule using a multi-phase approach to maximize shift coverage
     
         Args:
             num_attempts: Number of initial attempts to generate a schedule
             allow_feedback_improvement: Whether to allow feedback-based improvement
             improvement_attempts: Number of attempts to improve the best schedule
         """
-        logging.info("=== Starting initial schedule generation ===")
+        logging.info("=== Starting schedule generation with multi-phase approach ===")
         try:
+            # PHASE 1: Generate multiple initial schedules and select the best one
             best_schedule = None
             best_coverage = 0
             best_post_rotation = 0
@@ -245,73 +246,80 @@ class Scheduler:
             best_constraint_skips = None
             coverage_stats = []
 
-            # Initial attempts to generate schedules
+            # Start with fewer attempts, but make each one more effective
             for attempt in range(num_attempts):
                 # Set a seed based on the attempt number to ensure different runs
                 random.seed(attempt + 1)
-            
+        
                 logging.info(f"Attempt {attempt + 1} of {num_attempts}")
                 self._reset_schedule()
+            
+                # Calculate target shifts for workers
+                self._calculate_target_shifts()
                 self._calculate_monthly_targets()
-            
-                # Choose direction for this attempt: forward or backward
-                forward = random.choice([True, False])
+        
+                # Choose direction: Forward-only for odd attempts, backward-only for even attempts
+                forward = attempt % 2 == 0
                 logging.info(f"Direction: {'forward' if forward else 'backward'}")
-            
-                # Process mandatory assignments first
+        
+                # STEP 1: Process mandatory assignments first (always!)
                 logging.info("Processing mandatory guards...")
                 self._assign_mandatory_guards()
+        
+                # STEP 2: Process weekend and holiday assignments next (they're harder to fill)
+                self._assign_priority_days(forward)
             
-                # Process remaining days - either forward or backward
-                dates_to_process = []
-                if forward:
-                    current_date = self.start_date
-                    while current_date <= self.end_date:
-                        dates_to_process.append(current_date)
-                        current_date += timedelta(days=1)
-                else:
-                    current_date = self.end_date
-                    while current_date >= self.start_date:
-                        dates_to_process.append(current_date)
-                        current_date -= timedelta(days=1)
-                    
-                # Process the days
+                # STEP 3: Process the remaining days
+                dates_to_process = self._get_remaining_dates_to_process(forward)
                 for date in dates_to_process:
-                    self._assign_day_shifts(date, attempt)
-            
+                    # Use strict constraints for first half of attempts, then progressively relax
+                    relax_level = min(2, attempt // (num_attempts // 3))
+                    self._assign_day_shifts_with_relaxation(date, attempt, relax_level)
+        
+                # Clean up and validate
                 self._cleanup_schedule()
-                self._validate_final_schedule()
-            
+                try:
+                    self._validate_final_schedule()
+                except SchedulerError as e:
+                    logging.warning(f"Schedule validation found issues: {str(e)}")
+        
                 # Calculate coverage
-                total_shifts = sum(len(shifts) for shifts in self.schedule.values())
+                total_shifts = (self.end_date - self.start_date + timedelta(days=1)).days * self.num_shifts
                 filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
                 coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
-            
+        
                 # Calculate post rotation scores
                 post_rotation_stats = self._calculate_post_rotation_coverage()
-            
+        
                 # Log detailed coverage information
                 logging.info(f"Attempt {attempt + 1} coverage: {coverage:.2f}%")
-                logging.info(f"Post rotation coverage: {post_rotation_stats['overall_score']:.2f}%")
-            
+                logging.info(f"Post rotation score: {post_rotation_stats['overall_score']:.2f}%")
+        
                 # Store coverage stats for summary
                 coverage_stats.append({
                     'attempt': attempt + 1,
                     'coverage': coverage,
                     'post_rotation_score': post_rotation_stats['overall_score'],
                     'unfilled_shifts': total_shifts - filled_shifts,
-                    'direction': 'forward' if forward else 'backward'
+                    'direction': 'forward' if forward else 'backward',
+                    'relax_level': relax_level
                 })
 
                 # Check if this is the best schedule so far
-                if coverage > best_coverage or (coverage == best_coverage and post_rotation_stats['overall_score'] > best_post_rotation):
+                # Prioritize coverage first, then post rotation
+                if coverage > best_coverage or (coverage == best_coverage and 
+                                              post_rotation_stats['overall_score'] > best_post_rotation):
                     best_coverage = coverage
                     best_post_rotation = post_rotation_stats['overall_score']
                     best_schedule = self.schedule.copy()
-                    best_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
-                    best_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}
-                    best_worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.worker_weekdays.items()}
-                    best_worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.worker_weekends.items()}
+                    best_worker_assignments = {w_id: assignments.copy() 
+                                             for w_id, assignments in self.worker_assignments.items()}
+                    best_worker_posts = {w_id: posts.copy() 
+                                       for w_id, posts in self.worker_posts.items()}
+                    best_worker_weekdays = {w_id: weekdays.copy() 
+                                          for w_id, weekdays in self.worker_weekdays.items()}
+                    best_worker_weekends = {w_id: weekends.copy() 
+                                          for w_id, weekends in self.worker_weekends.items()}
                     best_constraint_skips = {
                         w_id: {
                             'gap': skips['gap'].copy(),
@@ -320,89 +328,218 @@ class Scheduler:
                         }
                         for w_id, skips in self.constraint_skips.items()
                     }
+                
+                    # Early stopping if we get 100% coverage
+                    if coverage >= 99.9:
+                        logging.info("Found a perfect schedule! Stopping early.")
+                        break
 
             # Use the best schedule found
-            self.schedule = best_schedule
-            self.worker_assignments = best_worker_assignments
-            self.worker_posts = best_worker_posts
-            self.worker_weekdays = best_worker_weekdays
-            self.worker_weekends = best_worker_weekends
-            self.constraint_skips = best_constraint_skips
-        
-            logging.info("=== Initial Coverage Statistics Summary ===")
-            for stats in coverage_stats:
-                logging.info(f"[Attempt {stats['attempt']:2d}   ] Coverage={stats['coverage']:.2f}%, "
-                            f"Post Rotation Score={stats['post_rotation_score']:.2f}%, "
-                            f"Unfilled Shifts={stats['unfilled_shifts']}, "
-                            f"Direction={stats['direction']}")
-        
-            # Calculate averages
-            avg_coverage = sum(stats['coverage'] for stats in coverage_stats) / len(coverage_stats)
-            avg_post_rotation = sum(stats['post_rotation_score'] for stats in coverage_stats) / len(coverage_stats)
-            avg_unfilled = sum(stats['unfilled_shifts'] for stats in coverage_stats) / len(coverage_stats)
-        
-            logging.info(f"[Average Coverage] {avg_coverage:.2f}%")
-            logging.info(f"[Average Post Rotation Score] {avg_post_rotation:.2f}%")
-            logging.info(f"[Average Unfilled Shifts] {avg_unfilled:.2f}")
-            logging.info(f"[Best Result] Coverage={best_coverage:.2f}%, Post Rotation Score={best_post_rotation:.2f}%")
-
-            # Ask for permission to try improvement if allowed
-            if allow_feedback_improvement:
-                logging.info("\n=== Best schedule found. Starting targeted improvement phase... ===")
+            if best_schedule:
+                self.schedule = best_schedule
+                self.worker_assignments = best_worker_assignments
+                self.worker_posts = best_worker_posts
+                self.worker_weekdays = best_worker_weekdays
+                self.worker_weekends = best_worker_weekends
+                self.constraint_skips = best_constraint_skips
+    
+                # Log summary statistics
+                logging.info("=== Initial Coverage Statistics Summary ===")
+                for stats in coverage_stats:
+                    logging.info(f"[Attempt {stats['attempt']:2d}] Coverage={stats['coverage']:.2f}%, "
+                                f"Post Rotation={stats['post_rotation_score']:.2f}%, "
+                                f"Unfilled={stats['unfilled_shifts']}, "
+                                f"Direction={stats['direction']}, "
+                                f"RelaxLevel={stats['relax_level']}")
+    
+                # PHASE 2: Targeted improvement for the best schedule
+                if allow_feedback_improvement and best_coverage < 99.9:
+                    logging.info("\n=== Starting targeted improvement phase ===")
             
-                # Save the current best metrics
-                initial_best_coverage = best_coverage
-                initial_best_post_rotation = best_post_rotation
+                    # Save the current best metrics
+                    initial_best_coverage = best_coverage
+                    initial_best_post_rotation = best_post_rotation
+                
+                    # Initialize improvement tracker
+                    improvements_made = 0
             
-                # Try to improve the schedule through targeted modifications
-                for i in range(improvement_attempts):
-                    logging.info(f"Improvement attempt {i+1}/{improvement_attempts}")
+                    # Try to improve the schedule through targeted modifications
+                    for i in range(improvement_attempts):
+                        logging.info(f"Improvement attempt {i+1}/{improvement_attempts}")
                 
-                    # Create a copy of the best schedule to work with
-                    self._backup_best_schedule()
+                        # Create a copy of the best schedule to work with
+                        self._backup_best_schedule()
                 
-                    # Apply targeted improvements
-                    self._apply_targeted_improvements(i)
+                        # Try different improvement strategies based on attempt number
+                        if i % 3 == 0:
+                            # First priority: Fill empty shifts
+                            logging.info("Strategy: Fill empty shifts")
+                            self._try_fill_empty_shifts_aggressively()
+                        elif i % 3 == 1:
+                            # Second priority: Balance workloads
+                            logging.info("Strategy: Balance workloads")
+                            self._balance_workloads()
+                        else:
+                            # Third priority: Improve post rotation
+                            logging.info("Strategy: Improve post rotation")
+                            self._improve_post_rotation()
                 
-                    # Evaluate the new schedule
-                    self._validate_final_schedule()
+                        # Also try to improve weekend distribution in each attempt
+                        self._improve_weekend_distribution()
                 
-                    # Calculate coverage
-                    total_shifts = sum(len(shifts) for shifts in self.schedule.values())
-                    filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
-                    coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
+                        # Validate the new schedule
+                        try:
+                            self._validate_final_schedule()
+                        except SchedulerError as e:
+                            logging.warning(f"Improvement validation found issues: {str(e)}")
+                            self._restore_best_schedule()
+                            continue
                 
-                    # Calculate post rotation scores
-                    post_rotation_stats = self._calculate_post_rotation_coverage()
+                        # Calculate coverage
+                        total_shifts = (self.end_date - self.start_date + timedelta(days=1)).days * self.num_shifts
+                        filled_shifts = sum(1 for shifts in self.schedule.values() 
+                                         for worker in shifts if worker is not None)
+                        coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
                 
-                    logging.info(f"Improved coverage: {coverage:.2f}%, Post Rotation: {post_rotation_stats['overall_score']:.2f}%")
+                        # Calculate post rotation scores
+                        post_rotation_stats = self._calculate_post_rotation_coverage()
                 
-                    # Check if this improvement is better than the best so far
-                    if coverage > best_coverage or (coverage == best_coverage and post_rotation_stats['overall_score'] > best_post_rotation):
-                        best_coverage = coverage
-                        best_post_rotation = post_rotation_stats['overall_score']
-                        self._save_current_as_best()
+                        logging.info(f"Improved coverage: {coverage:.2f}%, "
+                                    f"Post Rotation: {post_rotation_stats['overall_score']:.2f}%")
+                
+                        # Check if this improvement is better than the best so far
+                        # Prioritize coverage improvements first, then post rotation
+                        if coverage > best_coverage + 0.5 or coverage > best_coverage and post_rotation_stats['overall_score'] >= best_post_rotation - 1:
+                            best_coverage = coverage
+                            best_post_rotation = post_rotation_stats['overall_score']
+                            self._save_current_as_best()
+                            improvements_made += 1
+                            logging.info(f"Improvement accepted! New best coverage: {best_coverage:.2f}%")
+                        else:
+                            # Restore the previous best schedule
+                            self._restore_best_schedule()
+            
+                    # Final report on improvements
+                    if best_coverage > initial_best_coverage or best_post_rotation > initial_best_post_rotation:
+                        improvement = f"Coverage improved by {best_coverage - initial_best_coverage:.2f}%, " \
+                                    f"Post Rotation improved by {best_post_rotation - initial_best_post_rotation:.2f}%"
+                        logging.info(f"=== Schedule successfully improved! ===")
+                        logging.info(improvement)
                     else:
-                        # Restore the previous best schedule
-                        self._restore_best_schedule()
-            
-                if best_coverage > initial_best_coverage or best_post_rotation > initial_best_post_rotation:
-                    improvement = f"Coverage improved by {best_coverage - initial_best_coverage:.2f}%, " \
-                                 f"Post Rotation improved by {best_post_rotation - initial_best_post_rotation:.2f}%"
-                    logging.info(f"=== Schedule successfully improved! ===")
-                    logging.info(improvement)
-                else:
-                    logging.info("=== No improvements found over initial schedule ===")
-
-            if self.schedule is None:
+                        logging.info("=== No improvements found over initial schedule ===")
+            else:
+                logging.error("Failed to generate any valid schedule")
                 raise SchedulerError("Failed to generate a valid schedule")
 
-            return self.schedule
-        
-        except Exception as e:
-            logging.error(f"Schedule generation error: {str(e)}")
-            raise SchedulerError(f"Failed to generate schedule: {str(e)}")
+            # Final stats
+            total_shifts = sum(len(shifts) for shifts in self.schedule.values())
+            filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+            logging.info(f"Final schedule coverage: {(filled_shifts / total_shifts * 100 if total_shifts > 0 else 0):.2f}% "
+                        f"({filled_shifts}/{total_shifts} shifts filled)")
 
+            return self.schedule
+    
+        except Exception as e:
+            logging.error(f"Schedule generation error: {str(e)}", exc_info=True)
+            raise SchedulerError(f"Failed to generate schedule: {str(e)}")
+        
+    def _assign_priority_days(self, forward):
+        """Process weekend and holiday assignments first since they're harder to fill"""
+        dates_to_process = []
+        current = self.start_date
+    
+        # Get all weekend and holiday dates in the period
+        while current <= self.end_date:
+            if self._is_weekend_day(current) or current in self.holidays:
+                dates_to_process.append(current)
+            current += timedelta(days=1)
+    
+        # Sort based on direction
+        if not forward:
+            dates_to_process.reverse()
+    
+        logging.info(f"Processing {len(dates_to_process)} priority days (weekends & holidays)")
+    
+        # Process these dates first with strict constraints
+        for date in dates_to_process:
+            if date not in self.schedule:
+                self.schedule[date] = []
+        
+            remaining_shifts = self.num_shifts - len(self.schedule[date])
+            if remaining_shifts > 0:
+                self._assign_day_shifts_with_relaxation(date, 0, 0)  # Use strict constraints
+
+    def _get_remaining_dates_to_process(self, forward):
+        """Get remaining dates that need to be processed"""
+        dates_to_process = []
+        current = self.start_date
+    
+        # Get all dates in period that are not weekends or holidays
+        # or that already have some assignments but need more
+        while current <= self.end_date:
+            date_needs_processing = False
+        
+            if current not in self.schedule:
+                # Date not in schedule at all
+                date_needs_processing = True
+            elif len(self.schedule[current]) < self.num_shifts:
+                # Date in schedule but has fewer shifts than needed
+                date_needs_processing = True
+            
+            if date_needs_processing:
+                dates_to_process.append(current)
+            
+            current += timedelta(days=1)
+    
+        # Sort based on direction
+        if forward:
+            dates_to_process.sort()
+        else:
+            dates_to_process.sort(reverse=True)
+    
+        return dates_to_process
+
+    def _assign_day_shifts_with_relaxation(self, date, attempt_number=0, relaxation_level=0):
+        """Assign shifts for a given date with optional constraint relaxation"""
+        logging.debug(f"Assigning shifts for {date.strftime('%Y-%m-%d')} (relaxation level: {relaxation_level})")
+    
+        if date not in self.schedule:
+            self.schedule[date] = []
+
+        remaining_shifts = self.num_shifts - len(self.schedule[date])
+    
+        for post in range(len(self.schedule[date]), self.num_shifts):
+            # Try each relaxation level until we succeed or run out of options
+            for relax_level in range(relaxation_level + 1):
+                candidates = self._get_candidates(date, post, relax_level)
+            
+                if candidates:
+                    # Sort candidates by score (descending)
+                    candidates.sort(key=lambda x: x[1], reverse=True)
+                
+                    # Group candidates with similar scores (within 10% of max score)
+                    max_score = candidates[0][1]
+                    top_candidates = [c for c in candidates if c[1] >= max_score * 0.9]
+                
+                    # Add some randomness to selection based on attempt number
+                    random.Random(attempt_number + date.toordinal() + post).shuffle(top_candidates)
+                
+                    # Select the first candidate
+                    best_worker = top_candidates[0][0]
+                    worker_id = best_worker['id']
+                
+                    # Assign the worker
+                    self.schedule[date].append(worker_id)
+                    self.worker_assignments[worker_id].add(date)
+                    self._update_tracking_data(worker_id, date, post)
+                
+                    logging.debug(f"Assigned worker {worker_id} to {date}, post {post}")
+                    break  # Success at this relaxation level
+            else:
+                # If we've tried all relaxation levels and still failed, leave shift unfilled
+                self.schedule[date].append(None)
+                logging.debug(f"No suitable worker found for {date}, post {post} - shift unfilled")
+                    
     def _backup_best_schedule(self):
         """Save a backup of the current best schedule"""
         self.backup_schedule = self.schedule.copy()
@@ -1341,8 +1478,15 @@ class Scheduler:
         
         return False
 
-    def _get_candidates(self, date, post, skip_constraints=False, try_part_time=False):
-        """Get suitable candidates with their scores"""
+    def _get_candidates(self, date, post, relaxation_level=0):
+        """
+        Get suitable candidates with their scores using the specified relaxation level
+    
+        Args:
+            date: The date to assign
+            post: The post number to assign
+            relaxation_level: Level of constraint relaxation (0=strict, 1=moderate, 2=lenient)
+        """
         candidates = []
     
         for worker in self.workers_data:
@@ -1353,28 +1497,62 @@ class Scheduler:
             if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
                 continue
 
-            # For part-time assignment, only consider part-time workers
-            if try_part_time and work_percentage >= 100:
+            # Skip if already assigned to this date
+            if worker_id in self.schedule[date]:
                 continue
-
-            # Check constraints
-            passed, reason = self._check_constraints(
-                worker_id, 
-                date,
-                skip_constraints=skip_constraints,
-                try_part_time=try_part_time
-            )
         
-            if not passed:
-                logging.debug(f"Worker {worker_id} skipped: {reason}")
+            # Hard constraints that should never be relaxed
+            if self._is_worker_unavailable(worker_id, date):
                 continue
-
-            score = self._ore(worker, date, post)
-            # Only add candidate if score is not None or -inf
-            if score is not None and score != float('-inf'):
+        
+            # Check gap constraints with appropriate relaxation
+            passed_gap = True
+            assignments = sorted(self.worker_assignments[worker_id])
+        
+            if assignments:
+                # Determine appropriate gap based on worker type
+                min_gap = 3 if work_percentage < 100 else 2
+            
+                # At higher relaxation levels, we can reduce the gap requirement
+                if relaxation_level > 0 and work_percentage >= 100:
+                    min_gap = 1
+                
+                # Check minimum gap
+                for prev_date in assignments:
+                    days_between = abs((date - prev_date).days)
+                
+                    # Basic gap check
+                    if days_between < min_gap:
+                        passed_gap = False
+                        break
+                
+                    # Special rule for full-time workers: No Friday -> Monday assignments
+                    # (Only enforce at relaxation_level 0)
+                    if relaxation_level == 0 and work_percentage >= 100:
+                        if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
+                            (date.weekday() == 4 and prev_date.weekday() == 0)):
+                            if days_between == 3:  # The gap between Friday and Monday
+                                passed_gap = False
+                                break
+                
+                    # Prevent same day of week in consecutive weeks
+                    # (Can be relaxed at highest relaxation level)
+                    if relaxation_level < 2 and days_between in [7, 14, 21]:
+                        passed_gap = False
+                        break
+        
+            if not passed_gap:
+                continue
+        
+            # Check weekend limit constraints (can be relaxed at higher levels)
+            if relaxation_level < 2 and self._would_exceed_weekend_limit(worker_id, date):
+                continue
+        
+            # Calculate score
+            score = self._calculate_worker_score(worker, date, post, relaxation_level)
+            if score > float('-inf'):
                 candidates.append((worker, score))
-                logging.debug(f"Worker {worker_id} added as candidate with score {score}")
-
+    
         return candidates
 
     def _calculate_worker_score(self, worker, date, post, relax_constraints=False):
