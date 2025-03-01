@@ -2662,7 +2662,7 @@ class Scheduler:
     def _get_post_counts(self, worker_id):
         """
         Get count of assignments per post for a worker
-        
+    
         Args:
             worker_id: The worker's ID
         Returns:
@@ -2671,8 +2671,15 @@ class Scheduler:
         post_counts = {i: 0 for i in range(self.num_shifts)}
         for assigned_date in self.worker_assignments[worker_id]:
             if assigned_date in self.schedule:
-                post = self.schedule[assigned_date].index(worker_id)
-                post_counts[post] += 1
+                try:
+                    # Try to find the worker in the schedule
+                    post = self.schedule[assigned_date].index(worker_id)
+                    post_counts[post] += 1
+                except ValueError:
+                    # Worker not found in the schedule for this date
+                    logging.warning(f"Worker {worker_id} has assignment for date {assigned_date} but is not in the schedule")
+                    # Remove this inconsistent assignment from worker_assignments
+                    # self.worker_assignments[worker_id].discard(assigned_date)
         return post_counts
         
     def _get_monthly_distribution(self, worker_id):
