@@ -224,7 +224,7 @@ class Scheduler:
     # 2. Schedule Generation Methods
     # ------------------------
 
-    def generate_schedule(self, num_attempts=20, allow_feedback_improvement=True, improvement_attempts=10):
+    def generate_schedule(self, num_attempts=60, allow_feedback_improvement=True, improvement_attempts=20):
         """
         Generate the complete schedule using a multi-phase approach to maximize shift coverage
     
@@ -374,7 +374,7 @@ class Scheduler:
                         if i % 3 == 0:
                             # First priority: Fill empty shifts
                             logging.info("Strategy: Fill empty shifts")
-                            self._try_fill_empty_shifts_aggressively()
+                            self._try_fill_empty_shifts()
                         elif i % 3 == 1:
                             # Second priority: Balance workloads
                             logging.info("Strategy: Balance workloads")
