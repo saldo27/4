@@ -1319,8 +1319,19 @@ class Scheduler:
             assignments = sorted(list(self.worker_assignments[worker_id]))
             if assignments:
                 days_since_last = (date - assignments[-1]).days
-                if days_since_last < 3:
+                work_percentage = worker.get('work_percentage', 100)
+                min_gap = 3 if work_percentage < 100 else 2
+    
+                if days_since_last < min_gap:
                     return float('-inf')
+    
+                # Special rule: Prevent Friday + Monday assignments for full-time workers
+                if work_percentage == 100:
+                    for prev_date in assignments:
+                        if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
+                            (prev_date.weekday() == 0 and date.weekday() == 4)):
+                            if abs((date - prev_date).days) == 3:  # This means Friday to Monday or Monday to Friday
+                                return float('-inf')
                     
             # Check weekend limit - reject if would exceed
             if self._would_exceed_weekend_limit(worker_id, date):
