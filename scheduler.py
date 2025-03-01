@@ -752,8 +752,11 @@ class Scheduler:
     
     def _improve_post_rotation(self):
         """Improve post rotation by swapping assignments"""
+        # Ensure data consistency before proceeding
+        self._ensure_data_integrity()
+    
         # Verify and fix data consistency before proceeding
-        self._verify_assignment_consistency()        # Find workers with imbalanced post distribution
+       self._verify_assignment_consistency()        # Find workers with imbalanced post distribution
         imbalanced_workers = []
     
         for worker in self.workers_data:
@@ -896,6 +899,9 @@ class Scheduler:
         - Minimum gap requirements
         - Weekend limits
         """
+        # Ensure data consistency before proceeding
+        self._ensure_data_integrity()
+        
         # Check if worker is unavailable on the target date (days off)
         if self._is_worker_unavailable(worker_id, to_date):
             return False
@@ -1011,6 +1017,9 @@ class Scheduler:
         Verify that worker_assignments and schedule are consistent with each other
         and fix any inconsistencies found
         """
+       
+        # Ensure data consistency before proceeding
+        self._ensure_data_integrity()
         # Check each worker's assignments
         for worker_id, dates in self.worker_assignments.items():
             dates_to_remove = []
@@ -1045,6 +1054,9 @@ class Scheduler:
         """
         logging.info("Attempting to improve weekend distribution")
     
+        # Ensure data consistency before proceeding
+        self._ensure_data_integrity()
+
         # Count weekend assignments for each worker by month
         weekend_counts_by_month = {}
     
@@ -1163,6 +1175,8 @@ class Scheduler:
         Balance the total number of assignments among workers based on their work percentages
         """
         logging.info("Attempting to balance worker workloads")
+        # Ensure data consistency before proceeding
+        self._ensure_data_integrity()
 
         # First verify and fix data consistency
         self._verify_assignment_consistency()
@@ -3142,6 +3156,8 @@ class Scheduler:
                 del self.schedule[date]
 
         logging.info(f"Schedule cleanup complete. Removed {len(incomplete_days)} empty days.")
+        # Ensure data consistency before proceeding
+        self._ensure_data_integrity()
 
     def _validate_final_schedule(self):
         """Modified validation to allow for unfilled shifts"""
