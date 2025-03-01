@@ -224,6 +224,73 @@ class Scheduler:
     # 2. Schedule Generation Methods
     # ------------------------
 
+    def _ensure_data_integrity(self):
+        """
+        Comprehensive check and fix for data integrity between all scheduler data structures
+        """
+        # 1. Check worker_assignments against schedule
+        for worker_id, dates in self.worker_assignments.items():
+            # Remove dates that are not in schedule or where worker is not assigned
+            dates_to_remove = [
+                date for date in dates
+                if date not in self.schedule or worker_id not in self.schedule[date]
+        ]
+            for date in dates_to_remove:
+                dates.discard(date)
+                logging.warning(f"Fixed inconsistency: Removed {date} from worker {worker_id}'s assignments")
+    
+        # 2. Check schedule against worker_assignments
+        for date, workers in self.schedule.items():
+            for post, worker_id in enumerate(workers):
+                if worker_id is not None and date not in self.worker_assignments.get(worker_id, set()):
+                    # Add missing assignment
+                    self.worker_assignments[worker_id].add(date)
+                    logging.warning(f"Fixed inconsistency: Added {date} to worker {worker_id}'s assignments")
+    
+        # 3. Verify worker_weekends consistency
+        for worker_id in self.worker_assignments:
+            correct_weekends = []
+            for date in sorted(self.worker_assignments[worker_id]):
+                if self._is_weekend_day(date):
+                    weekend_start = self._get_weekend_start(date)
+                    if weekend_start not in correct_weekends:
+                        correct_weekends.append(weekend_start)
+        
+            # Update if inconsistent
+            if sorted(correct_weekends) != sorted(self.worker_weekends[worker_id]):
+                self.worker_weekends[worker_id] = sorted(correct_weekends)
+                logging.warning(f"Fixed inconsistency: Updated weekend data for worker {worker_id}")
+    
+        # 4. Verify worker_weekdays consistency
+        for worker_id in self.worker_assignments:
+            corrected_weekdays = {i: 0 for i in range(7)}
+            for date in self.worker_assignments[worker_id]:
+                weekday = date.weekday()
+                corrected_weekdays[weekday] += 1
+        
+            # Update if inconsistent
+            for weekday, count in corrected_weekdays.items():
+                if self.worker_weekdays[worker_id][weekday] != count:
+                    self.worker_weekdays[worker_id][weekday] = count
+                    logging.warning(f"Fixed inconsistency: Updated weekday {weekday} count for worker {worker_id}")
+    
+        # 5. Verify worker_posts consistency
+        for worker_id in self.worker_assignments:
+            correct_posts = set()
+            for date in self.worker_assignments[worker_id]:
+                if date in self.schedule and worker_id in self.schedule[date]:
+                    try:
+                        post = self.schedule[date].index(worker_id)
+                        correct_posts.add(post)
+                    except ValueError:
+                        # Worker not found in schedule for this date
+                        logging.warning(f"Worker {worker_id} has assignment for date {date} but is not in schedule")
+        
+            # Update if inconsistent
+            if correct_posts != self.worker_posts[worker_id]:
+                self.worker_posts[worker_id] = correct_posts
+                logging.warning(f"Fixed inconsistency: Updated posts for worker {worker_id}")
+                
     def generate_schedule(self, num_attempts=60, allow_feedback_improvement=True, improvement_attempts=20):
         """
         Generate the complete schedule using a multi-phase approach to maximize shift coverage
@@ -235,6 +302,9 @@ class Scheduler:
         """
         logging.info("=== Starting schedule generation with multi-phase approach ===")
         try:
+            # Ensure data structures are consistent before we start
+            self._ensure_data_integrity()
+            
             # PHASE 1: Generate multiple initial schedules and select the best one
             best_schedule = None
             best_coverage = 0
