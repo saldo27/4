@@ -157,7 +157,7 @@ class WorkerDetailsScreen(Screen):
         self.layout.add_widget(self.title_label)
 
         # Form layout
-        scroll = ScrollView(size_hint=(1, 0.8))
+        scroll = ScrollView(size_hint=(1, 0.7))  # Reduced size to make room for buttons
         self.form_layout = GridLayout(cols=2, spacing=10, size_hint_y=None, padding=10)
         self.form_layout.bind(minimum_height=self.form_layout.setter('height'))
 
@@ -225,10 +225,25 @@ class WorkerDetailsScreen(Screen):
         scroll.add_widget(self.form_layout)
         self.layout.add_widget(scroll)
 
-        # Continue Button
-        self.continue_btn = Button(text='Continue', size_hint_y=0.1)
-        self.continue_btn.bind(on_press=self.save_and_continue)
-        self.layout.add_widget(self.continue_btn)
+        # Navigation buttons layout
+        navigation_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
+        
+        # Previous Button
+        self.prev_btn = Button(text='Previous', size_hint_x=0.33)
+        self.prev_btn.bind(on_press=self.go_to_previous_worker)
+        navigation_layout.add_widget(self.prev_btn)
+        
+        # Save Button
+        self.save_btn = Button(text='Save', size_hint_x=0.33)
+        self.save_btn.bind(on_press=self.save_worker_data)
+        navigation_layout.add_widget(self.save_btn)
+        
+        # Next/Finish Button
+        self.next_btn = Button(text='Next', size_hint_x=0.33)
+        self.next_btn.bind(on_press=self.go_to_next_worker)
+        navigation_layout.add_widget(self.next_btn)
+        
+        self.layout.add_widget(navigation_layout)
 
         self.add_widget(self.layout)
 
@@ -255,57 +270,148 @@ class WorkerDetailsScreen(Screen):
             return True
         except ValueError:
             return False
-        
-    def save_and_continue(self, instance):
+    
+    def validate_worker_data(self):
+        """Validate all worker data fields"""
         if not self.worker_id.text.strip():
             self.show_error("Worker ID is required")
-            return
+            return False
 
         try:
             work_percentage = float(self.work_percentage.text or '100')
             if not (0 < work_percentage <= 100):
                 self.show_error("Work percentage must be between 0 and 100")
-                return
+                return False
         except ValueError:
             self.show_error("Invalid work percentage")
-            return
+            return False
 
         # Validate work periods (allowing ranges)
         if not self.validate_dates(self.work_periods.text, allow_ranges=True):
             self.show_error("Invalid work periods format.\nFormat: DD-MM-YYYY or DD-MM-YYYY - DD-MM-YYYY\nSeparate multiple entries with semicolons")
-            return
+            return False
 
         # Validate mandatory days (not allowing ranges)
         if not self.validate_dates(self.mandatory_days.text, allow_ranges=False):
             self.show_error("Invalid mandatory days format.\nFormat: DD-MM-YYYY\nSeparate multiple days with semicolons")
-            return
+            return False
 
         # Validate days off (allowing ranges)
         if not self.validate_dates(self.days_off.text, allow_ranges=True):
             self.show_error("Invalid days off format.\nFormat: DD-MM-YYYY or DD-MM-YYYY - DD-MM-YYYY\nSeparate multiple entries with semicolons")
+            return False
+            
+        return True
+        
+    def save_worker_data(self, instance):
+        """Save current worker data without advancing to the next worker"""
+        if not self.validate_worker_data():
             return
-
+            
         app = App.get_running_app()
         worker_data = {
             'id': self.worker_id.text.strip(),
             'work_periods': self.work_periods.text.strip(),
-            'work_percentage': work_percentage,
+            'work_percentage': float(self.work_percentage.text or '100'),
             'mandatory_days': self.mandatory_days.text.strip(),
             'days_off': self.days_off.text.strip(),
             'is_incompatible': self.incompatible_checkbox.active
         }
 
+        # Get current index
+        current_index = app.schedule_config.get('current_worker_index', 0)
+        
+        # Initialize workers_data if needed
         if 'workers_data' not in app.schedule_config:
             app.schedule_config['workers_data'] = []
-        app.schedule_config['workers_data'].append(worker_data)
-
-        current_index = app.schedule_config['current_worker_index']
-        if current_index < app.schedule_config['num_workers'] - 1:
-            app.schedule_config['current_worker_index'] = current_index + 1
-            self.clear_inputs()
-            self.on_enter()
+            
+        # Update or append worker data
+        if current_index < len(app.schedule_config['workers_data']):
+            # Update existing worker
+            app.schedule_config['workers_data'][current_index] = worker_data
         else:
+            # Add new worker
+            app.schedule_config['workers_data'].append(worker_data)
+            
+        # Show confirmation
+        popup = Popup(
+            title='Success',
+            content=Label(text='Worker data saved!'),
+            size_hint=(None, None), 
+            size=(300, 150)
+        )
+        popup.open()
+            
+    def go_to_previous_worker(self, instance):
+        """Navigate to the previous worker"""
+        app = App.get_running_app()
+        current_index = app.schedule_config.get('current_worker_index', 0)
+        
+        # Save current worker data
+        if self.validate_worker_data():
+            self.save_worker_data(None)
+            
+            if current_index > 0:
+                # Move to previous worker
+                app.schedule_config['current_worker_index'] = current_index - 1
+                self.load_worker_data()
+        
+    def go_to_next_worker(self, instance):
+        """Navigate to the next worker or finalize if last worker"""
+        if not self.validate_worker_data():
+            return
+            
+        app = App.get_running_app()
+        current_index = app.schedule_config.get('current_worker_index', 0)
+        total_workers = app.schedule_config.get('num_workers', 0)
+        
+        # Save current worker data
+        self.save_worker_data(None)
+        
+        if current_index < total_workers - 1:
+            # Move to next worker
+            app.schedule_config['current_worker_index'] = current_index + 1
+            
+            # If it's a new worker, clear form
+            if current_index + 1 >= len(app.schedule_config.get('workers_data', [])):
+                self.clear_inputs()
+            else:
+                # Load existing worker data
+                self.load_worker_data()
+        else:
+            # We're at the last worker, generate schedule
             self.generate_schedule()
+    
+    def load_worker_data(self):
+        """Load worker data for current index"""
+        app = App.get_running_app()
+        current_index = app.schedule_config.get('current_worker_index', 0)
+        workers_data = app.schedule_config.get('workers_data', [])
+        
+        # Clear inputs first
+        self.clear_inputs()
+        
+        # If we have data for this worker, load it
+        if 0 <= current_index < len(workers_data):
+            worker = workers_data[current_index]
+            self.worker_id.text = worker.get('id', '')
+            self.work_periods.text = worker.get('work_periods', '')
+            self.work_percentage.text = str(worker.get('work_percentage', 100))
+            self.mandatory_days.text = worker.get('mandatory_days', '')
+            self.days_off.text = worker.get('days_off', '')
+            self.incompatible_checkbox.active = worker.get('is_incompatible', False)
+            
+        # Update title
+        self.title_label.text = f'Worker Details ({current_index + 1}/{app.schedule_config.get("num_workers", 0)})'
+        
+        # Update button text based on position
+        if current_index == app.schedule_config.get('num_workers', 0) - 1:
+            self.next_btn.text = 'Finish'
+        else:
+            self.next_btn.text = 'Next'
+            
+        # Disable Previous button if on first worker
+        self.prev_btn.disabled = (current_index == 0)
 
     def show_error(self, message):
         popup = Popup(title='Error',
@@ -347,10 +453,36 @@ class WorkerDetailsScreen(Screen):
         self.incompatible_checkbox.active = False
 
     def on_enter(self):
+        """Initialize the screen when it's entered"""
         app = App.get_running_app()
+    
+        # Make sure current_worker_index is initialized
+        if 'current_worker_index' not in app.schedule_config:
+            app.schedule_config['current_worker_index'] = 0
+    
+        # Initialize workers_data array if needed
+        if 'workers_data' not in app.schedule_config:
+            app.schedule_config['workers_data'] = []
+    
         current_index = app.schedule_config.get('current_worker_index', 0)
         total_workers = app.schedule_config.get('num_workers', 0)
+    
+        # Update the title with current position
         self.title_label.text = f'Worker Details ({current_index + 1}/{total_workers})'
+    
+        # Set button states based on position
+        self.prev_btn.disabled = (current_index == 0)
+    
+        if current_index == total_workers - 1:
+            self.next_btn.text = 'Finish'
+        else:
+            self.next_btn.text = 'Next'
+    
+        # Load data for current worker index
+        self.load_worker_data()
+    
+        # Log entry for debugging
+        logging.info(f"Entered WorkerDetailsScreen: Worker {current_index + 1}/{total_workers}")
 
 class CalendarViewScreen(Screen):
     def __init__(self, **kwargs):
