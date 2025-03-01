@@ -1414,7 +1414,7 @@ class Scheduler:
 
         # Gap constraints
         if not skip_constraints:
-            min_gap = 5 if try_part_time and work_percentage < 100 else max(2, int(4 / (work_percentage / 100)))
+            min_gap = 3 if try_part_time and work_percentage < 100 else max(2, int(4 / (work_percentage / 100)))
             if not self._check_gap_constraint(worker_id, date, min_gap):
                 return False, f"gap constraint ({min_gap} days)"
 
@@ -1462,7 +1462,7 @@ class Scheduler:
         if assignments:
             for prev_date in assignments:
                 days_between = abs((date - prev_date).days)
-                if days_between < 3 or days_between in [7, 14, 21]:
+                if days_between < 2 or days_between in [7, 14, 21]:
                     return False
         return True
 
