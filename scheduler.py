@@ -610,8 +610,11 @@ class Scheduler:
         # 4. Try to balance workload distribution
         self._balance_workloads()
 
-    def _try_fill_empty_shifts(self):
-        """Try to fill empty shifts with more aggressive constraint relaxation"""
+     def _try_fill_empty_shifts(self):
+        """
+        Try to fill empty shifts with progressive constraint relaxation.
+        If a shift cannot be filled even with maximum relaxation, leave it empty.
+        """
         empty_shifts = []
     
         # Find all empty shifts
@@ -628,36 +631,54 @@ class Scheduler:
         # Sort empty shifts by date (earlier dates first)
         empty_shifts.sort(key=lambda x: x[0])
     
+        shifts_filled = 0
+    
         # Try to fill each empty shift
         for date, post in empty_shifts:
+            filled = False
+        
             # Try three levels of constraint relaxation
             for relaxation_level in range(3):
                 # Use the updated _get_candidates method with relaxation level
                 candidates = self._get_candidates(date, post, relaxation_level)
             
-                if candidates:
-                    # Sort candidates by score (highest first)
-                    candidates.sort(key=lambda x: x[1], reverse=True)
-                
-                    # Group candidates with similar scores (within 10% of max score)
-                    max_score = candidates[0][1]
-                    top_candidates = [c for c in candidates if c[1] >= max_score * 0.9]
-                
-                    # Add some randomness to selection
-                    random.shuffle(top_candidates)
-                
-                    # Select the best candidate
-                    best_worker = top_candidates[0][0]
-                    worker_id = best_worker['id']
-                
-                    # Assign the worker
-                    self.schedule[date][post] = worker_id
-                    self.worker_assignments[worker_id].add(date)
-                    self._update_tracking_data(worker_id, date, post)
-                
-                    logging.info(f"Filled empty shift on {date} post {post} with worker {worker_id} "
-                                f"(relaxation level: {relaxation_level})")
-                    break  # Success at this relaxation level
+                if candidates:  # Only proceed if we found valid candidates
+                    try:
+                        # Sort candidates by score (highest first)
+                        candidates.sort(key=lambda x: x[1], reverse=True)
+                    
+                        # Group candidates with similar scores (within 10% of max score)
+                        max_score = candidates[0][1]
+                        top_candidates = [c for c in candidates if c[1] >= max_score * 0.9]
+                    
+                        if top_candidates:  # Only assign if we have valid top candidates
+                            # Add some randomness to selection
+                            random.shuffle(top_candidates)
+                        
+                            # Select the best candidate
+                            best_worker = top_candidates[0][0]
+                            worker_id = best_worker['id']
+                        
+                            # Assign the worker
+                            self.schedule[date][post] = worker_id
+                            self.worker_assignments[worker_id].add(date)
+                            self._update_tracking_data(worker_id, date, post)
+                        
+                            logging.info(f"Filled empty shift on {date} post {post} with worker {worker_id} "
+                                        f"(relaxation level: {relaxation_level})")
+                            filled = True
+                            shifts_filled += 1
+                            break  # Success at this relaxation level
+                    except Exception as e:
+                        logging.error(f"Error while filling shift {date} post {post}: {str(e)}")
+                        # Continue to next relaxation level
+        
+            if not filled:
+                # Keep the shift empty (None value)
+                logging.info(f"Leaving shift on {date} post {post} empty - no valid candidates found")
+    
+        logging.info(f"Filled {shifts_filled} of {len(empty_shifts)} empty shifts")
+        return shifts_filled > 0  # Return whether we made any improvements
 
     def _improve_post_rotation(self):
         """Improve post rotation by swapping assignments"""
