@@ -1555,131 +1555,173 @@ class Scheduler:
     
         return candidates
 
-    def _calculate_worker_score(self, worker, date, post, relax_constraints=False):
-        worker_id = worker['id']
-        score = 0
+    def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
+        """
+        Calculate score for a worker assignment with optional relaxation of constraints
     
-        # Basic feasibility checks (even with relaxed constraints)
-        if self._is_worker_unavailable(worker_id, date) or worker_id in self.schedule.get(date, []):
-            return float('-inf')
+        Args:
+            worker: The worker to evaluate
+            date: The date to assign
+            post: The post number to assign
+            relaxation_level: Level of constraint relaxation (0=strict, 1=moderate, 2=lenient)
     
-        # Check minimum gap requirement first, respecting worker type
-        assignments = sorted(list(self.worker_assignments[worker_id]))
-        if assignments:
-            work_percentage = worker.get('work_percentage', 100)
-            min_gap = 3 if work_percentage < 100 else 2
+        Returns:
+            float: Score for this worker-date-post combination, higher is better
+                  Returns float('-inf') if assignment is invalid
+        """
+        try:
+            worker_id = worker['id']
+            score = 0
         
-            days_since_last = min((date - d).days for d in assignments if (date - d).days > 0)
-            if days_since_last < min_gap:
+            # --- Hard Constraints (never relaxed) ---
+        
+            # Basic availability check
+            if self._is_worker_unavailable(worker_id, date) or worker_id in self.schedule.get(date, []):
                 return float('-inf')
+            
+            # --- Check for mandatory shifts ---
+            worker_data = worker
+            mandatory_days = worker_data.get('mandatory_days', [])
+            mandatory_dates = self._parse_dates(mandatory_days)
         
-            # Special rule for full-time workers
-            if work_percentage >= 100 and not relax_constraints:
+            # If this is a mandatory date for this worker, give it maximum priority
+            if date in mandatory_dates:
+                return float('inf')  # Highest possible score to ensure mandatory shifts are assigned
+        
+            # --- Target Shifts Check (excluding mandatory shifts) ---
+            current_shifts = len(self.worker_assignments[worker_id])
+            target_shifts = worker.get('target_shifts', 0)
+        
+            # Count mandatory shifts that are already assigned
+            mandatory_shifts_assigned = sum(
+                1 for d in self.worker_assignments[worker_id] if d in mandatory_dates
+            )
+        
+            # Count mandatory shifts still to be assigned
+            mandatory_shifts_remaining = sum(
+                1 for d in mandatory_dates 
+                if d >= date and d not in self.worker_assignments[worker_id]
+            )
+        
+            # Calculate non-mandatory shifts target
+            non_mandatory_target = target_shifts - len(mandatory_dates)
+            non_mandatory_assigned = current_shifts - mandatory_shifts_assigned
+        
+            # Check if we've already met or exceeded non-mandatory target
+            shift_difference = non_mandatory_target - non_mandatory_assigned
+        
+            # Reserve capacity for remaining mandatory shifts
+            if non_mandatory_assigned + mandatory_shifts_remaining >= target_shifts and relaxation_level < 2:
+                return float('-inf')  # Need to reserve remaining slots for mandatory shifts
+        
+            # Stop if worker already met or exceeded non-mandatory target (except at higher relaxation)
+            if shift_difference <= 0:
+                if relaxation_level < 2:
+                    return float('-inf')  # Strict limit at relaxation levels 0-1
+                else:
+                    score -= 10000  # Severe penalty but still possible at highest relaxation
+            else:
+                # Higher priority for workers further from their non-mandatory target
+                score += shift_difference * 1000
+        
+            # --- Gap Constraints ---
+            assignments = sorted(list(self.worker_assignments[worker_id]))
+            if assignments:
+                work_percentage = worker.get('work_percentage', 100)
+                # Minimum gap is higher for part-time workers
+                min_gap = 3 if work_percentage < 100 else 2
+            
+                # Check if any previous assignment violates minimum gap
                 for prev_date in assignments:
-                    if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
-                        (prev_date.weekday() == 0 and date.weekday() == 4)):
-                        if abs((date - prev_date).days) == 3:
-                            return float('-inf')
-    
-        # Dynamic scoring components
-        current_shifts = len(self.worker_assignments[worker_id])
-        target_shifts = worker.get('target_shifts', 0)
-    
-        # Target progress component - more weight as schedule progresses
-        schedule_completion = sum(len(shifts) for shifts in self.schedule.values()) / (
-            (self.end_date - self.start_date).days * self.num_shifts)
-        shift_difference = target_shifts - current_shifts
-    
-        # Higher weight for target difference as schedule fills
-        if shift_difference <= 0:
-            return float('-inf') if not relax_constraints else -10000 + shift_difference * 100
-        else:
-            target_score = shift_difference * 1000 * (1 + schedule_completion)
-            score += target_score
-                    
-        # Check weekend limit - reject if would exceed
-        if self._would_exceed_weekend_limit(worker_id, date):
-            return float('-inf')
-            
-        # --- Weekend Scoring Component ---
-        if date.weekday() >= 4:  # Friday, Saturday, Sunday
-            weekend_assignments = sum(
-                1 for d in self.worker_assignments[worker_id]
-                    if d.weekday() >= 4
-                    )
-            # Lower score for workers with more weekend assignments
-            score -= weekend_assignments * 300
-
-        # Weekday Balance Check - STRICT
-        weekday = date.weekday()
-        weekday_counts = self.worker_weekdays[worker_id].copy()
-        weekday_counts[weekday] += 1  # Simulate adding this assignment
+                    days_between = abs((date - prev_date).days)
+                
+                    # Basic minimum gap check
+                    if days_between < min_gap:
+                        return float('-inf')
+                
+                    # Special rule for full-time workers: No Friday + Monday (3-day gap)
+                    if work_percentage >= 100 and relaxation_level == 0:
+                        if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
+                            (date.weekday() == 4 and prev_date.weekday() == 0)):
+                            if days_between == 3:
+                                return float('-inf')
+                
+                    # Prevent same day of week in consecutive weeks (can be relaxed)
+                    if relaxation_level < 2 and days_between in [7, 14, 21]:
+                        return float('-inf')
         
-        max_weekday = max(weekday_counts.values())
-        min_weekday = min(weekday_counts.values())
-        
-        # If this assignment would create more than 1 day difference, reject it
-        if (max_weekday - min_weekday) > 1:
-            return float('-inf')
-
-        # --- Hard Constraints ---
-        if (self._is_worker_unavailable(worker_id, date) or
-            date in self.schedule and worker_id in self.schedule[date]):
+            # --- Weekend Limits ---
+            if relaxation_level < 2 and self._would_exceed_weekend_limit(worker_id, date):
                 return float('-inf')
         
-        current_shifts = len(self.worker_assignments[worker_id])
-        target_shifts = worker.get('target_shifts', 0)
+            # --- Weekday Balance Check ---
+            weekday = date.weekday()
+            weekday_counts = self.worker_weekdays[worker_id].copy()
+            weekday_counts[weekday] += 1  # Simulate adding this assignment
         
-        # --- Target Progress Score ---
-        shift_difference = target_shifts - current_shifts
+            max_weekday = max(weekday_counts.values())
+            min_weekday = min(weekday_counts.values())
         
-        if shift_difference <= 0:
-            return float('-inf')  # Never exceed target
+            # If this assignment would create more than 1 day difference, reject it
+            if (max_weekday - min_weekday) > 1 and relaxation_level < 1:
+                return float('-inf')
+        
+            # --- Scoring Components (softer constraints) ---
+        
+            # 1. Weekend Balance Score
+            if date.weekday() >= 4:  # Friday, Saturday, Sunday
+                weekend_assignments = sum(
+                    1 for d in self.worker_assignments[worker_id]
+                    if d.weekday() >= 4
+                )
+                # Lower score for workers with more weekend assignments
+                score -= weekend_assignments * 300
+        
+            # 2. Post Rotation Score - focus especially on last post distribution
+            last_post = self.num_shifts - 1
+            if post == last_post:  # Special handling for the last post
+                post_counts = self._get_post_counts(worker_id)
+                total_assignments = sum(post_counts.values()) + 1  # +1 for this potential assignment
+                target_last_post = total_assignments * (1 / self.num_shifts)
+                current_last_post = post_counts.get(last_post, 0)
             
-        # Higher priority for workers further from their target
-        score += shift_difference * 1000
+                # Encourage assignments when below target
+                if current_last_post < target_last_post - 1:
+                    score += 1000
+                # Discourage assignments when above target
+                elif current_last_post > target_last_post + 1:
+                    score -= 1000
         
-        # Post rotation score - focus on last post distribution
-        last_post = self.num_shifts - 1
-        if post == last_post:
-            post_counts = self._get_post_counts(worker_id)
-            total_assignments = sum(post_counts.values()) + 1
-            target_last_post = total_assignments * (1 / self.num_shifts)
-            current_last_post = post_counts.get(last_post, 0)
-                
-            # Encourage assignments when below target
-            if current_last_post < target_last_post - 1:
-                score += 1000
-            # Discourage assignments when above target
-            elif current_last_post > target_last_post + 1:
-                score -= 1000
-
-        # Add penalty for weekend assignments
-        if date.weekday() in [4, 5, 6]:
-            score -= 1000
-            
-        # Week balance bonus to avoid concentration in some weeks
-        week_number = date.isocalendar()[1]
-        week_counts = {}
-        for d in self.worker_assignments[worker_id]:
-            w = d.isocalendar()[1]
-            week_counts[w] = week_counts.get(w, 0) + 1
+            # 3. Weekly Balance Score - avoid concentration in some weeks
+            week_number = date.isocalendar()[1]
+            week_counts = {}
+            for d in self.worker_assignments[worker_id]:
+                w = d.isocalendar()[1]
+                week_counts[w] = week_counts.get(w, 0) + 1
+        
+            current_week_count = week_counts.get(week_number, 0)
+            avg_week_count = len(assignments) / max(1, len(week_counts))
+        
+            if current_week_count < avg_week_count:
+                score += 500  # Bonus for weeks with fewer assignments
+        
+            # 4. Schedule Progression Score - adjust priority as schedule fills up
+            schedule_completion = sum(len(shifts) for shifts in self.schedule.values()) / (
+                (self.end_date - self.start_date).days * self.num_shifts)
+        
+            # Higher weight for target difference as schedule progresses
+            score += shift_difference * 500 * schedule_completion
+        
+            # Log the score calculation
+            logging.debug(f"Score for worker {worker_id}: {score} "
+                        f"(current: {current_shifts}, target: {target_shifts}, "
+                        f"relaxation: {relaxation_level})")
+        
+            return score
     
-        current_week_count = week_counts.get(week_number, 0)
-        avg_week_count = len(assignments) / max(1, len(week_counts))
-    
-        if current_week_count < avg_week_count:
-            score += 500  # Bonus for weeks with fewer assignments
-
-        # Log the score calculation
-        logging.debug(f"Score for worker {worker_id}: {score} "
-                    f"(current: {current_shifts}, target: {target_shifts}")
-
-        return score
-
         except Exception as e:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
-            return None
+            return float('-inf')
             
     # ------------------------
     # 3. Constraint Checking Methods
