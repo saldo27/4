@@ -610,7 +610,7 @@ class Scheduler:
         # 4. Try to balance workload distribution
         self._balance_workloads()
 
-     def _try_fill_empty_shifts(self):
+    def _try_fill_empty_shifts(self):
         """
         Try to fill empty shifts with progressive constraint relaxation.
         If a shift cannot be filled even with maximum relaxation, leave it empty.
@@ -679,7 +679,7 @@ class Scheduler:
     
         logging.info(f"Filled {shifts_filled} of {len(empty_shifts)} empty shifts")
         return shifts_filled > 0  # Return whether we made any improvements
-
+    
     def _improve_post_rotation(self):
         """Improve post rotation by swapping assignments"""
         # Find workers with imbalanced post distribution
