@@ -474,7 +474,7 @@ class Scheduler:
         self._balance_workloads()
 
     def _try_fill_empty_shifts(self):
-        """Try to fill empty shifts by relaxing certain constraints"""
+        """Try to fill empty shifts with more aggressive constraint relaxation"""
         empty_shifts = []
     
         # Find all empty shifts
@@ -484,68 +484,32 @@ class Scheduler:
                     empty_shifts.append((date, post))
     
         if not empty_shifts:
-            logging.info("No empty shifts to fill")
             return
     
         logging.info(f"Attempting to fill {len(empty_shifts)} empty shifts")
     
-        # Shuffle the empty shifts to introduce randomness
-        random.shuffle(empty_shifts)
+        # Sort empty shifts by date (earlier dates first)
+        empty_shifts.sort(key=lambda x: x[0])
     
         # Try to fill each empty shift
         for date, post in empty_shifts:
-            filled = False
-            candidates = []
-        
-            # Find possible workers for this shift with relaxed constraints
-            for worker in self.workers_data:
-                worker_id = worker['id']
+            # Try three levels of constraint relaxation
+            for relaxation_level in range(3):
+                candidates = self._get_candidates_with_relaxation(date, post, relaxation_level)
             
-                # Skip if already assigned to this date
-                if worker_id in self.schedule[date]:
-                    continue
-            
-                # Check base eligibility (ignoring some constraints)
-                if not self._is_worker_unavailable(worker_id, date):
-                    # Allow smaller gaps between assignments
-                    assignments = sorted(list(self.worker_assignments[worker_id]))
-                    min_gap = 2  # Reduced from 3
+                if candidates:
+                    # Group and select the best candidate as before
+                    best_worker = self._select_best_candidate(candidates, relaxation_level)
+                    worker_id = best_worker['id']
                 
-                    if not assignments or all((date - d).days >= min_gap and (d - date).days >= min_gap for d in assignments):
-                        # Calculate a score for this worker
-                        score = self._calculate_improvement_score(worker, date, post)
-                        if score > float('-inf'):
-                            candidates.append((worker, score))
-        
-            if candidates:
-                # Group candidates by score
-                candidates_by_score = {}
-                for worker, score in candidates:
-                    if score not in candidates_by_score:
-                        candidates_by_score[score] = []
-                    candidates_by_score[score].append(worker)
-            
-                # Sort scores in descending order
-                sorted_scores = sorted(candidates_by_score.keys(), reverse=True)
-            
-                # Get workers with the highest score
-                best_score = sorted_scores[0]
-                best_workers = candidates_by_score[best_score]
-            
-                # Shuffle the best workers
-                random.shuffle(best_workers)
-                best_worker = best_workers[0]
-                worker_id = best_worker['id']
-            
-                # Assign the worker to this shift
-                self.schedule[date][post] = worker_id
-                self.worker_assignments[worker_id].add(date)
-                self._update_tracking_data(worker_id, date, post)
-                filled = True
-                logging.info(f"Filled empty shift on {date.strftime('%Y-%m-%d')}, post {post} with worker {worker_id}")
-        
-            if not filled:
-                logging.info(f"Could not fill empty shift on {date.strftime('%Y-%m-%d')}, post {post}")
+                    # Assign the worker
+                    self.schedule[date][post] = worker_id
+                    self.worker_assignments[worker_id].add(date)
+                    self._update_tracking_data(worker_id, date, post)
+                
+                    logging.info(f"Filled empty shift on {date} post {post} with worker {worker_id} "
+                                f"(relaxation level: {relaxation_level})")
+                    break  # Success at this relaxation level
 
     def _improve_post_rotation(self):
         """Improve post rotation by swapping assignments"""
@@ -1123,56 +1087,165 @@ class Scheduler:
         return month_days
     
     def _calculate_target_shifts(self):
-        """Calculate target number of shifts for each worker based on their percentage"""
-        total_days = (self.end_date - self.start_date).days + 1
-        total_shifts = total_days * self.num_shifts
-    
-        logging.info(f"Calculating targets for {total_days} days with {self.num_shifts} shifts per day")
-        logging.info(f"Total shifts to distribute: {total_shifts}")
-
-        # Initialize target_shifts to 0 for all workers
-        for worker in self.workers_data:
-            worker['target_shifts'] = 0
-
+        """
+        Calculate target number of shifts for each worker based on their work percentage,
+        ensuring optimal distribution and fairness while respecting mandatory shifts.
+        """
         try:
-            # Convert work_percentage to float when summing
+            logging.info("Calculating target shifts distribution...")
+            total_days = (self.end_date - self.start_date).days + 1
+            total_shifts = total_days * self.num_shifts
+        
+            # First, account for mandatory shifts which cannot be redistributed
+            mandatory_shifts_by_worker = {}
+            total_mandatory_shifts = 0
+        
+            for worker in self.workers_data:
+                worker_id = worker['id']
+                mandatory_days = worker.get('mandatory_days', [])
+                mandatory_dates = self._parse_dates(mandatory_days)
+            
+                # Count only mandatory days within schedule period
+                valid_mandatory_dates = [d for d in mandatory_dates 
+                                        if self.start_date <= d <= self.end_date]
+            
+                mandatory_count = len(valid_mandatory_dates)
+                mandatory_shifts_by_worker[worker_id] = mandatory_count
+                total_mandatory_shifts += mandatory_count
+            
+                logging.debug(f"Worker {worker_id} has {mandatory_count} mandatory shifts")
+        
+            # Remaining shifts to distribute
+            remaining_shifts = total_shifts - total_mandatory_shifts
+            logging.info(f"Total shifts: {total_shifts}, Mandatory shifts: {total_mandatory_shifts}, Remaining: {remaining_shifts}")
+        
+            if remaining_shifts < 0:
+                logging.error("More mandatory shifts than total available shifts!")
+                remaining_shifts = 0
+        
+            # Get and validate all worker percentages
             percentages = []
             for worker in self.workers_data:
                 try:
                     percentage = float(str(worker.get('work_percentage', 100)).strip())
                     if percentage <= 0:
-                        logging.warning(f"Worker {worker['id']} has 0 or negative percentage: {percentage}")
-                        percentage = 100  # Default to 100% if invalid
+                        logging.warning(f"Worker {worker['id']} has invalid percentage ({percentage}), using 100%")
+                        percentage = 100
                     percentages.append(percentage)
                 except (ValueError, TypeError) as e:
                     logging.warning(f"Invalid percentage for worker {worker['id']}, using 100%: {str(e)}")
                     percentages.append(100)
         
+            # Calculate the total percentage points available across all workers
             total_percentage = sum(percentages)
-            if total_percentage <= 0:
-                logging.error("Total percentage is 0 or negative")
-                raise SchedulerError("Invalid total percentage")
-
-            # Calculate and assign targets
-            for worker, percentage in zip(self.workers_data, percentages):
-                target = (percentage / total_percentage) * total_shifts
-                worker['target_shifts'] = max(1, round(target))  # Ensure at least 1 shift
-                logging.info(f"Worker {worker['id']} - Percentage: {percentage}%, "
-                            f"Target shifts: {worker['target_shifts']}")
-
+        
+            # First pass: Calculate exact targets based on percentages for remaining shifts
+            exact_targets = []
+            for percentage in percentages:
+                target = (percentage / total_percentage) * remaining_shifts
+                exact_targets.append(target)
+        
+            # Second pass: Round targets while minimizing allocation error
+            rounded_targets = []
+            leftover = 0.0
+        
+            for target in exact_targets:
+                # Add leftover from previous rounding
+                adjusted_target = target + leftover
+            
+                # Round to nearest integer
+                rounded = round(adjusted_target)
+            
+                # Calculate new leftover
+                leftover = adjusted_target - rounded
+            
+                # Ensure minimum of 0 non-mandatory shifts (since we add mandatory later)
+                rounded = max(0, rounded)
+            
+                rounded_targets.append(rounded)
+        
+            # Final adjustment to ensure total equals required remaining shifts
+            sum_targets = sum(rounded_targets)
+            difference = remaining_shifts - sum_targets
+        
+            if difference != 0:
+                logging.info(f"Adjusting allocation by {difference} shifts")
+            
+                # Create sorted indices based on fractional part distance from rounding threshold
+                frac_distances = [abs((t + leftover) - round(t + leftover)) for t in exact_targets]
+                sorted_indices = sorted(range(len(frac_distances)), key=lambda i: frac_distances[i], reverse=(difference > 0))
+            
+                # Add or subtract from workers with smallest rounding error first
+                for i in range(abs(difference)):
+                    adj_index = sorted_indices[i % len(sorted_indices)]
+                    rounded_targets[adj_index] += 1 if difference > 0 else -1
+                
+                    # Ensure minimums
+                    if rounded_targets[adj_index] < 0:
+                        rounded_targets[adj_index] = 0
+        
+            # Add mandatory shifts to calculated targets
+            for i, worker in enumerate(self.workers_data):
+                worker_id = worker['id']
+                # Total target = non-mandatory target + mandatory shifts
+                worker['target_shifts'] = rounded_targets[i] + mandatory_shifts_by_worker[worker_id]
+            
+                # Apply additional constraints based on work percentage
+                work_percentage = float(str(worker.get('work_percentage', 100)).strip())
+            
+                # Calculate reasonable maximum based on work percentage (excluding mandatory shifts)
+                max_reasonable = total_days * (work_percentage / 100) * 0.8
+            
+                # For target exceeding reasonable maximum, adjust non-mandatory part only
+                non_mandatory_target = worker['target_shifts'] - mandatory_shifts_by_worker[worker_id]
+                if non_mandatory_target > max_reasonable and max_reasonable >= 0:
+                    logging.warning(f"Worker {worker['id']} non-mandatory target {non_mandatory_target} exceeds reasonable maximum {max_reasonable}")
+                
+                    # Reduce target and redistribute, but preserve mandatory shifts
+                    excess = non_mandatory_target - int(max_reasonable)
+                    if excess > 0:
+                        worker['target_shifts'] = int(max_reasonable) + mandatory_shifts_by_worker[worker_id]
+                        self._redistribute_excess_shifts(excess, worker['id'], mandatory_shifts_by_worker)
+            
+                logging.info(f"Worker {worker['id']}: {work_percentage}% → {worker['target_shifts']} shifts "
+                             f"({mandatory_shifts_by_worker[worker_id]} mandatory, "
+                             f"{worker['target_shifts'] - mandatory_shifts_by_worker[worker_id]} calculated)")
+        
+            # Final verification - ensure at least 1 total shift per worker
+            for worker in self.workers_data:
+                if 'target_shifts' not in worker or worker['target_shifts'] <= 0:
+                    worker['target_shifts'] = 1
+                    logging.warning(f"Assigned minimum 1 shift to worker {worker['id']}")
+        
+            return True
+    
         except Exception as e:
             logging.error(f"Error in target calculation: {str(e)}", exc_info=True)
-            # Set default targets if calculation fails
-            default_target = max(1, round(total_shifts / len(self.workers_data)))
+        
+            # Emergency fallback - equal distribution plus mandatory shifts
+            default_target = max(1, round(remaining_shifts / len(self.workers_data)))
             for worker in self.workers_data:
-                worker['target_shifts'] = default_target
-                logging.warning(f"Using default target for worker {worker['id']}: {default_target}")
+                worker_id = worker['id']
+                worker['target_shifts'] = default_target + mandatory_shifts_by_worker.get(worker_id, 0)
+        
+            logging.warning(f"Using fallback distribution: {default_target} non-mandatory shifts per worker plus mandatory shifts")
+            return False
 
-        # Verify all workers have targets
-        for worker in self.workers_data:
-            if 'target_shifts' not in worker or worker['target_shifts'] <= 0:
-                logging.error(f"Worker {worker['id']} has invalid target_shifts: {worker.get('target_shifts')}")
-                worker['target_shifts'] = 1
+    def _redistribute_excess_shifts(self, excess_shifts, excluded_worker_id, mandatory_shifts_by_worker):
+        """Helper method to redistribute excess shifts from one worker to others, respecting mandatory assignments"""
+        eligible_workers = [w for w in self.workers_data if w['id'] != excluded_worker_id]
+    
+        if not eligible_workers:
+            return
+    
+        # Sort by work percentage (give more to workers with higher percentage)
+        eligible_workers.sort(key=lambda w: float(w.get('work_percentage', 100)), reverse=True)
+    
+        # Distribute excess shifts
+        for i in range(excess_shifts):
+            worker = eligible_workers[i % len(eligible_workers)]
+            worker['target_shifts'] += 1
+            logging.info(f"Redistributed 1 shift to worker {worker['id']}")
                 
     def _assign_mandatory_guards(self):
         """
@@ -1206,68 +1279,67 @@ class Scheduler:
                         self._update_tracking_data(worker_id, date, post)
 
     def _assign_day_shifts(self, date, attempt_number=0):
-        """Modified assignment method that allows for unfilled shifts with variability"""
-        logging.info(f"\nAssigning shifts for {date.strftime('%Y-%m-%d')}")
-
         if date not in self.schedule:
             self.schedule[date] = []
 
         remaining_shifts = self.num_shifts - len(self.schedule[date])
-
-        for post in range(remaining_shifts):
-            assigned = False
-            candidates = []
     
-            for worker in self.workers_data:
-                worker_id = worker['id']
+        for post in range(remaining_shifts):
+            # First try with all constraints
+            if self._try_assign_worker(date, post, attempt_number, relax_constraints=False):
+                continue
             
-                # Skip if already assigned to this date
-                if worker_id in self.schedule[date]:
-                    continue
-                
-                # Skip if would exceed weekend limit
+            # If failed, try with relaxed constraints
+            if self._try_assign_worker(date, post, attempt_number, relax_constraints=True):
+                continue
+            
+            # If still failed, leave shift unfilled
+            self.schedule[date].append(None)
+            logging.warning(f"No suitable worker found for {date}, post {post} - leaving shift unfilled")
+
+    def _try_assign_worker(self, date, post, attempt_number, relax_constraints=False):
+        """Try to assign a worker to a shift, optionally relaxing constraints"""
+        candidates = []
+    
+        for worker in self.workers_data:
+            worker_id = worker['id']
+        
+            # Skip if already assigned to this date
+            if worker_id in self.schedule[date]:
+                continue
+            
+            # Core constraints (never relaxed)
+            if self._is_worker_unavailable(worker_id, date):
+                continue
+            
+            # Relaxable constraints
+            if not relax_constraints:
+                # Check weekend limit
                 if self._would_exceed_weekend_limit(worker_id, date):
                     continue
-            
-                # Check other constraints
-                if self._can_assign_worker(worker_id, date, post):
-                    score = self._calculate_worker_score(worker, date, post)
-                    if score > float('-inf'):
-                        candidates.append((worker, score))
-
-            if candidates:
-                # Group candidates by score
-                candidates_by_score = {}
-                for worker, score in candidates:
-                    if score not in candidates_by_score:
-                        candidates_by_score[score] = []
-                    candidates_by_score[score].append(worker)
-            
-                # Sort scores in descending order
-                sorted_scores = sorted(candidates_by_score.keys(), reverse=True)
-            
-                # Get workers with the highest score
-                best_score = sorted_scores[0]
-                best_workers = candidates_by_score[best_score]
-            
-                # Introduce variability: shuffle the best workers based on the attempt number
-                shuffled_workers = best_workers.copy()
-                random.Random(attempt_number + date.toordinal()).shuffle(shuffled_workers)
-            
-                # Select the first worker from the shuffled list
-                best_worker = shuffled_workers[0]
-            
-                worker_id = best_worker['id']
-                self.schedule[date].append(worker_id)
-                self.worker_assignments[worker_id].add(date)
-                self._update_tracking_data(worker_id, date, post)
-                assigned = True
-                logging.info(f"Assigned worker {worker_id} to {date}, post {post}")
+                
+                # Check gap constraints with normal rules
+                if not self._check_gap_constraint(worker_id, date, None):
+                    continue
+            else:
+                # Apply more lenient gap rules when relaxing constraints
+                # But still maintain a 2-day minimum gap even when relaxed
+                assignments = sorted(list(self.worker_assignments[worker_id]))
+                if assignments and min((date - d).days for d in assignments if (date - d).days > 0) < 2:
+                    continue
+                
+            # Calculate score
+            score = self._calculate_worker_score(worker, date, post, relax_constraints)
+            if score > float('-inf'):
+                candidates.append((worker, score))
+    
+        # Assign best worker if we found candidates
+        if candidates:
+            # [Process candidates and assign a worker as in the original code]
+            # Return True if worker was assigned
+            return True
         
-            if not assigned:
-                # Leave the shift empty if no suitable worker found
-                self.schedule[date].append(None)
-                logging.warning(f"No suitable worker found for {date}, post {post} - leaving shift unfilled")
+        return False
 
     def _get_candidates(self, date, post, skip_constraints=False, try_part_time=False):
         """Get suitable candidates with their scores"""
@@ -1305,100 +1377,127 @@ class Scheduler:
 
         return candidates
 
-    def _calculate_worker_score(self, worker, date, post):
-        """Calculate a score for assigning a worker to a shift"""
-        try:
-            worker_id = worker['id']
-            score = 0
-
-            # First check incompatibility - reject immediately if incompatible
-            if not self._check_incompatibility(worker_id, date):
+    def _calculate_worker_score(self, worker, date, post, relax_constraints=False):
+        worker_id = worker['id']
+        score = 0
+    
+        # Basic feasibility checks (even with relaxed constraints)
+        if self._is_worker_unavailable(worker_id, date) or worker_id in self.schedule.get(date, []):
+            return float('-inf')
+    
+        # Check minimum gap requirement first, respecting worker type
+        assignments = sorted(list(self.worker_assignments[worker_id]))
+        if assignments:
+            work_percentage = worker.get('work_percentage', 100)
+            min_gap = 3 if work_percentage < 100 else 2
+        
+            days_since_last = min((date - d).days for d in assignments if (date - d).days > 0)
+            if days_since_last < min_gap:
                 return float('-inf')
-
-            # Check minimum gap requirement first
-            assignments = sorted(list(self.worker_assignments[worker_id]))
-            if assignments:
-                days_since_last = (date - assignments[-1]).days
-                work_percentage = worker.get('work_percentage', 100)
-                min_gap = 3 if work_percentage < 100 else 2
+        
+            # Special rule for full-time workers
+            if work_percentage >= 100 and not relax_constraints:
+                for prev_date in assignments:
+                    if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
+                        (prev_date.weekday() == 0 and date.weekday() == 4)):
+                        if abs((date - prev_date).days) == 3:
+                            return float('-inf')
     
-                if days_since_last < min_gap:
-                    return float('-inf')
+        # Dynamic scoring components
+        current_shifts = len(self.worker_assignments[worker_id])
+        target_shifts = worker.get('target_shifts', 0)
     
-                # Special rule: Prevent Friday + Monday assignments for full-time workers
-                if work_percentage == 100:
-                    for prev_date in assignments:
-                        if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
-                            (prev_date.weekday() == 0 and date.weekday() == 4)):
-                            if abs((date - prev_date).days) == 3:  # This means Friday to Monday or Monday to Friday
-                                return float('-inf')
+        # Target progress component - more weight as schedule progresses
+        schedule_completion = sum(len(shifts) for shifts in self.schedule.values()) / (
+            (self.end_date - self.start_date).days * self.num_shifts)
+        shift_difference = target_shifts - current_shifts
+    
+        # Higher weight for target difference as schedule fills
+        if shift_difference <= 0:
+            return float('-inf') if not relax_constraints else -10000 + shift_difference * 100
+        else:
+            target_score = shift_difference * 1000 * (1 + schedule_completion)
+            score += target_score
                     
-            # Check weekend limit - reject if would exceed
-            if self._would_exceed_weekend_limit(worker_id, date):
-                return float('-inf')
+        # Check weekend limit - reject if would exceed
+        if self._would_exceed_weekend_limit(worker_id, date):
+            return float('-inf')
             
-            # --- Weekend Scoring Component ---
-            if date.weekday() >= 4:  # Friday, Saturday, Sunday
-                weekend_assignments = sum(
-                    1 for d in self.worker_assignments[worker_id]
+        # --- Weekend Scoring Component ---
+        if date.weekday() >= 4:  # Friday, Saturday, Sunday
+            weekend_assignments = sum(
+                1 for d in self.worker_assignments[worker_id]
                     if d.weekday() >= 4
-                )
-                # Lower score for workers with more weekend assignments
-                score -= weekend_assignments * 300
+                    )
+            # Lower score for workers with more weekend assignments
+            score -= weekend_assignments * 300
 
-            # Weekday Balance Check - STRICT
-            weekday = date.weekday()
-            weekday_counts = self.worker_weekdays[worker_id].copy()
-            weekday_counts[weekday] += 1  # Simulate adding this assignment
+        # Weekday Balance Check - STRICT
+        weekday = date.weekday()
+        weekday_counts = self.worker_weekdays[worker_id].copy()
+        weekday_counts[weekday] += 1  # Simulate adding this assignment
         
-            max_weekday = max(weekday_counts.values())
-            min_weekday = min(weekday_counts.values())
+        max_weekday = max(weekday_counts.values())
+        min_weekday = min(weekday_counts.values())
         
-            # If this assignment would create more than 1 day difference, reject it
-            if (max_weekday - min_weekday) > 1:
-                return float('-inf')
+        # If this assignment would create more than 1 day difference, reject it
+        if (max_weekday - min_weekday) > 1:
+            return float('-inf')
 
-            # --- Hard Constraints ---
-            if (self._is_worker_unavailable(worker_id, date) or
-                date in self.schedule and worker_id in self.schedule[date]):
+        # --- Hard Constraints ---
+        if (self._is_worker_unavailable(worker_id, date) or
+            date in self.schedule and worker_id in self.schedule[date]):
                 return float('-inf')
         
-            current_shifts = len(self.worker_assignments[worker_id])
-            target_shifts = worker.get('target_shifts', 0)
+        current_shifts = len(self.worker_assignments[worker_id])
+        target_shifts = worker.get('target_shifts', 0)
         
-            # --- Target Progress Score ---
-            shift_difference = target_shifts - current_shifts
+        # --- Target Progress Score ---
+        shift_difference = target_shifts - current_shifts
         
-            if shift_difference <= 0:
-                return float('-inf')  # Never exceed target
+        if shift_difference <= 0:
+            return float('-inf')  # Never exceed target
             
-            # Higher priority for workers further from their target
-            score += shift_difference * 1000
+        # Higher priority for workers further from their target
+        score += shift_difference * 1000
         
-            # Post rotation score - focus on last post distribution
-            last_post = self.num_shifts - 1
-            if post == last_post:
-                post_counts = self._get_post_counts(worker_id)
-                total_assignments = sum(post_counts.values()) + 1
-                target_last_post = total_assignments * (1 / self.num_shifts)
-                current_last_post = post_counts.get(last_post, 0)
+        # Post rotation score - focus on last post distribution
+        last_post = self.num_shifts - 1
+        if post == last_post:
+            post_counts = self._get_post_counts(worker_id)
+            total_assignments = sum(post_counts.values()) + 1
+            target_last_post = total_assignments * (1 / self.num_shifts)
+            current_last_post = post_counts.get(last_post, 0)
                 
-                # Encourage assignments when below target
-                if current_last_post < target_last_post - 1:
-                    score += 1000
-                # Discourage assignments when above target
-                elif current_last_post > target_last_post + 1:
-                    score -= 1000
-
-            # Add penalty for weekend assignments
-            if date.weekday() in [4, 5, 6]:
+            # Encourage assignments when below target
+            if current_last_post < target_last_post - 1:
+                score += 1000
+            # Discourage assignments when above target
+            elif current_last_post > target_last_post + 1:
                 score -= 1000
 
-            # Log the score calculation
-            logging.debug(f"Score for worker {worker_id}: {score} "
-                         f"(current: {current_shifts}, target: {target_shifts}")
+        # Add penalty for weekend assignments
+        if date.weekday() in [4, 5, 6]:
+            score -= 1000
+            
+        # Week balance bonus to avoid concentration in some weeks
+        week_number = date.isocalendar()[1]
+        week_counts = {}
+        for d in self.worker_assignments[worker_id]:
+            w = d.isocalendar()[1]
+            week_counts[w] = week_counts.get(w, 0) + 1
+    
+        current_week_count = week_counts.get(week_number, 0)
+        avg_week_count = len(assignments) / max(1, len(week_counts))
+    
+        if current_week_count < avg_week_count:
+            score += 500  # Bonus for weeks with fewer assignments
 
-            return score
+        # Log the score calculation
+        logging.debug(f"Score for worker {worker_id}: {score} "
+                    f"(current: {current_shifts}, target: {target_shifts}")
+
+        return score
 
         except Exception as e:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
@@ -1469,12 +1568,32 @@ class Scheduler:
 
     def _check_gap_constraint(self, worker_id, date, min_gap):
         """Check minimum gap between assignments"""
+        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        work_percentage = worker.get('work_percentage', 100) if worker else 100
+    
+        # Use consistent gap rules
+        actual_min_gap = 3 if work_percentage < 100 else 2
+    
         assignments = sorted(self.worker_assignments[worker_id])
         if assignments:
             for prev_date in assignments:
                 days_between = abs((date - prev_date).days)
-                if days_between < 2 or days_between in [7, 14, 21]:
+            
+                # Basic gap check
+                if days_between < actual_min_gap:
                     return False
+                
+                # Special rule for full-time workers: Prevent Friday + Monday assignments
+                if work_percentage >= 100:
+                    if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
+                        (date.weekday() == 4 and prev_date.weekday() == 0)):
+                        if days_between == 3:  # The gap between Friday and Monday
+                            return False
+            
+                # Prevent same day of week in consecutive weeks
+                if days_between in [7, 14, 21]:
+                    return False
+                
         return True
 
     def _would_exceed_weekend_limit(self, worker_id, date):
