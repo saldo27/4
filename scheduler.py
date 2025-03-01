@@ -936,7 +936,7 @@ class Scheduler:
 
         return True
 
-    def _verify_assignment_consistency(self):
+    def _verify_assignment_consistency(self):   
         """
         Verify that worker_assignments and schedule are consistent with each other
         and fix any inconsistencies found
@@ -944,7 +944,7 @@ class Scheduler:
         # Check each worker's assignments
         for worker_id, dates in self.worker_assignments.items():
             dates_to_remove = []
-            for date in dates:
+            for date in list(dates):  # Create a copy to avoid modification during iteration
                 # Check if date exists in schedule
                 if date not in self.schedule:
                     dates_to_remove.append(date)
@@ -953,6 +953,7 @@ class Scheduler:
                 # Check if worker is actually in the schedule for this date
                 if worker_id not in self.schedule[date]:
                     dates_to_remove.append(date)
+                    continue
         
             # Remove inconsistent assignments
             for date in dates_to_remove:
@@ -1092,129 +1093,147 @@ class Scheduler:
         Balance the total number of assignments among workers based on their work percentages
         """
         logging.info("Attempting to balance worker workloads")
-    
+
+        # First verify and fix data consistency
+        self._verify_assignment_consistency()
+
         # Count total assignments for each worker
         assignment_counts = {}
         for worker in self.workers_data:
             worker_id = worker['id']
             work_percentage = worker.get('work_percentage', 100)
-        
+    
             # Count assignments
             count = len(self.worker_assignments[worker_id])
-        
+    
             # Normalize by work percentage
             normalized_count = count * 100 / work_percentage if work_percentage > 0 else 0
-        
+    
             assignment_counts[worker_id] = {
                 'worker_id': worker_id,
                 'count': count,
                 'work_percentage': work_percentage,
                 'normalized_count': normalized_count
             }    
-    
+
         # Calculate average normalized count
         total_normalized = sum(data['normalized_count'] for data in assignment_counts.values())
         avg_normalized = total_normalized / len(assignment_counts) if assignment_counts else 0
-    
+
         # Identify overloaded and underloaded workers
         overloaded = []
         underloaded = []
-    
+
         for worker_id, data in assignment_counts.items():
             # Allow 10% deviation from average
             if data['normalized_count'] > avg_normalized * 1.1:
                 overloaded.append((worker_id, data))
             elif data['normalized_count'] < avg_normalized * 0.9:
                 underloaded.append((worker_id, data))
-    
+
         # Sort by most overloaded/underloaded
         overloaded.sort(key=lambda x: x[1]['normalized_count'], reverse=True)
         underloaded.sort(key=lambda x: x[1]['normalized_count'])
-    
+
         changes_made = 0
         max_changes = 5  # Limit number of changes to avoid disrupting the schedule too much
-    
+
         # Try to redistribute shifts from overloaded to underloaded workers
         for over_worker_id, over_data in overloaded:
             if changes_made >= max_changes or not underloaded:
                 break
-            
+        
             # Find shifts that can be reassigned from this overloaded worker
             possible_shifts = []
-        
+    
             for date in sorted(self.worker_assignments[over_worker_id]):
-                # Skip if today's date is mandatory for this worker
+                # Skip if this date is mandatory for this worker
                 worker_data = next((w for w in self.workers_data if w['id'] == over_worker_id), None)
                 mandatory_days = worker_data.get('mandatory_days', []) if worker_data else []
                 mandatory_dates = self._parse_dates(mandatory_days)
-            
+        
                 if date in mandatory_dates:
                     continue
-                
-                # Find the post this worker is assigned to
-                post = self.schedule[date].index(over_worker_id)
             
-                possible_shifts.append((date, post))
-        
+                # Make sure the worker is actually in the schedule for this date
+                if date not in self.schedule:
+                    # This date is in worker_assignments but not in schedule
+                    logging.warning(f"Worker {over_worker_id} has assignment for date {date} but date is not in schedule")
+                    continue
+                
+                try:
+                    # Find the post this worker is assigned to
+                    if over_worker_id not in self.schedule[date]:
+                        # Worker is supposed to be assigned to this date but isn't in the schedule
+                        logging.warning(f"Worker {over_worker_id} has assignment for date {date} but is not in schedule")
+                        continue
+                    
+                    post = self.schedule[date].index(over_worker_id)
+                    possible_shifts.append((date, post))
+                except ValueError:
+                    # Worker not found in schedule for this date
+                    logging.warning(f"Worker {over_worker_id} has assignment for date {date} but is not in schedule")
+                    continue
+    
             # Shuffle to introduce randomness
             random.shuffle(possible_shifts)
-        
+    
             # Try each shift
             for date, post in possible_shifts:
                 reassigned = False
-            
+        
                 # Try each underloaded worker
                 for under_worker_id, _ in underloaded:
                     # Skip if this worker is already assigned on this date
                     if under_worker_id in self.schedule[date]:
                         continue
-                
+            
                     # Check if we can assign this worker to this shift
                     if self._can_assign_worker(under_worker_id, date, post):
                         # Make the reassignment
                         self.schedule[date][post] = under_worker_id
                         self.worker_assignments[over_worker_id].remove(date)
                         self.worker_assignments[under_worker_id].add(date)
-                    
+                
                         # Update tracking data
                         self._update_tracking_data(under_worker_id, date, post)
-                    
+                
                         changes_made += 1
                         logging.info(f"Balanced workload: Moved shift on {date.strftime('%Y-%m-%d')} post {post} "
                                     f"from worker {over_worker_id} to worker {under_worker_id}")
-                    
+                
                         # Update counts
                         assignment_counts[over_worker_id]['count'] -= 1
                         assignment_counts[over_worker_id]['normalized_count'] = (
                             assignment_counts[over_worker_id]['count'] * 100 / 
                             assignment_counts[over_worker_id]['work_percentage']
                         )
-                    
+                
                         assignment_counts[under_worker_id]['count'] += 1
                         assignment_counts[under_worker_id]['normalized_count'] = (
                             assignment_counts[under_worker_id]['count'] * 100 / 
                             assignment_counts[under_worker_id]['work_percentage']
                         )
-                    
+                
                         reassigned = True
-                    
+                
                         # Check if workers are still overloaded/underloaded
                         if assignment_counts[over_worker_id]['normalized_count'] <= avg_normalized * 1.1:
                             # No longer overloaded
                             overloaded = [(w, d) for w, d in overloaded if w != over_worker_id]
-                    
+                
                         if assignment_counts[under_worker_id]['normalized_count'] >= avg_normalized * 0.9:
                             # No longer underloaded
                             underloaded = [(w, d) for w, d in underloaded if w != under_worker_id]
-                    
+                
                         break
-            
+        
                 if reassigned:
                     break
-                
+            
                 if changes_made >= max_changes:
                     break
-    
+
         logging.info(f"Workload balancing: made {changes_made} changes")
         return changes_made > 0
 
