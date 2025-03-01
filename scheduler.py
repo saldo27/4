@@ -682,7 +682,8 @@ class Scheduler:
     
     def _improve_post_rotation(self):
         """Improve post rotation by swapping assignments"""
-        # Find workers with imbalanced post distribution
+        # Verify and fix data consistency before proceeding
+        self._verify_assignment_consistency()        # Find workers with imbalanced post distribution
         imbalanced_workers = []
     
         for worker in self.workers_data:
@@ -817,7 +818,7 @@ class Scheduler:
     def _can_swap_assignments(self, worker_id, from_date, from_post, to_date, to_post):
         """
         Check if a worker can be reassigned from one date/post to another
-    
+
         Checks all relevant constraints:
         - Worker availability (days off)
         - Mandatory assignments
@@ -828,50 +829,56 @@ class Scheduler:
         # Check if worker is unavailable on the target date (days off)
         if self._is_worker_unavailable(worker_id, to_date):
             return False
-    
+
         # Check if from_date was mandatory for this worker
         worker_data = next((w for w in self.workers_data if w['id'] == worker_id), None)
         mandatory_days = worker_data.get('mandatory_days', []) if worker_data else []
         mandatory_dates = self._parse_dates(mandatory_days)
-    
+
         # Don't reassign from a mandatory date
         if from_date in mandatory_dates:
             return False
-    
+
         # Check worker incompatibilities at the target date
         for other_worker_id in self.schedule[to_date]:
             if other_worker_id is not None and self._are_workers_incompatible(worker_id, other_worker_id):
                 return False
-    
-        # Check minimum gap requirement
+
+        # Get all current assignments for this worker
         assignments = list(self.worker_assignments[worker_id])
-        assignments.remove(from_date)  # Remove the date we're swapping from
-        assignments.append(to_date)  # Add the date we're swapping to
     
+        # Check if from_date is actually in the worker's assignment list
+        # This handles cases where the schedule and worker_assignments are out of sync
+        if from_date in assignments:
+            assignments.remove(from_date)  # Remove the date we're swapping from
+    
+        # Add the date we're swapping to
+        assignments.append(to_date)
+
         # Get sorted list of assignments
         sorted_assignments = sorted(assignments)
-    
+
         # Check gaps between consecutive assignments
         for i in range(1, len(sorted_assignments)):
             gap_days = (sorted_assignments[i] - sorted_assignments[i-1]).days
-        
+    
             # Skip reduced gap check on holidays if not part-time worker
             if (worker_data and worker_data.get('work_percentage', 100) >= 100 and
                 (self._is_holiday(sorted_assignments[i]) or self._is_holiday(sorted_assignments[i-1]))):
                 continue
-            
+        
             # Determine minimum gap based on worker status
             min_gap = 2 if worker_data and worker_data.get('work_percentage', 100) < 100 else 3
-        
+    
             if gap_days < min_gap:
                 return False
-    
+
         # Check weekend limit
         if self._is_weekend_day(to_date) and not self._is_weekend_day(from_date):
             # We're adding a weekend, check if it would exceed limits
             current_month = to_date.month
             month_start = datetime(to_date.year, current_month, 1)
-        
+    
             if current_month == 12:
                 month_end = datetime(to_date.year + 1, 1, 1) - timedelta(days=1)
             else:
@@ -882,10 +889,10 @@ class Scheduler:
                 1 for d in self.worker_assignments[worker_id]
                 if month_start <= d <= month_end and self._is_weekend_day(d) and d != from_date
             )
-        
+    
             # Add the new weekend assignment
             weekend_count += 1
-        
+    
             # Check against limit
             max_weekends = 3  # Default limit
             if worker_data:
@@ -893,13 +900,13 @@ class Scheduler:
                 work_percentage = worker_data.get('work_percentage', 100)
                 if work_percentage < 100:
                     max_weekends = max(1, int(max_weekends * work_percentage / 100))
-        
+    
             if weekend_count > max_weekends:
                 return False
-    
+
         # Check post balance - ensure we're not making another post even more imbalanced
         post_counts = self._get_post_counts(worker_id)
-    
+
         # Simulate the swap
         if from_post in post_counts:
             post_counts[from_post] -= 1
@@ -907,27 +914,58 @@ class Scheduler:
             post_counts[to_post] += 1
         else:
             post_counts[to_post] = 1
-    
+
         # Check if this swap would worsen imbalance
         total_assignments = sum(post_counts.values())
         expected_per_post = total_assignments / self.num_shifts
-    
+
         # Calculate deviation before and after
         current_deviation = 0
         for post in range(self.num_shifts):
             post_count = self._get_post_counts(worker_id).get(post, 0)
             current_deviation += abs(post_count - expected_per_post)
-    
+
         new_deviation = 0
         for post in range(self.num_shifts):
             post_count = post_counts.get(post, 0)
             new_deviation += abs(post_count - expected_per_post)
-    
+
         # Don't allow swaps that make post distribution worse
         if new_deviation > current_deviation:
             return False
-    
+
         return True
+
+    def _verify_assignment_consistency(self):
+        """
+        Verify that worker_assignments and schedule are consistent with each other
+        and fix any inconsistencies found
+        """
+        # Check each worker's assignments
+        for worker_id, dates in self.worker_assignments.items():
+            dates_to_remove = []
+            for date in dates:
+                # Check if date exists in schedule
+                if date not in self.schedule:
+                    dates_to_remove.append(date)
+                    continue
+            
+                # Check if worker is actually in the schedule for this date
+                if worker_id not in self.schedule[date]:
+                    dates_to_remove.append(date)
+        
+            # Remove inconsistent assignments
+            for date in dates_to_remove:
+                self.worker_assignments[worker_id].discard(date)
+                logging.warning(f"Fixed inconsistency: Removed date {date} from worker {worker_id}'s assignments")
+    
+        # Check schedule for workers not in worker_assignments
+        for date, workers in self.schedule.items():
+            for post, worker_id in enumerate(workers):
+                if worker_id is not None and date not in self.worker_assignments.get(worker_id, set()):
+                    # Add missing assignment
+                    self.worker_assignments[worker_id].add(date)
+                    logging.warning(f"Fixed inconsistency: Added date {date} to worker {worker_id}'s assignments")
 
     def _improve_weekend_distribution(self):
         """
