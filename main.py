@@ -360,24 +360,54 @@ class WorkerDetailsScreen(Screen):
         """Navigate to the next worker or finalize if last worker"""
         if not self.validate_worker_data():
             return
-            
+        
         app = App.get_running_app()
         current_index = app.schedule_config.get('current_worker_index', 0)
         total_workers = app.schedule_config.get('num_workers', 0)
-        
+    
         # Save current worker data
-        self.save_worker_data(None)
+        worker_data = {
+            'id': self.worker_id.text.strip(),
+            'work_periods': self.work_periods.text.strip(),
+            'work_percentage': float(self.work_percentage.text or '100'),
+            'mandatory_days': self.mandatory_days.text.strip(),
+            'days_off': self.days_off.text.strip(),
+            'is_incompatible': self.incompatible_checkbox.active
+        }
+
+        # Initialize workers_data if needed
+        if 'workers_data' not in app.schedule_config:
+            app.schedule_config['workers_data'] = []
         
+        # Update or append worker data
+        if current_index < len(app.schedule_config['workers_data']):
+            # Update existing worker
+            app.schedule_config['workers_data'][current_index] = worker_data
+        else:
+            # Add new worker
+            app.schedule_config['workers_data'].append(worker_data)
+    
         if current_index < total_workers - 1:
             # Move to next worker
             app.schedule_config['current_worker_index'] = current_index + 1
-            
-            # If it's a new worker, clear form
-            if current_index + 1 >= len(app.schedule_config.get('workers_data', [])):
-                self.clear_inputs()
-            else:
-                # Load existing worker data
-                self.load_worker_data()
+        
+            # Clear inputs and load next worker's data (if exists)
+            self.clear_inputs()
+            if current_index + 1 < len(app.schedule_config.get('workers_data', [])):
+                next_worker = app.schedule_config['workers_data'][current_index + 1]
+                self.worker_id.text = next_worker.get('id', '')
+                self.work_periods.text = next_worker.get('work_periods', '')
+                self.work_percentage.text = str(next_worker.get('work_percentage', 100))
+                self.mandatory_days.text = next_worker.get('mandatory_days', '')
+                self.days_off.text = next_worker.get('days_off', '')
+                self.incompatible_checkbox.active = next_worker.get('is_incompatible', False)
+        
+            # Update title and buttons
+            self.title_label.text = f'Worker Details ({current_index + 2}/{total_workers})'
+            self.prev_btn.disabled = False
+        
+            if current_index + 1 == total_workers - 1:
+                self.next_btn.text = 'Finish'
         else:
             # We're at the last worker, generate schedule
             self.generate_schedule()
