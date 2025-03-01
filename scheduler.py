@@ -632,11 +632,22 @@ class Scheduler:
         for date, post in empty_shifts:
             # Try three levels of constraint relaxation
             for relaxation_level in range(3):
-                candidates = self._get_candidates_with_relaxation(date, post, relaxation_level)
+                # Use the updated _get_candidates method with relaxation level
+                candidates = self._get_candidates(date, post, relaxation_level)
             
                 if candidates:
-                    # Group and select the best candidate as before
-                    best_worker = self._select_best_candidate(candidates, relaxation_level)
+                    # Sort candidates by score (highest first)
+                    candidates.sort(key=lambda x: x[1], reverse=True)
+                
+                    # Group candidates with similar scores (within 10% of max score)
+                    max_score = candidates[0][1]
+                    top_candidates = [c for c in candidates if c[1] >= max_score * 0.9]
+                
+                    # Add some randomness to selection
+                    random.shuffle(top_candidates)
+                
+                    # Select the best candidate
+                    best_worker = top_candidates[0][0]
                     worker_id = best_worker['id']
                 
                     # Assign the worker
