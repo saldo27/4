@@ -936,7 +936,7 @@ class Scheduler:
 
         # Check gaps between consecutive assignments
         for i in range(1, len(sorted_assignments)):
-        gap_days = (sorted_assignments[i] - sorted_assignments[i-1]).days
+            gap_days = (sorted_assignments[i] - sorted_assignments[i-1]).days
         if gap_days < 2:  # STRICT MINIMUM: 2 days
             return False
 
