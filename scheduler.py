@@ -2370,13 +2370,13 @@ class Scheduler:
             return False
     
         logging.info(f"Attempting to fill {len(empty_shifts)} empty shifts")
-            for worker in self.workers_data:
-                worker_id = worker['id']
+        for worker in self.workers_data:
+            worker_id = worker['id']
 
        # Sort empty shifts by date (earlier dates first)
-    empty_shifts.sort(key=lambda x: x[0])
+        empty_shifts.sort(key=lambda x: x[0])
     
-    shifts_filled = 0
+        shifts_filled = 0
     
     # Try to fill each empty shift
         for date, post in empty_shifts:
