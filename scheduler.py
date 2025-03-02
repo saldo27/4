@@ -936,49 +936,27 @@ class Scheduler:
 
         # Check gaps between consecutive assignments
         for i in range(1, len(sorted_assignments)):
-            gap_days = (sorted_assignments[i] - sorted_assignments[i-1]).days
-    
-            # Skip reduced gap check on holidays if not part-time worker
-            if (worker_data and worker_data.get('work_percentage', 100) >= 100 and
-                (self._is_holiday(sorted_assignments[i]) or self._is_holiday(sorted_assignments[i-1]))):
-                continue
-        
-            # Determine minimum gap based on worker status
-            min_gap = 2 if worker_data and worker_data.get('work_percentage', 100) < 100 else 3
-    
-            if gap_days < min_gap:
-                return False
+        gap_days = (sorted_assignments[i] - sorted_assignments[i-1]).days
+        if gap_days < 2:  # STRICT MINIMUM: 2 days
+            return False
 
         # Check weekend limit
         if self._is_weekend_day(to_date) and not self._is_weekend_day(from_date):
-            # We're adding a weekend, check if it would exceed limits
-            current_month = to_date.month
-            month_start = datetime(to_date.year, current_month, 1)
-    
-            if current_month == 12:
-                month_end = datetime(to_date.year + 1, 1, 1) - timedelta(days=1)
-            else:
-                month_end = datetime(to_date.year, current_month + 1, 1) - timedelta(days=1)
+            # We're adding a weekend day, check against the limit
+            weekend_days = [d for d in sorted_assignments if self._is_weekend_day(d)]
         
-            # Count weekend days for this worker in the month
-            weekend_count = sum(
-                1 for d in self.worker_assignments[worker_id]
-                if month_start <= d <= month_end and self._is_weekend_day(d) and d != from_date
-            )
-    
-            # Add the new weekend assignment
-            weekend_count += 1
-    
-            # Check against limit
-            max_weekends = 3  # Default limit
-            if worker_data:
-                # Adjust limit based on work percentage
-                work_percentage = worker_data.get('work_percentage', 100)
-                if work_percentage < 100:
-                    max_weekends = max(1, int(max_weekends * work_percentage / 100))
-    
-            if weekend_count > max_weekends:
-                return False
+            # If the assignment would result in more than 3 weekend shifts in any 3-week period
+            for check_date in weekend_days:
+                window_start = check_date - timedelta(days=10)  # 10 days before
+                window_end = check_date + timedelta(days=10)    # 10 days after
+            
+                window_weekend_count = sum(
+                    1 for d in weekend_days
+                    if window_start <= d <= window_end
+                )
+            
+                if window_weekend_count > 3:  # STRICT MAXIMUM: 3 weekend shifts in 3 weeks
+                    return False
 
         # Check post balance - ensure we're not making another post even more imbalanced
         post_counts = self._get_post_counts(worker_id)
@@ -1173,6 +1151,9 @@ class Scheduler:
     def _balance_workloads(self):
         """
         Balance the total number of assignments among workers based on their work percentages
+        While strictly enforcing all mandatory constraints:
+        - Minimum 2-day gap between shifts
+        - Maximum 3 weekend shifts in any 3-week period
         """
         logging.info("Attempting to balance worker workloads")
         # Ensure data consistency before proceeding
@@ -2002,10 +1983,9 @@ class Scheduler:
                 return False
         
             # Get all weekend assignments INCLUDING the new date
-            all_weekend_assignments = [
+            weekend_assignments = [
                 d for d in self.worker_assignments[worker_id] 
-                if (d.weekday() >= 4 or d in self.holidays or 
-                    (d + timedelta(days=1)) in self.holidays)
+                if (d.weekday() >= 4 or d in self.holidays)
             ]    
         
             # Add the new date if it's not already in the list
@@ -2024,12 +2004,12 @@ class Scheduler:
                     1 for d in all_weekend_assignments
                     if window_start <= d <= window_end
                 )
-            
+                # STRICT ENFORCEMENT: No more than 3 weekend shifts in any 3-week period
                 if window_weekend_count > 3:
                     logging.debug(f"Worker {worker_id} would exceed weekend limit: "
                                 f"{window_weekend_count} weekend days in 3-week window around {check_date}")
                     return True
-        
+                                    
             return False
         
         except Exception as e:
@@ -2207,13 +2187,14 @@ class Scheduler:
                 logging.debug(f"- Failed: Worker unavailable")
                 return False
 
-            # 4. Check minimum gap
+            # 4. CRITICAL: Check minimum gap - NEVER RELAX THIS
             assignments = sorted(list(self.worker_assignments[worker_id]))
             if assignments:
-                days_since_last = (date - assignments[-1]).days
-                if days_since_last < 3:
-                    logging.debug(f"- Failed: Insufficient gap ({days_since_last} days)")
-                    return False
+                for prev_date in assignments:
+                    days_since = abs((date - prev_date).days)
+                    if days_since < 2:  # STRICT MINIMUM: 2 days
+                        logging.debug(f"- Failed: Insufficient gap ({days_since} days)")
+                        return False
 
             # 5. Check monthly targets
             month_key = f"{date.year}-{date.month:02d}"
@@ -2224,7 +2205,7 @@ class Scheduler:
                     logging.debug(f"- Failed: Monthly target reached")
                     return False
 
-            # 6. Check weekend limit
+            # 6. CRITICAL: Check weekend limit - NEVER RELAX THIS
             if self._would_exceed_weekend_limit(worker_id, date):
                 logging.debug(f"- Failed: Would exceed weekend limit")
                 return False
@@ -2370,30 +2351,70 @@ class Scheduler:
         max_deviation = max(abs(count - target_per_post) for count in post_counts.values())
         return max_deviation
         
-    def _try_balance_assignment(self, date, post):
-        """Try to find a worker that would improve balance"""
-        candidates = []
+    def _try_fill_empty_shifts(self):
+        """
+        Try to fill empty shifts while STRICTLY enforcing all mandatory constraints:
+        - Minimum 2-day gap between shifts
+        - Maximum 3 weekend shifts in any 3-week period
+        - No overriding of mandatory shifts
+        """
+        empty_shifts = []
+
+        # Find all empty shifts
+        for date, workers in self.schedule.items():
+            for post, worker in enumerate(workers):
+                if worker is None:
+                    empty_shifts.append((date, post))
     
-        for worker in self.workers_data:
-            worker_id = worker['id']
+        if not empty_shifts:
+            return False
+    
+        logging.info(f"Attempting to fill {len(empty_shifts)} empty shifts")
+            for worker in self.workers_data:
+                worker_id = worker['id']
+
+       # Sort empty shifts by date (earlier dates first)
+    empty_shifts.sort(key=lambda x: x[0])
+    
+    shifts_filled = 0
+    
+    # Try to fill each empty shift
+        for date, post in empty_shifts:
+            # Get candidates that satisfy ALL constraints (no relaxation)
+            candidates = []
         
-            # Skip if worker is unavailable
-            if not self._check_constraints(worker_id, date, skip_constraints=False)[0]:
-                continue
+            for worker in self.workers_data:
+                worker_id = worker['id']
             
-            # Calculate imbalance scores
-            weekday_imbalance = self._calculate_weekday_imbalance(worker_id, date)
-            post_imbalance = self._calculate_post_imbalance(worker_id, post)
-            monthly_imbalance = self._check_monthly_balance(worker_id, date)[1]
+                # Skip if already assigned to this date
+                if worker_id in self.schedule[date]:
+                    continue
+            
+                # Check if worker can be assigned (with strict constraints)
+                if self._can_assign_worker(worker_id, date, post):
+                    # Calculate score for this assignment
+                    score = self._calculate_worker_score(worker, date, post, relaxation_level=0)
+                    if score > float('-inf'):
+                        candidates.append((worker, score))
         
-            # Lower score is better
-            total_imbalance = weekday_imbalance + post_imbalance + monthly_imbalance
-            candidates.append((worker, total_imbalance))
+            if candidates:
+                # Sort candidates by score (highest first)
+                candidates.sort(key=lambda x: x[1], reverse=True)
+            
+                # Select the best candidate
+                best_worker = candidates[0][0]
+                worker_id = best_worker['id']
+            
+                # Assign the worker
+                self.schedule[date][post] = worker_id
+                self.worker_assignments[worker_id].add(date)
+                self._update_tracking_data(worker_id, date, post)
+            
+                logging.info(f"Filled empty shift on {date} post {post} with worker {worker_id}")
+                shifts_filled += 1
     
-        if candidates:
-            # Return worker with lowest imbalance
-            return min(candidates, key=lambda x: x[1])[0]
-        return None
+        logging.info(f"Filled {shifts_filled} of {len(empty_shifts)} empty shifts")
+        return shifts_filled > 0
 
     def _check_monthly_balance(self, worker_id, date):
         """
