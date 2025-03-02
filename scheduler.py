@@ -937,8 +937,8 @@ class Scheduler:
         # Check gaps between consecutive assignments
         for i in range(1, len(sorted_assignments)):
             gap_days = (sorted_assignments[i] - sorted_assignments[i-1]).days
-        if gap_days < 2:  # STRICT MINIMUM: 2 days
-            return False
+            if gap_days < 2:  # STRICT MINIMUM: 2 days
+                return False
 
         # Check weekend limit
         if self._is_weekend_day(to_date) and not self._is_weekend_day(from_date):
