@@ -441,21 +441,21 @@ class Scheduler:
                         self._backup_best_schedule()
                 
                         # Try different improvement strategies based on attempt number
-                        if i % 3 == 0:
-                            # First priority: Fill empty shifts
+                        if i % 5 == 0:
+                            logging.info("Strategy: Fix incompatibility violations")
+                            self._fix_incompatibility_violations()
+                        elif i % 5 == 1:
                             logging.info("Strategy: Fill empty shifts")
                             self._try_fill_empty_shifts()
-                        elif i % 3 == 1:
-                            # Second priority: Balance workloads
+                        elif i % 5 == 2:
                             logging.info("Strategy: Balance workloads")
                             self._balance_workloads()
-                        else:
-                            # Third priority: Improve post rotation
+                        elif i % 5 == 3:
                             logging.info("Strategy: Improve post rotation")
                             self._improve_post_rotation()
-                
-                        # Also try to improve weekend distribution in each attempt
-                        self._improve_weekend_distribution()
+                        elif i % 5 == 4:
+                            logging.info("Strategy: Improve weekend distribution")
+                            self._improve_weekend_distribution()
                 
                         # Validate the new schedule
                         try:
@@ -1147,6 +1147,89 @@ class Scheduler:
     
         logging.info(f"Weekend distribution improvement: made {changes_made} changes")
         return changes_made > 0
+        
+        def _fix_incompatibility_violations(self):
+        """
+        Check the entire schedule for incompatibility violations and fix them
+        by reassigning incompatible workers to different days
+        """
+        logging.info("Checking and fixing incompatibility violations")
+    
+        violations_fixed = 0
+        violations_found = 0
+    
+        # Check each date for incompatible worker assignments
+        for date in sorted(self.schedule.keys()):
+            workers_today = [w for w in self.schedule[date] if w is not None]
+        
+            # Check each pair of workers
+            for i, worker1_id in enumerate(workers_today):
+                for worker2_id in workers_today[i+1:]:
+                    # Check if these workers are incompatible
+                    if self._are_workers_incompatible(worker1_id, worker2_id):
+                        violations_found += 1
+                        logging.warning(f"Found incompatibility violation: {worker1_id} and {worker2_id} on {date}")
+                    
+                        # Try to fix the violation by moving one of the workers
+                        # Let's try to move the second worker first
+                        if self._try_reassign_worker(worker2_id, date):
+                            violations_fixed += 1
+                            logging.info(f"Fixed by reassigning {worker2_id} from {date}")
+                        # If that didn't work, try moving the first worker
+                        elif self._try_reassign_worker(worker1_id, date):
+                            violations_fixed += 1
+                            logging.info(f"Fixed by reassigning {worker1_id} from {date}")
+    
+        logging.info(f"Incompatibility check: found {violations_found} violations, fixed {violations_fixed}")
+        return violations_fixed > 0
+
+    def _try_reassign_worker(self, worker_id, date):
+        """
+        Try to find a new date to assign this worker to fix an incompatibility
+        """
+        # Find the position this worker is assigned to
+        try:
+            post = self.schedule[date].index(worker_id)
+        except ValueError:
+            return False
+    
+        # First, try to find a date with an empty slot for the same post
+        current_date = self.start_date
+        while current_date <= self.end_date:
+            # Skip the current date
+            if current_date == date:
+                current_date += timedelta(days=1)
+                continue
+            
+            # Check if this date has an empty slot at the same post
+            if (current_date in self.schedule and 
+                len(self.schedule[current_date]) > post and 
+                self.schedule[current_date][post] is None):
+            
+                # Check if worker can be assigned to this date
+                if self._can_assign_worker(worker_id, current_date, post):
+                    # Remove from original date
+                    self.schedule[date][post] = None
+                    self.worker_assignments[worker_id].remove(date)
+                
+                    # Assign to new date
+                    self.schedule[current_date][post] = worker_id
+                    self.worker_assignments[worker_id].add(current_date)
+                
+                    # Update tracking data
+                    self._update_worker_stats(worker_id, date, removing=True)
+                    self._update_tracking_data(worker_id, current_date, post)
+                
+                    return True
+                
+            current_date += timedelta(days=1)
+    
+        # If we couldn't find a new assignment, just remove this worker
+        self.schedule[date][post] = None
+        self.worker_assignments[worker_id].remove(date)
+        self._update_worker_stats(worker_id, date, removing=True)
+    
+        return True
 
     def _balance_workloads(self):
         """
@@ -1655,60 +1738,62 @@ class Scheduler:
             if worker_id in self.schedule[date]:
                 continue
         
-            # Hard constraints that should never be relaxed
+            # CRITICAL: Hard constraints that should never be relaxed
+        
+            # 1. Check worker availability (days off)
             if self._is_worker_unavailable(worker_id, date):
                 continue
         
+            # 2. Check for incompatibilities - CRITICAL
+            if not self._check_incompatibility(worker_id, date):
+                continue
+    
             # Check gap constraints with appropriate relaxation
             passed_gap = True
             assignments = sorted(self.worker_assignments[worker_id])
-        
+    
             if assignments:
-                # Determine appropriate gap based on worker type
-                min_gap = 3 if work_percentage < 100 else 2
-            
-                # At higher relaxation levels, we can reduce the gap requirement
-                if relaxation_level > 0 and work_percentage >= 100:
-                    min_gap = 1
-                
+                # CRITICAL: Always maintain minimum gap of 2 days regardless of relaxation
+                min_gap = 2  # Never go below 2 days
+        
                 # Check minimum gap
                 for prev_date in assignments:
                     days_between = abs((date - prev_date).days)
-                
-                    # Basic gap check
+            
+                    # CRITICAL: Basic minimum gap check - never relax below 2
                     if days_between < min_gap:
                         passed_gap = False
                         break
-                
-                    # Special rule for full-time workers: No Friday -> Monday assignments
-                    # (Only enforce at relaxation_level 0)
-                    if relaxation_level == 0 and work_percentage >= 100:
+            
+                    # Relax some non-critical gap constraints to improve coverage
+                    if relaxation_level < 2:  # Only enforce at lower relaxation levels
+                        # Special rule for full-time workers: No Friday -> Monday assignments
                         if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
                             (date.weekday() == 4 and prev_date.weekday() == 0)):
                             if days_between == 3:  # The gap between Friday and Monday
                                 passed_gap = False
                                 break
-                
-                    # Prevent same day of week in consecutive weeks
-                    # (Can be relaxed at highest relaxation level)
-                    if relaxation_level < 2 and days_between in [7, 14, 21]:
+            
+                    # Allow same day of week in consecutive weeks at higher relaxation
+                    if relaxation_level == 0 and days_between in [7, 14, 21]:
                         passed_gap = False
                         break
-        
+    
             if not passed_gap:
                 continue
-        
-            # Check weekend limit constraints (can be relaxed at higher levels)
-            if relaxation_level < 2 and self._would_exceed_weekend_limit(worker_id, date):
+    
+            # CRITICAL: Check weekend limit constraints - never relax completely
+            # But allow more flexibility at higher relaxation levels
+            if relaxation_level == 0 and self._would_exceed_weekend_limit(worker_id, date):
                 continue
-        
+    
             # Calculate score
             score = self._calculate_worker_score(worker, date, post, relaxation_level)
             if score > float('-inf'):
                 candidates.append((worker, score))
-    
-        return candidates
 
+        return candidates
+        
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
         Calculate score for a worker assignment with optional relaxation of constraints
@@ -1931,7 +2016,7 @@ class Scheduler:
                     continue
                 
                 if self._are_workers_incompatible(worker_id, assigned_id):
-                    logging.debug(f"Workers {worker_id} and {assigned_id} are incompatible")
+                    logging.warning(f"Workers {worker_id} and {assigned_id} are incompatible - cannot assign to {date}")
                     return False
 
             return True
@@ -1970,46 +2055,63 @@ class Scheduler:
                 
         return True
 
-    def _would_exceed_weekend_limit(self, worker_id, date):
+    def _would_exceed_weekend_limit(self, worker_id, date, relaxation_level=0):
         """
         Check if assigning this date would exceed the weekend limit
-        Maximum 3 weekend days in any 3-week period
-        Weekend days include: Friday, Saturday, Sunday, holidays, and pre-holidays
+        Modified to allow greater flexibility at higher relaxation levels
         """
         try:
             # If it's not a weekend day or holiday, no need to check
-            if not (date.weekday() >= 4 or date in self.holidays or 
-                (date + timedelta(days=1)) in self.holidays):
+            if not (date.weekday() >= 4 or date in self.holidays):
                 return False
-        
+    
             # Get all weekend assignments INCLUDING the new date
             weekend_assignments = [
                 d for d in self.worker_assignments[worker_id] 
                 if (d.weekday() >= 4 or d in self.holidays)
-            ]    
+            ]
         
-            # Add the new date if it's not already in the list
-            if date not in all_weekend_assignments:
-                all_weekend_assignments.append(date)
+            if date not in weekend_assignments:
+                weekend_assignments.append(date)
         
-            # For each weekend date, check if there are more than 3 weekend days 
-            # in the 21-day window centered on that date
-            for check_date in all_weekend_assignments:
-                # Define a 21-day window centered on this date
-                window_start = check_date - timedelta(days=10)  # 10 days before
-                window_end = check_date + timedelta(days=10)    # 10 days after
-            
-                # Count weekend days in this window
-                window_weekend_count = sum(
-                    1 for d in all_weekend_assignments
-                    if window_start <= d <= window_end
-                )
-                # STRICT ENFORCEMENT: No more than 3 weekend shifts in any 3-week period
-                if window_weekend_count > 3:
-                    logging.debug(f"Worker {worker_id} would exceed weekend limit: "
-                                f"{window_weekend_count} weekend days in 3-week window around {check_date}")
-                    return True
-                                    
+            weekend_assignments.sort()  # Sort by date
+        
+            # CRITICAL: Still maintain the overall limit, but with more flexibility
+            # at higher relaxation levels
+            max_window_size = 21  # 3 weeks is the default
+            max_weekend_count = 3  # Maximum 3 weekend shifts in the window
+        
+            # At relaxation level 1 or 2, allow adjacent weekends more easily
+            if relaxation_level >= 1:
+                # Adjust to looking at a floating window rather than centered window
+                for i in range(len(weekend_assignments)):
+                    # Check a window starting at this weekend assignment
+                    window_start = weekend_assignments[i]
+                    window_end = window_start + timedelta(days=max_window_size)
+                
+                    # Count weekend days in this window
+                    window_weekend_count = sum(
+                        1 for d in weekend_assignments
+                        if window_start <= d <= window_end
+                    )
+                
+                    if window_weekend_count > max_weekend_count:
+                        return True
+            else:
+                # Traditional centered window check for strict enforcement
+                for check_date in weekend_assignments:
+                    window_start = check_date - timedelta(days=10)
+                    window_end = check_date + timedelta(days=10)
+                
+                    # Count weekend days in this window
+                    window_weekend_count = sum(
+                        1 for d in weekend_assignments
+                        if window_start <= d <= window_end
+                    )    
+                
+                    if window_weekend_count > max_weekend_count:
+                        return True
+    
             return False
         
         except Exception as e:
@@ -2221,10 +2323,13 @@ class Scheduler:
         Check if two workers are incompatible based on incompatibility property or list.
         """
         try:
+            if worker1_id == worker2_id:
+                return False  # A worker isn't incompatible with themselves
+            
             # Get workers' data
             worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
             worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
-        
+    
             if not worker1 or not worker2:
                 return False
     
@@ -2232,15 +2337,7 @@ class Scheduler:
             has_incompatibility1 = worker1.get('is_incompatible', False)
             has_incompatibility2 = worker2.get('is_incompatible', False)
             if has_incompatibility1 and has_incompatibility2:
-                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible")
-                return True
-    
-            # Case 2: Check if either worker lists the other in 'incompatible_workers'
-            incompatible_list1 = worker1.get('incompatible_workers', [])
-            incompatible_list2 = worker2.get('incompatible_workers', [])
-        
-            if worker2_id in incompatible_list1 or worker1_id in incompatible_list2:
-                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible")
+                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible (both marked incompatible)")
                 return True
     
             return False
