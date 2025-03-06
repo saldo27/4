@@ -679,76 +679,6 @@ class Scheduler:
     
         # 4. Try to balance workload distribution
         self._balance_workloads()
-
-    def _try_fill_empty_shifts(self):
-        """
-        Try to fill empty shifts with progressive constraint relaxation.
-        If a shift cannot be filled even with maximum relaxation, leave it empty.
-        """
-        empty_shifts = []
-    
-        # Find all empty shifts
-        for date, workers in self.schedule.items():
-            for post, worker in enumerate(workers):
-                if worker is None:
-                    empty_shifts.append((date, post))
-    
-        if not empty_shifts:
-            return
-    
-        logging.info(f"Attempting to fill {len(empty_shifts)} empty shifts")
-    
-        # Sort empty shifts by date (earlier dates first)
-        empty_shifts.sort(key=lambda x: x[0])
-    
-        shifts_filled = 0
-    
-        # Try to fill each empty shift
-        for date, post in empty_shifts:
-            filled = False
-        
-            # Try three levels of constraint relaxation
-            for relaxation_level in range(3):
-                # Use the updated _get_candidates method with relaxation level
-                candidates = self._get_candidates(date, post, relaxation_level)
-            
-                if candidates:  # Only proceed if we found valid candidates
-                    try:
-                        # Sort candidates by score (highest first)
-                        candidates.sort(key=lambda x: x[1], reverse=True)
-                    
-                        # Group candidates with similar scores (within 10% of max score)
-                        max_score = candidates[0][1]
-                        top_candidates = [c for c in candidates if c[1] >= max_score * 0.9]
-                    
-                        if top_candidates:  # Only assign if we have valid top candidates
-                            # Add some randomness to selection
-                            random.shuffle(top_candidates)
-                        
-                            # Select the best candidate
-                            best_worker = top_candidates[0][0]
-                            worker_id = best_worker['id']
-                        
-                            # Assign the worker
-                            self.schedule[date][post] = worker_id
-                            self.worker_assignments[worker_id].add(date)
-                            self._update_tracking_data(worker_id, date, post)
-                        
-                            logging.info(f"Filled empty shift on {date} post {post} with worker {worker_id} "
-                                        f"(relaxation level: {relaxation_level})")
-                            filled = True
-                            shifts_filled += 1
-                            break  # Success at this relaxation level
-                    except Exception as e:
-                        logging.error(f"Error while filling shift {date} post {post}: {str(e)}")
-                        # Continue to next relaxation level
-        
-            if not filled:
-                # Keep the shift empty (None value)
-                logging.info(f"Leaving shift on {date} post {post} empty - no valid candidates found")
-    
-        logging.info(f"Filled {shifts_filled} of {len(empty_shifts)} empty shifts")
-        return shifts_filled > 0  # Return whether we made any improvements
     
     def _improve_post_rotation(self):
         """Improve post rotation by swapping assignments"""
@@ -939,25 +869,7 @@ class Scheduler:
             gap_days = (sorted_assignments[i] - sorted_assignments[i-1]).days
             if gap_days < 2:  # STRICT MINIMUM: 2 days
                 return False
-
-        # Check weekend limit
-        if self._is_weekend_day(to_date) and not self._is_weekend_day(from_date):
-            # We're adding a weekend day, check against the limit
-            weekend_days = [d for d in sorted_assignments if self._is_weekend_day(d)]
-        
-            # If the assignment would result in more than 3 weekend shifts in any 3-week period
-            for check_date in weekend_days:
-                window_start = check_date - timedelta(days=10)  # 10 days before
-                window_end = check_date + timedelta(days=10)    # 10 days after
-            
-                window_weekend_count = sum(
-                    1 for d in weekend_days
-                    if window_start <= d <= window_end
-                )
-            
-                if window_weekend_count > 3:  # STRICT MAXIMUM: 3 weekend shifts in 3 weeks
-                    return False
-
+ 
         # Check post balance - ensure we're not making another post even more imbalanced
         post_counts = self._get_post_counts(worker_id)
 
@@ -1148,7 +1060,8 @@ class Scheduler:
         logging.info(f"Weekend distribution improvement: made {changes_made} changes")
         return changes_made > 0
         
-        def _fix_incompatibility_violations(self):
+        # Fix indentation of _fix_incompatibility_violations and _try_reassign_worker methods
+    def _fix_incompatibility_violations(self):
         """
         Check the entire schedule for incompatibility violations and fix them
         by reassigning incompatible workers to different days
@@ -1164,7 +1077,9 @@ class Scheduler:
         
             # Check each pair of workers
             for i, worker1_id in enumerate(workers_today):
-                for worker2_id in workers_today[i+1:]:
+                for j in range(i+1, len(workers_today)):
+                    worker2_id = workers_today[j]
+                
                     # Check if these workers are incompatible
                     if self._are_workers_incompatible(worker1_id, worker2_id):
                         violations_found += 1
@@ -1175,11 +1090,19 @@ class Scheduler:
                         if self._try_reassign_worker(worker2_id, date):
                             violations_fixed += 1
                             logging.info(f"Fixed by reassigning {worker2_id} from {date}")
+                            # Update workers_today to reflect the change
+                            workers_today = [w for w in self.schedule[date] if w is not None]
+                            # Restart the inner loop with the updated worker list
+                            break
                         # If that didn't work, try moving the first worker
                         elif self._try_reassign_worker(worker1_id, date):
                             violations_fixed += 1
                             logging.info(f"Fixed by reassigning {worker1_id} from {date}")
-    
+                            # Update workers_today to reflect the change
+                            workers_today = [w for w in self.schedule[date] if w is not None]
+                            # Restart the inner loop with the updated worker list
+                            break
+        
         logging.info(f"Incompatibility check: found {violations_found} violations, fixed {violations_fixed}")
         return violations_fixed > 0
 
@@ -1651,69 +1574,6 @@ class Scheduler:
                         # Update tracking data
                         post = len(self.schedule[date]) - 1
                         self._update_tracking_data(worker_id, date, post)
-
-    def _assign_day_shifts(self, date, attempt_number=0):
-        if date not in self.schedule:
-            self.schedule[date] = []
-
-        remaining_shifts = self.num_shifts - len(self.schedule[date])
-    
-        for post in range(remaining_shifts):
-            # First try with all constraints
-            if self._try_assign_worker(date, post, attempt_number, relax_constraints=False):
-                continue
-            
-            # If failed, try with relaxed constraints
-            if self._try_assign_worker(date, post, attempt_number, relax_constraints=True):
-                continue
-            
-            # If still failed, leave shift unfilled
-            self.schedule[date].append(None)
-            logging.warning(f"No suitable worker found for {date}, post {post} - leaving shift unfilled")
-
-    def _try_assign_worker(self, date, post, attempt_number, relax_constraints=False):
-        """Try to assign a worker to a shift, optionally relaxing constraints"""
-        candidates = []
-    
-        for worker in self.workers_data:
-            worker_id = worker['id']
-        
-            # Skip if already assigned to this date
-            if worker_id in self.schedule[date]:
-                continue
-            
-            # Core constraints (never relaxed)
-            if self._is_worker_unavailable(worker_id, date):
-                continue
-            
-            # Relaxable constraints
-            if not relax_constraints:
-                # Check weekend limit
-                if self._would_exceed_weekend_limit(worker_id, date):
-                    continue
-                
-                # Check gap constraints with normal rules
-                if not self._check_gap_constraint(worker_id, date, None):
-                    continue
-            else:
-                # Apply more lenient gap rules when relaxing constraints
-                # But still maintain a 2-day minimum gap even when relaxed
-                assignments = sorted(list(self.worker_assignments[worker_id]))
-                if assignments and min((date - d).days for d in assignments if (date - d).days > 0) < 2:
-                    continue
-                
-            # Calculate score
-            score = self._calculate_worker_score(worker, date, post, relax_constraints)
-            if score > float('-inf'):
-                candidates.append((worker, score))
-    
-        # Assign best worker if we found candidates
-        if candidates:
-            # [Process candidates and assign a worker as in the original code]
-            # Return True if worker was assigned
-            return True
-        
-        return False
 
     def _get_candidates(self, date, post, relaxation_level=0):
         """
@@ -2270,7 +2130,12 @@ class Scheduler:
         """
         Check if a worker can be assigned to a shift
         """
+        
         try:
+            # Check for required data structures
+            if not hasattr(self, 'monthly_targets'):
+            self._calculate_monthly_targets()
+        
             # Log all constraint checks
             logging.debug(f"\nChecking worker {worker_id} for {date}, post {post}")
 
@@ -2318,6 +2183,7 @@ class Scheduler:
             logging.error(f"Error in _can_assign_worker for worker {worker_id}: {str(e)}", exc_info=True)
             return False
             
+# Update _are_workers_incompatible to include explicit pairs
     def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
         Check if two workers are incompatible based on incompatibility property or list.
@@ -2325,23 +2191,29 @@ class Scheduler:
         try:
             if worker1_id == worker2_id:
                 return False  # A worker isn't incompatible with themselves
-            
+        
             # Get workers' data
             worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
             worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
-    
+
             if not worker1 or not worker2:
                 return False
-    
+
             # Case 1: Check 'is_incompatible' property (both must have it for incompatibility)
             has_incompatibility1 = worker1.get('is_incompatible', False)
             has_incompatibility2 = worker2.get('is_incompatible', False)
             if has_incompatibility1 and has_incompatibility2:
                 logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible (both marked incompatible)")
                 return True
-    
+
+              # Check if this pair is in our explicit list (both directions)
+            if ((worker1_id, worker2_id) in incompatible_pairs or 
+                (worker2_id, worker1_id) in incompatible_pairs):
+                logging.debug(f"Workers {worker1_id} and {worker2_id} are in the explicit incompatible pairs list")
+                return True
+
             return False
-    
+
         except Exception as e:
             logging.error(f"Error checking worker incompatibility: {str(e)}")
             return False  # Default to compatible in case of error
@@ -2560,6 +2432,11 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking monthly balance for worker {worker_id}: {str(e)}", exc_info=True)
             return True, 0.0
+
+    def _initialize_monthly_targets(self):
+        """Initialize monthly targets if not already initialized"""
+        if not hasattr(self, 'monthly_targets'):
+            self._calculate_monthly_targets()
 
     def _calculate_monthly_targets(self):
         """Calculate target shifts per month for each worker"""
