@@ -192,75 +192,7 @@ class DataManager:
         logging.info(f"Schedule cleanup complete. Removed {len(incomplete_days)} empty days.")
         # Ensure data consistency before proceeding
         self._ensure_data_integrity()
-        
-    def _validate_final_schedule(self):
-        """Modified validation to allow for unfilled shifts"""
-        errors = []
-        warnings = []
-
-        logging.info("Starting final schedule validation...")
-
-        # Check each date in schedule
-        for date in sorted(self.schedule.keys()):
-            assigned_workers = [w for w in self.schedule[date] if w is not None]
-            
-            # Check worker incompatibilities
-            for i, worker_id in enumerate(assigned_workers):
-                for other_id in assigned_workers[i+1:]:
-                    if self._are_workers_incompatible(worker_id, other_id):
-                        errors.append(
-                            f"Incompatible workers {worker_id} and {other_id} "
-                            f"on {date.strftime('%Y-%m-%d')}"
-                        )
-
-            # Check understaffing (now a warning instead of error)
-            filled_shifts = len([w for w in self.schedule[date] if w is not None])
-            if filled_shifts < self.num_shifts:
-                warnings.append(
-                    f"Understaffed on {date.strftime('%Y-%m-%d')}: "
-                    f"{filled_shifts} of {self.num_shifts} shifts filled"
-                )
-
-        # Check worker-specific constraints
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            assignments = sorted([
-                date for date, workers in self.schedule.items()
-                if worker_id in workers
-            ])
-            
-            # Check weekend constraints
-            for date in assignments:
-                if self._is_weekend_day(date):
-                    window_start = date - timedelta(days=10)
-                    window_end = date + timedelta(days=10)
-                    
-                    weekend_count = sum(
-                        1 for d in assignments
-                        if window_start <= d <= window_end and self._is_weekend_day(d)
-                    )
-                    
-                    if weekend_count > 3:
-                        errors.append(
-                            f"Worker {worker_id} has {weekend_count} weekend/holiday "
-                            f"shifts in a 3-week period around {date.strftime('%Y-%m-%d')}"
-                        )
-
-            # Validate post rotation
-            self._validate_post_rotation(worker_id, warnings)
-
-        # Log all warnings
-        for warning in warnings:
-            logging.warning(warning)
-
-        # Handle errors
-        if errors:
-            error_msg = "Schedule validation failed:\n" + "\n".join(errors)
-            logging.error(error_msg)
-            raise SchedulerError(error_msg)
-
-        logging.info("Schedule validation completed successfully")
-        
+          
     def remove_worker_assignment(self, worker_id, date):
         """
         Remove a worker's assignment from a given date and update all tracking data
