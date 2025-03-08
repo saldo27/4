@@ -10,12 +10,7 @@ class DateTimeUtils:
     
     # Methods
     def __init__(self):
-        """
-        Initialize the date/time utilities
-        
-        Note: This class doesn't need a reference to the scheduler
-        as it provides standalone utility functions.
-        """
+        """Initialize the date/time utilities"""
         logging.info("DateTimeUtils initialized")
         
     def _get_spain_time(self):
