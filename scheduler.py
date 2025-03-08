@@ -654,3 +654,63 @@ class Scheduler:
             logging.error(f"Schedule validation failed: {str(e)}")
             return False, str(e)
         
+    def generate_worker_report(self, worker_id, save_to_file=False):
+        """
+        Generate a worker report and optionally save it to a file
+    
+        Args:
+            worker_id: ID of the worker to generate report for
+            save_to_file: Whether to save report to a file (default: False)
+        Returns:
+            str: The report text
+        """
+        try:
+            report = self.stats.generate_worker_report(worker_id)
+        
+            # Optionally save to file
+            if save_to_file:
+                filename = f'worker_{worker_id}_report.txt'
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(report)
+                logging.info(f"Worker report saved to {filename}")
+            
+            return report
+        
+        except Exception as e:
+            logging.error(f"Error generating worker report: {str(e)}")
+            return f"Error generating report: {str(e)}"
+
+    def generate_all_worker_reports(self, output_directory=None):
+        """
+        Generate reports for all workers
+    
+        Args:
+            output_directory: Directory to save reports (default: current directory)
+        Returns:
+            int: Number of reports generated
+        """
+        count = 0
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            try:
+                report = self.stats.generate_worker_report(worker_id)
+            
+                # Create filename
+                filename = f'worker_{worker_id}_report.txt'
+                if output_directory:
+                    import os
+                    os.makedirs(output_directory, exist_ok=True)
+                    filename = os.path.join(output_directory, filename)
+                
+                # Save to file
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(report)
+                
+                count += 1
+                logging.info(f"Generated report for worker {worker_id}")
+            
+            except Exception as e:
+                logging.error(f"Failed to generate report for worker {worker_id}: {str(e)}")
+            
+        logging.info(f"Generated {count} worker reports")
+        return count
