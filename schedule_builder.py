@@ -60,7 +60,7 @@ class ScheduleBuilder:
                         
                         # Update tracking data
                         post = len(self.schedule[date]) - 1
-                        self._update_tracking_data(worker_id, date, post)
+                        self.data_manager._update_tracking_data(worker_id, date, post)
                         
     def _assign_priority_days(self, forward):
         """Process weekend and holiday assignments first since they're harder to fill"""
@@ -150,7 +150,7 @@ class ScheduleBuilder:
                     # Assign the worker
                     self.schedule[date].append(worker_id)
                     self.worker_assignments[worker_id].add(date)
-                    self._update_tracking_data(worker_id, date, post)
+                    self.data_manager._update_tracking_data(worker_id, date, post)
                 
                     logging.debug(f"Assigned worker {worker_id} to {date}, post {post}")
                     break  # Success at this relaxation level
@@ -509,7 +509,7 @@ class ScheduleBuilder:
                 # Assign the worker
                 self.schedule[date][post] = worker_id
                 self.worker_assignments[worker_id].add(date)
-                self._update_tracking_data(worker_id, date, post)
+                self.data_manager._update_tracking_data(worker_id, date, post)
             
                 logging.info(f"Filled empty shift on {date} post {post} with worker {worker_id}")
                 shifts_filled += 1
@@ -630,7 +630,7 @@ class ScheduleBuilder:
                         self.worker_assignments[under_worker_id].add(date)
                 
                         # Update tracking data
-                        self._update_tracking_data(under_worker_id, date, post)
+                        self.data_manager._update_tracking_data(worker_id, date, post)
                 
                         changes_made += 1
                         logging.info(f"Balanced workload: Moved shift on {date.strftime('%Y-%m-%d')} post {post} "
@@ -788,7 +788,7 @@ class ScheduleBuilder:
                             # Update tracking data
                             self.worker_assignments[worker_id].remove(date)
                             self.worker_assignments[worker_id].add(other_date)
-                            self._update_tracking_data(worker_id, other_date, under_post)
+                            self.data_manager._update_tracking_data(worker_id, date, post)
                         
                             logging.info(f"Improved post rotation: Moved worker {worker_id} from {date.strftime('%Y-%m-%d')} "
                                         f"post {over_post} to {other_date.strftime('%Y-%m-%d')} post {under_post}")
@@ -903,7 +903,7 @@ class ScheduleBuilder:
                             self._update_worker_stats(over_worker_id, weekend_date, removing=True)
 
                             # Update tracking data for the under-loaded worker
-                            self._update_tracking_data(under_worker_id, weekend_date, post)
+                            self.data_manager._update_tracking_data(worker_id, date, post)
                         
                             # Update counts
                             weekend_counts[over_worker_id] -= 1
@@ -1002,7 +1002,7 @@ class ScheduleBuilder:
                 
                     # Update tracking data
                     self._update_worker_stats(worker_id, date, removing=True)
-                    self._update_tracking_data(worker_id, current_date, post)
+                    self.data_manager._update_tracking_data(worker_id, date, post)
                 
                     return True
                 
