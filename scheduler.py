@@ -19,22 +19,19 @@ class Scheduler:
     
     # Methods
     def __init__(self, config):
-        """
-        Initialize the scheduler with configuration
-        Args:
-            config: Dictionary containing schedule configuration
-        """
+        """Initialize the scheduler with configuration"""
         try:
             # First validate the configuration
             self._validate_config(config)
 
+            # Basic setup from config
             self.config = config
             self.start_date = config['start_date']
             self.end_date = config['end_date']
             self.num_shifts = config['num_shifts']
             self.workers_data = config['workers_data']
             self.holidays = config.get('holidays', [])
-            
+        
             # Initialize tracking dictionaries
             self.schedule = {}
             self.worker_assignments = {w['id']: set() for w in self.workers_data}
@@ -47,9 +44,17 @@ class Scheduler:
                 if 'target_shifts' not in worker:
                     worker['target_shifts'] = 0
 
-            # Calculate targets before proceeding
-            self._calculate_target_shifts()
+            # Set current time and user
+            self.date_utils = DateTimeUtils()
+            self.current_datetime = self.date_utils.get_spain_time()
+            self.current_user = 'saldo27'
         
+            # Add max_shifts_per_worker calculation
+            total_days = (self.end_date - self.start_date).days + 1
+            total_shifts = total_days * self.num_shifts
+            num_workers = len(self.workers_data)
+            self.max_shifts_per_worker = (total_shifts // num_workers) + 2  # Add some flexibility
+
             # Track constraint skips
             self.constraint_skips = {
                 w['id']: {
@@ -58,22 +63,19 @@ class Scheduler:
                     'reduced_gap': []  # For part-time workers
                 } for w in self.workers_data
             }
-
-            # Set current time and user
-            self.current_datetime = self._get_spain_time()
-            self.current_user = 'saldo27'
-
-            # Add max_shifts_per_worker calculation
-            total_days = (self.end_date - self.start_date).days + 1
-            total_shifts = total_days * self.num_shifts
-            num_workers = len(self.workers_data)
-            self.max_shifts_per_worker = (total_shifts // num_workers) + 2  # Add some flexibility
-
-            # Add eligibility tracker
+        
+            # Initialize helper modules
+            self.stats = StatisticsCalculator(self)
+            self.constraint_checker = ConstraintChecker(self)  
+            self.data_manager = DataManager(self)
+            self.schedule_builder = ScheduleBuilder(self)
             self.eligibility_tracker = WorkerEligibilityTracker(
                 self.workers_data,
                 self.holidays
             )
+
+            # Calculate targets before proceeding
+            self._calculate_target_shifts()
 
             self._log_initialization()
 
