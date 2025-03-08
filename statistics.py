@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from scheduler import Scheduler
+else:
+    from scheduler import SchedulerError
 
 class StatisticsCalculator:
     """Calculates statistics and metrics for schedules"""
