@@ -86,7 +86,7 @@ class DateTimeUtils:
             return True
         if holidays and self.is_pre_holiday(date, holidays):
             return True
-        return date.weekday() in [4, 5, 6]  # Friday = 4, Saturday = 5, Sunday = 6
+        return self.scheduler.date_utils.is_weekend_day(date, self.scheduler.holidays)
 
     def is_holiday(self, date):
         """
