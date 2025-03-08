@@ -13,7 +13,7 @@ class DateTimeUtils:
         """Initialize the date/time utilities"""
         logging.info("DateTimeUtils initialized")
         
-    def _get_spain_time(self):
+    def get_spain_time(self):
         """Get current time in Spain timezone with fallback options"""
         try:
             response = requests.get(
@@ -36,7 +36,7 @@ class DateTimeUtils:
             logging.error(f"Fallback time error: {str(e)}")
             return datetime.utcnow()
         
-    def _parse_dates(self, date_str):
+    def parse_dates(self, date_str):
         """Parse semicolon-separated dates"""
         if not date_str:
             return []
@@ -51,7 +51,7 @@ class DateTimeUtils:
                     logging.warning(f"Invalid date format '{date_text}' - {str(e)}")
         return dates
 
-    def _parse_date_ranges(self, date_ranges_str):
+    def parse_date_ranges(self, date_ranges_str):
         """Parse semicolon-separated date ranges"""
         if not date_ranges_str:
             return []
@@ -72,22 +72,23 @@ class DateTimeUtils:
                 logging.warning(f"Invalid date range format '{date_range}' - {str(e)}")
         return ranges
     
-    def _is_weekend_day(self, date):
+    def is_weekend_day(self, date, holidays=None):
         """
         Check if date is a weekend day, holiday, or pre-holiday
-        
+    
         Args:
             date: datetime object
+            holidays: optional list of holidays (if None, no holiday check)
         Returns:
             bool: True if weekend/holiday/pre-holiday, False otherwise
         """
-        if self._is_holiday(date):
+        if holidays and self.is_holiday(date, holidays):
             return True
-        if self._is_pre_holiday(date):
+        if holidays and self.is_pre_holiday(date, holidays):
             return True
         return date.weekday() in [4, 5, 6]  # Friday = 4, Saturday = 5, Sunday = 6
 
-    def _is_holiday(self, date):
+    def is_holiday(self, date):
         """
         Check if a date is a holiday
         
@@ -98,7 +99,7 @@ class DateTimeUtils:
         """
         return date in self.holidays
 
-    def _is_pre_holiday(self, date):
+    def is_pre_holiday(self, date):
         """
         Check if a date is the day before a holiday
         
@@ -110,7 +111,7 @@ class DateTimeUtils:
         next_day = date + timedelta(days=1)
         return next_day in self.holidays
 
-    def _get_weekend_start(self, date):
+    def get_weekend_start(self, date):
         """
         Get the start date (Friday) of the weekend containing this date
         
@@ -127,7 +128,7 @@ class DateTimeUtils:
             # Regular weekend - get to Friday
             return date - timedelta(days=date.weekday() - 4)
         
-    def _get_effective_weekday(self, date):
+    def get_effective_weekday(self, date):
         """
         Get the effective weekday, treating holidays as Sundays and pre-holidays as Fridays
         
