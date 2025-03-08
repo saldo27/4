@@ -13,12 +13,12 @@ class StatisticsCalculator:
     def __init__(self, scheduler):
         """
         Initialize the statistics calculator
-        
+    
         Args:
             scheduler: The main Scheduler object
         """
         self.scheduler = scheduler
-        
+    
         # Store references to frequently accessed attributes
         self.schedule = scheduler.schedule
         self.worker_assignments = scheduler.worker_assignments
@@ -27,7 +27,8 @@ class StatisticsCalculator:
         self.worker_weekends = scheduler.worker_weekends
         self.workers_data = scheduler.workers_data
         self.num_shifts = scheduler.num_shifts
-        
+        self.holidays = scheduler.holidays  # Add this line to reference holidays
+    
         logging.info("StatisticsCalculator initialized")
     
     def get_post_counts(self, worker_id):
