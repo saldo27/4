@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+    from datetime import datetime, timedelta
 
 class WorkerEligibilityTracker:
     """Helper class to track and manage worker eligibility for assignments"""
@@ -12,6 +12,7 @@ class WorkerEligibilityTracker:
             holidays: List of holiday dates
         """
         self.workers_data = workers_data
+        self.eligibility_tracker = WorkerEligibilityTracker(self.workers_data, self.holidays)
         self.holidays = holidays
         self.last_worked_date = {w['id']: None for w in workers_data}
         self.total_assignments = {w['id']: 0 for w in workers_data}
@@ -144,6 +145,62 @@ class WorkerEligibilityTracker:
             date + timedelta(days=1) in self.holidays
         )
 
+    def _update_tracking_data(self, worker_id, date, post):
+        """
+        Update all tracking data structures after assignment
+    
+        Args:
+            worker_id: ID of the worker being assigned
+            date: Date of assignment
+            post: Post number being assigned (0-indexed)
+        """
+        try:
+            # Ensure data structures exist for this worker
+            if worker_id not in self.scheduler.worker_assignments:
+                self.scheduler.worker_assignments[worker_id] = set()
+        
+            if worker_id not in self.scheduler.worker_posts:
+                self.scheduler.worker_posts[worker_id] = set()
+            
+            if worker_id not in self.scheduler.worker_weekdays:
+                self.scheduler.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
+            
+            if worker_id not in self.scheduler.worker_weekends:
+                self.scheduler.worker_weekends[worker_id] = []
+        
+            # Update worker assignments set
+            self.scheduler.worker_assignments[worker_id].add(date)
+        
+            # Update post tracking
+            self.scheduler.worker_posts[worker_id].add(post)
+        
+            # Update weekday counts
+            weekday = date.weekday()
+            self.scheduler.worker_weekdays[worker_id][weekday] += 1
+        
+            # Update weekend tracking if applicable
+            is_weekend = self.scheduler.date_utils.is_weekend_day(date, self.scheduler.holidays)
+            if is_weekend:
+                # Check if we already have this date in the weekends list
+                if date not in self.scheduler.worker_weekends[worker_id]:
+                    self.scheduler.worker_weekends[worker_id].append(date)
+                
+                # Ensure the weekend list is sorted by date
+                self.scheduler.worker_weekends[worker_id].sort()
+        
+            # Update the worker eligibility tracker if it exists
+            if hasattr(self.scheduler, 'eligibility_tracker'):
+                self.scheduler.eligibility_tracker.update_worker_status(worker_id, date)
+            
+            # Mark data as needing verification since we've modified it
+            self.mark_data_dirty()
+        
+            # Log the update
+            logging.debug(f"Updated tracking data for {worker_id} on {date.strftime('%Y-%m-%d')}, post {post}")
+        
+        except Exception as e:
+            logging.error(f"Error in _update_tracking_data for worker {worker_id}: {str(e)}", exc_info=True)
+        
     def remove_worker_assignment(self, worker_id, date):
         """
         Remove tracking data when a worker's assignment is removed
@@ -165,3 +222,61 @@ class WorkerEligibilityTracker:
         if self._is_weekend_day(date) and date in self.recent_weekends[worker_id]:
             self.recent_weekends[worker_id].remove(date)
 
+    def _remove_tracking_data(self, worker_id, date, post):
+        """
+        Remove tracking data when a worker is unassigned from a shift
+    
+        Args:
+            worker_id: ID of the worker being unassigned
+            date: Date of assignment
+            post: Post number being unassigned (0-indexed)
+        """
+        try:
+            # Remove from worker assignments
+            if worker_id in self.scheduler.worker_assignments:
+                if date in self.scheduler.worker_assignments[worker_id]:
+                    self.scheduler.worker_assignments[worker_id].remove(date)
+        
+            # We cannot directly remove from posts since worker_posts doesn't track which post
+            # was assigned on which date. We'll need to recalculate this from the schedule.
+        
+            # Update weekday counts
+            if worker_id in self.scheduler.worker_weekdays:
+                weekday = date.weekday()
+                if self.scheduler.worker_weekdays[worker_id][weekday] > 0:
+                self.scheduler.worker_weekdays[worker_id][weekday] -= 1
+        
+            # Update weekend tracking
+            is_weekend = self.scheduler.date_utils.is_weekend_day(date, self.scheduler.holidays)
+            if is_weekend and worker_id in self.scheduler.worker_weekends:
+                if date in self.scheduler.worker_weekends[worker_id]:
+                    self.scheduler.worker_weekends[worker_id].remove(date)
+        
+            # Update the worker eligibility tracker if it exists
+            if hasattr(self.scheduler, 'eligibility_tracker'):
+                self.scheduler.eligibility_tracker.remove_worker_assignment(worker_id, date)
+            
+            # Mark data as needing verification since we've modified it
+            self.mark_data_dirty()
+        
+            # Log the update
+            logging.debug(f"Removed tracking data for {worker_id} from {date.strftime('%Y-%m-%d')}, post {post}")
+        
+        except Exception as e:
+            logging.error(f"Error in _remove_tracking_data for worker {worker_id}: {str(e)}", exc_info=True)
+
+    def rebuild_worker_posts(self):
+        """
+        Rebuild the worker_posts tracking structure from the schedule
+        Should be called after making multiple changes to the schedule
+        """
+        # Initialize empty post sets for all workers
+        self.scheduler.worker_posts = {w['id']: set() for w in self.scheduler.workers_data}
+    
+        # Iterate through the schedule and rebuild post assignments
+        for date, workers in self.scheduler.schedule.items():
+            for post, worker_id in enumerate(workers):
+                if worker_id is not None:
+                    self.scheduler.worker_posts[worker_id].add(post)
+    
+        logging.debug("Rebuilt worker post assignments")
