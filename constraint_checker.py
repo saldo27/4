@@ -9,27 +9,23 @@ class ConstraintChecker:
     "   ""Handles all constraint checking logic for the scheduler"""
     
     # Methods
-    def __init__(self, scheduler: 'Scheduler'):
-        """
-        Initialize the schedule builder
-        
-        Args:
-            scheduler: The main Scheduler object
-        """
-        self.scheduler = scheduler
-        
-        # Store references to frequently used objects to reduce attribute lookups
-        self.constraint_checker = scheduler.constraint_checker
-        self.data_manager = scheduler.data_manager
-        self.stats = scheduler.stats
-        
-        # Optional: Store references to frequently accessed attributes
-        self.schedule = scheduler.schedule  # Direct reference to the schedule
-        self.worker_assignments = scheduler.worker_assignments
-        self.num_shifts = scheduler.num_shifts
-        
-        logging.info("ScheduleBuilder initialized")
-
+    def __init__(self, scheduler):
+    """
+    Initialize the constraint checker
+    
+    Args:
+        scheduler: The main Scheduler object
+    """
+    self.scheduler = scheduler
+    
+    # Store references to frequently accessed attributes
+    self.workers_data = scheduler.workers_data
+    self.schedule = scheduler.schedule
+    self.worker_assignments = scheduler.worker_assignments
+    self.holidays = scheduler.holidays
+    self.num_shifts = scheduler.num_shifts
+    
+    logging.info("ConstraintChecker initialized")
     
     def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
