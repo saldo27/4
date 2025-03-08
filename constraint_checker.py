@@ -10,22 +10,22 @@ class ConstraintChecker:
     
     # Methods
     def __init__(self, scheduler):
-    """
-    Initialize the constraint checker
+        """
+        Initialize the constraint checker
     
-    Args:
-        scheduler: The main Scheduler object
-    """
-    self.scheduler = scheduler
+        Args:
+            scheduler: The main Scheduler object
+        """
+        self.scheduler = scheduler
     
-    # Store references to frequently accessed attributes
-    self.workers_data = scheduler.workers_data
-    self.schedule = scheduler.schedule
-    self.worker_assignments = scheduler.worker_assignments
-    self.holidays = scheduler.holidays
-    self.num_shifts = scheduler.num_shifts
+        # Store references to frequently accessed attributes
+        self.workers_data = scheduler.workers_data
+        self.schedule = scheduler.schedule
+        self.worker_assignments = scheduler.worker_assignments
+        self.holidays = scheduler.holidays
+        self.num_shifts = scheduler.num_shifts
     
-    logging.info("ConstraintChecker initialized")
+        logging.info("ConstraintChecker initialized")
     
     def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
@@ -667,5 +667,5 @@ class ConstraintChecker:
         if new_deviation > current_deviation:
             return False
 
-        return True)
+        return True
     
