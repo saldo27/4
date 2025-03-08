@@ -375,36 +375,8 @@ class ConstraintChecker:
             if self._has_three_consecutive_weekends(worker_id, date):
                 return False, "three consecutive weekends"
 
-        return True, ""
-
-    def _are_workers_incompatible(self, worker1_id, worker2_id):
-        """
-        Check if two workers are incompatible based on incompatibility property or list.
-        """
-        try:
-            if worker1_id == worker2_id:
-                return False  # A worker isn't incompatible with themselves
-            
-            # Get workers' data
-            worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
-            worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
-    
-            if not worker1 or not worker2:
-                return False
-    
-            # Case 1: Check 'is_incompatible' property (both must have it for incompatibility)
-            has_incompatibility1 = worker1.get('is_incompatible', False)
-            has_incompatibility2 = worker2.get('is_incompatible', False)
-            if has_incompatibility1 and has_incompatibility2:
-                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible (both marked incompatible)")
-                return True
-    
-            return False
-    
-        except Exception as e:
-            logging.error(f"Error checking worker incompatibility: {str(e)}")
-            return False  # Default to compatible in case of error
-            
+        return True, "" 
+     
     def _check_day_compatibility(self, worker_id, date):
         """Check if worker is compatible with all workers already assigned to this date"""
         if date not in self.schedule:
@@ -594,55 +566,7 @@ class ConstraintChecker:
             return 1  # Acceptable imbalance
         else:
             return 0  # Unacceptable imbalance
-
-    def _check_monthly_balance(self, worker_id, date):
-        """
-        Check if assigning this date would maintain monthly balance based on available days
-        """
-        try:
-            # Get monthly distribution
-            distribution = {}
-            month_days = self._get_schedule_months()  # This returns a dict, not an int
-        
-            # Count current assignments
-            for assigned_date in self.worker_assignments[worker_id]:
-                month_key = f"{assigned_date.year}-{assigned_date.month:02d}"
-                distribution[month_key] = distribution.get(month_key, 0) + 1
     
-            # Add potential new assignment
-            month_key = f"{date.year}-{date.month:02d}"
-            new_distribution = distribution.copy()
-            new_distribution[month_key] = new_distribution.get(month_key, 0) + 1
-
-            if new_distribution:
-                # Calculate ratios of shifts per available day for each month
-                ratios = {}
-                for m_key, shifts in new_distribution.items():
-                    if m_key in month_days:  # Make sure month key exists
-                        available_days = month_days[m_key]
-                        if available_days > 0:  # Prevent division by zero
-                            ratios[m_key] = shifts / available_days
-                        else:
-                            ratios[m_key] = 0
-                    else:
-                        logging.warning(f"Month {m_key} not found in month_days for worker {worker_id}")
-                        ratios[m_key] = 0
-
-                if ratios:
-                    max_ratio = max(ratios.values())
-                    min_ratio = min(ratios.values())
-            
-                    # Allow maximum 20% difference in ratios
-                    if (max_ratio - min_ratio) > 0.2:
-                        logging.debug(f"Monthly balance violated for worker {worker_id}: {ratios}")
-                        return False, max_ratio - min_ratio
-
-            return True, 0.0
-
-        except Exception as e:
-            logging.error(f"Error checking monthly balance for worker {worker_id}: {str(e)}", exc_info=True)
-            return True, 0.0
-        
     def _can_swap_assignments(self, worker_id, from_date, from_post, to_date, to_post):
         """
         Check if a worker can be reassigned from one date/post to another
