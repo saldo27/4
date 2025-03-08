@@ -195,44 +195,7 @@ class StatisticsCalculator:
         if target == 0:
             return 0
         return len(self.worker_assignments[worker_id]) / target
-    
-    def _calculate_post_rotation_coverage(self):
-        """Calculate how well the post rotation is working across all workers"""
-        worker_scores = {}
-        total_score = 0
-    
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            post_counts = self._get_post_counts(worker_id)
-            total_assignments = sum(post_counts.values())
-        
-            if total_assignments == 0:
-                worker_scores[worker_id] = 100  # No assignments, perfect score
-                continue
-            
-            post_imbalance = 0
-            expected_per_post = total_assignments / self.num_shifts
-        
-            for post in range(self.num_shifts):
-                post_count = post_counts.get(post, 0)
-                post_imbalance += abs(post_count - expected_per_post)
-        
-            # Calculate a score where 0 imbalance = 100%
-            imbalance_ratio = post_imbalance / total_assignments
-            worker_score = max(0, 100 - (imbalance_ratio * 100))
-            worker_scores[worker_id] = worker_score
-        
-        # Calculate overall score
-        if worker_scores:
-            total_score = sum(worker_scores.values()) / len(worker_scores)
-        else:
-            total_score = 0
-        
-        return {
-            'overall_score': total_score,
-            'worker_scores': worker_scores
-        }
-    
+   
     def _calculate_post_rotation_coverage(self):
         """Calculate how well the post rotation is working across all workers"""
         worker_scores = {}
