@@ -3,7 +3,9 @@ from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from scheduler import Scheduler
+    from scheduler import Scheduler, SchedulerError
+else:
+    from scheduler import SchedulerError
 
 class ConstraintChecker:
     "   ""Handles all constraint checking logic for the scheduler"""
