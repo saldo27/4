@@ -261,7 +261,7 @@ class ConstraintChecker:
                 return True
 
             # NEW CHECK: If this is a weekend day, check if worker already has 3 weekend shifts in any 3-week period
-            if self._is_weekend_day(date):
+            if self.date_utils.is_weekend_day(date, self.holidays):
                 # Only perform this check for weekend days to improve performance
                 weekend_dates = sorted([
                     d for d in self.worker_assignments[worker_id] 
@@ -371,7 +371,7 @@ class ConstraintChecker:
             return False, "incompatibility"
 
         # Weekend constraints
-        if self._is_weekend_day(date):
+        if self.date_utils.is_weekend_day(date, self.holidays):
             if self._has_three_consecutive_weekends(worker_id, date):
                 return False, "three consecutive weekends"
 
@@ -669,3 +669,6 @@ class ConstraintChecker:
 
         return True
     
+    def _get_post_counts(self, worker_id):
+        """Get post distribution for a worker"""
+        return self.scheduler.stats.get_post_counts(worker_id)
