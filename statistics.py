@@ -1,15 +1,14 @@
 # Imports
+import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from scheduler import Scheduler
-import logging
 
 class StatisticsCalculator:
     """Calculates statistics and metrics for schedules"""
     
-    # Methods
-    def __init__(self, scheduler: 'Scheduler'):
+    def __init__(self, scheduler):
         """
         Initialize the statistics calculator
         
@@ -18,37 +17,34 @@ class StatisticsCalculator:
         """
         self.scheduler = scheduler
         
-        # Optional: Cache frequently accessed attributes
+        # Store references to frequently accessed attributes
         self.schedule = scheduler.schedule
         self.worker_assignments = scheduler.worker_assignments
         self.worker_posts = scheduler.worker_posts
         self.worker_weekdays = scheduler.worker_weekdays
         self.worker_weekends = scheduler.worker_weekends
+        self.workers_data = scheduler.workers_data
+        self.num_shifts = scheduler.num_shifts
         
         logging.info("StatisticsCalculator initialized")
-        
-    def _get_post_counts(self, worker_id):
-        """
-        Get count of assignments per post for a worker
     
-        Args:
-            worker_id: The worker's ID
-        Returns:
-            dict: Count of assignments for each post number
+    def get_post_counts(self, worker_id):
         """
-        post_counts = {i: 0 for i in range(self.num_shifts)}
-        for assigned_date in self.worker_assignments[worker_id]:
-            if assigned_date in self.schedule:
-                try:
-                    # Try to find the worker in the schedule
-                    post = self.schedule[assigned_date].index(worker_id)
-                    post_counts[post] += 1
-                except ValueError:
-                    # Worker not found in the schedule for this date
-                    logging.warning(f"Worker {worker_id} has assignment for date {assigned_date} but is not in the schedule")
-                    # Remove this inconsistent assignment from worker_assignments
-                    # self.worker_assignments[worker_id].discard(assigned_date)
-        return post_counts)
+        Get the counts of different posts for a worker
+        
+        Args:
+            worker_id: The worker ID to check
+        Returns:
+            dict: Dictionary mapping post numbers to counts
+        """
+        if worker_id not in self.worker_posts:
+            return {}
+            
+        post_counts = {}
+        for post in self.worker_posts[worker_id]:
+            post_counts[post] = post_counts.get(post, 0) + 1
+        
+        return post_counts
     
     def _get_monthly_distribution(self, worker_id):
         """
