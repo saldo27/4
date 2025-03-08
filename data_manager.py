@@ -613,29 +613,29 @@ class DataManager:
             )
 
     def verify_schedule_integrity(self):
-    """
-    Verify schedule integrity and constraints
+        """
+        Verify schedule integrity and constraints
     
-    Returns:
-        tuple: (bool, dict) - (is_valid, results)
-            is_valid: True if schedule passes all validations
-            results: Dictionary containing validation results and metrics
-    """
-    try:
-        # Run comprehensive validation
-        self.data_manager.validate_final_schedule()
+        Returns:
+            tuple: (bool, dict) - (is_valid, results)
+                is_valid: True if schedule passes all validations
+                results: Dictionary containing validation results and metrics
+        """
+        try:
+            # Run comprehensive validation
+            self.data_manager.validate_final_schedule()
         
-        # Additional verification steps...
+            # Additional verification steps...
         
-        return True, {
-            'stats': self.stats.gather_statistics(),
-            'metrics': self.stats.get_schedule_metrics(),
-            'coverage': self.stats.calculate_coverage(),
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'validator': self.current_user
-        }
+            return True, {
+                'stats': self.stats.gather_statistics(),
+                'metrics': self.stats.get_schedule_metrics(),
+                'coverage': self.stats.calculate_coverage(),
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'validator': self.current_user
+            }    
         
-    except SchedulerError as e:
-        logging.error(f"Schedule validation failed: {str(e)}")
-        return False, str(e)
+        except SchedulerError as e:
+            logging.error(f"Schedule validation failed: {str(e)}")
+            return False, str(e)
     
