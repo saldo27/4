@@ -18,82 +18,37 @@ class DataManager:
         """
         self.scheduler = scheduler
         
+        # Store references to frequently accessed attributes
+        self.schedule = scheduler.schedule
+        self.worker_assignments = scheduler.worker_assignments
+        self.worker_posts = scheduler.worker_posts
+        self.worker_weekdays = scheduler.worker_weekdays
+        self.worker_weekends = scheduler.worker_weekends
+        self.num_shifts = scheduler.num_shifts
+        self.workers_data = scheduler.workers_data
+        
         # Flag to track if data integrity has been verified
         self.data_integrity_verified = False
         
-        # Optional: Initialize monthly targets structure if needed
+        # Initialize monthly targets structure
         self.monthly_targets = {}
         
         logging.info("DataManager initialized")
         
-    def _ensure_data_integrity(self):
-        """
-        Comprehensive check and fix for data integrity between all scheduler data structures
-        """
-        # 1. Check worker_assignments against schedule
-        for worker_id, dates in self.worker_assignments.items():
-            # Remove dates that are not in schedule or where worker is not assigned
-            dates_to_remove = [
-                date for date in dates
-                if date not in self.schedule or worker_id not in self.schedule[date]
-        ]
-            for date in dates_to_remove:
-                dates.discard(date)
-                logging.warning(f"Fixed inconsistency: Removed {date} from worker {worker_id}'s assignments")
-    
-        # 2. Check schedule against worker_assignments
-        for date, workers in self.schedule.items():
-            for post, worker_id in enumerate(workers):
-                if worker_id is not None and date not in self.worker_assignments.get(worker_id, set()):
-                    # Add missing assignment
-                    self.worker_assignments[worker_id].add(date)
-                    logging.warning(f"Fixed inconsistency: Added {date} to worker {worker_id}'s assignments")
-    
-        # 3. Verify worker_weekends consistency
-        for worker_id in self.worker_assignments:
-            correct_weekends = []
-            for date in sorted(self.worker_assignments[worker_id]):
-                if self._is_weekend_day(date):
-                    weekend_start = self._get_weekend_start(date)
-                    if weekend_start not in correct_weekends:
-                        correct_weekends.append(weekend_start)
+    def ensure_data_integrity(self):
+        """Check and fix data integrity between scheduler data structures"""
+        if self.data_integrity_verified:
+            return
         
-            # Update if inconsistent
-            if sorted(correct_weekends) != sorted(self.worker_weekends[worker_id]):
-                self.worker_weekends[worker_id] = sorted(correct_weekends)
-                logging.warning(f"Fixed inconsistency: Updated weekend data for worker {worker_id}")
-    
-        # 4. Verify worker_weekdays consistency
-        for worker_id in self.worker_assignments:
-            corrected_weekdays = {i: 0 for i in range(7)}
-            for date in self.worker_assignments[worker_id]:
-                weekday = date.weekday()
-                corrected_weekdays[weekday] += 1
+        # Verify worker assignments match schedule
+        self.verify_assignment_consistency()
         
-            # Update if inconsistent
-            for weekday, count in corrected_weekdays.items():
-                if self.worker_weekdays[worker_id][weekday] != count:
-                    self.worker_weekdays[worker_id][weekday] = count
-                    logging.warning(f"Fixed inconsistency: Updated weekday {weekday} count for worker {worker_id}")
-    
-        # 5. Verify worker_posts consistency
-        for worker_id in self.worker_assignments:
-            correct_posts = set()
-            for date in self.worker_assignments[worker_id]:
-                if date in self.schedule and worker_id in self.schedule[date]:
-                    try:
-                        post = self.schedule[date].index(worker_id)
-                        correct_posts.add(post)
-                    except ValueError:
-                        # Worker not found in schedule for this date
-                        logging.warning(f"Worker {worker_id} has assignment for date {date} but is not in schedule")
+        # Mark data as verified
+        self.data_integrity_verified = True
         
-            # Update if inconsistent
-            if correct_posts != self.worker_posts[worker_id]:
-                self.worker_posts[worker_id] = correct_posts
-                logging.warning(f"Fixed inconsistency: Updated posts for worker {worker_id}")
-                
-    def mark_data_dirty(self)
+    def mark_data_dirty(self):
+        """Mark that data integrity needs to be verified again"""
+        self.data_integrity_verified = False
     
     def _verify_assignment_consistency(self):   
         """
@@ -129,7 +84,6 @@ class DataManager:
                     # Add missing assignment
                     self.worker_assignments[worker_id].add(date)
                     logging.warning(f"Fixed inconsistency: Added date {date} to worker {worker_id}'s assignments")
-
 
     def _update_tracking_data(self, worker_id, date, post):
         """
