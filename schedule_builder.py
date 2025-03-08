@@ -10,68 +10,24 @@ class ScheduleBuilder:
     """Handles schedule generation and improvement"""
     
     # Methods
-    def __init__(self, scheduler: 'Scheduler'):
-        """
-        Initialize the scheduler with configuration
-        Args:
-            config: Dictionary containing schedule configuration
-        """
-        try:
-            # First validate the configuration
-            self._validate_config(config)
-
-            self.config = config
-            self.start_date = config['start_date']
-            self.end_date = config['end_date']
-            self.num_shifts = config['num_shifts']
-            self.workers_data = config['workers_data']
-            self.holidays = config.get('holidays', [])
-            
-            # Initialize tracking dictionaries
-            self.schedule = {}
-            self.worker_assignments = {w['id']: set() for w in self.workers_data}
-            self.worker_posts = {w['id']: set() for w in self.workers_data}
-            self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
-            self.worker_weekends = {w['id']: [] for w in self.workers_data}
-
-            # Initialize worker targets
-            for worker in self.workers_data:
-                if 'target_shifts' not in worker:
-                    worker['target_shifts'] = 0
-
-            # Calculate targets before proceeding
-            self._calculate_target_shifts()
-        
-            # Track constraint skips
-            self.constraint_skips = {
-                w['id']: {
-                    'gap': [],
-                    'incompatibility': [],
-                    'reduced_gap': []  # For part-time workers
-                } for w in self.workers_data
-            }
-
-            # Set current time and user
-            self.current_datetime = self._get_spain_time()
-            self.current_user = 'saldo27'
-
-            # Add max_shifts_per_worker calculation
-            total_days = (self.end_date - self.start_date).days + 1
-            total_shifts = total_days * self.num_shifts
-            num_workers = len(self.workers_data)
-            self.max_shifts_per_worker = (total_shifts // num_workers) + 2  # Add some flexibility
-
-            # Add eligibility tracker
-            self.eligibility_tracker = WorkerEligibilityTracker(
-                self.workers_data,
-                self.holidays
-            )
-
-            self._log_initialization()
-
-        except Exception as e:
-            logging.error(f"Initialization error: {str(e)}")
-            raise SchedulerError(f"Failed to initialize scheduler: {str(e)}")
+    def __init__(self, scheduler):
+    """
+    Initialize the schedule builder
+    
+    Args:
+        scheduler: The main Scheduler object
+    """
+    self.scheduler = scheduler
+    
+    # Store references to frequently accessed attributes
+    self.workers_data = scheduler.workers_data
+    self.schedule = scheduler.schedule
+    self.worker_assignments = scheduler.worker_assignments
+    self.num_shifts = scheduler.num_shifts
+    self.holidays = scheduler.holidays
+    self.constraint_checker = scheduler.constraint_checker
+    
+    logging.info("ScheduleBuilder initialized")
         
     def _assign_mandatory_guards(self):
         """
