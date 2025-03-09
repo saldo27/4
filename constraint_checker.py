@@ -518,34 +518,33 @@ class ConstraintChecker:
             logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
             return True
         
-    def _get_weekday_balance_score(self, worker_id, date):
-        """Calculate how well this assignment would maintain weekday balance"""
-        weekday = date.weekday()
-        weekday_counts = self.worker_weekdays[worker_id].copy()
-        weekday_counts[weekday] += 1
+    def _check_weekday_balance(self, worker_id, date):
+        """
+        Check if assigning this date would maintain weekday balance
     
-        # Calculate current and new imbalance
-        current_max = max(self.worker_weekdays[worker_id].values())
-        current_min = min(self.worker_weekdays[worker_id].values())
-        current_imbalance = current_max - current_min
+        Returns:
+            bool: True if assignment maintains balance, False otherwise
+        """
+        try:
+            # Get current weekday counts including the new date
+            weekday = date.weekday()
+            weekday_counts = self.worker_weekdays[worker_id].copy()
+            weekday_counts[weekday] += 1
 
-        new_max = max(weekday_counts.values())
-        new_min = min(weekday_counts.values())
-        new_imbalance = new_max - new_min
+            # Calculate maximum difference
+            max_count = max(weekday_counts.values())
+            min_count = min(weekday_counts.values())
+    
+            # Strictly enforce maximum 1 shift difference between weekdays
+            if max_count - min_count > 1:
+                logging.debug(f"Weekday balance violated for worker {worker_id}: {weekday_counts}")
+                return False
 
-        # Return a score based on how it affects balance
-        if new_imbalance < current_imbalance:
-            return 3  # Improves balance
-        elif new_imbalance == current_imbalance:
-            return 2  # Maintains balance
-        elif new_imbalance <= 1:
-            return 1  # Acceptable imbalance
-        else:
-            return 0  # Unacceptable imbalance
-      
+            return True
+
         except Exception as e:
             logging.error(f"Error checking weekday balance for worker {worker_id}: {str(e)}")
-            return True [worker_id].values())
+            return True
         
     def _can_swap_assignments(self, worker_id, from_date, from_post, to_date, to_post):
         """
