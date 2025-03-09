@@ -526,7 +526,7 @@ class ConstraintChecker:
     
         # Calculate current and new imbalance
         current_max = max(self.worker_weekdays[worker_id].values())
-        current_min = min(self.worker_weekdays[wordef _check_weekday_balance(self, worker_id, date):
+        current_min = min(self.worker_weekdays[wordef, _check_weekday_balance(self, worker_id, date):
         """
         Check if assigning this date would maintain weekday balance
         
