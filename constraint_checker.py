@@ -526,39 +526,13 @@ class ConstraintChecker:
     
         # Calculate current and new imbalance
         current_max = max(self.worker_weekdays[worker_id].values())
-        current_min = min(self.worker_weekdays[wordef, _check_weekday_balance(self, worker_id, date):
-        """
-        Check if assigning this date would maintain weekday balance
-        
-        Returns:
-            bool: True if assignment maintains balance, False otherwise
-        """
-        try:
-            # Get current weekday counts including the new date
-            weekday = date.weekday()
-            weekday_counts = self.worker_weekdays[worker_id].copy()
-            weekday_counts[weekday] += 1
-
-            # Calculate maximum difference
-            max_count = max(weekday_counts.values())
-            min_count = min(weekday_counts.values())
-        
-            # Strictly enforce maximum 1 shift difference between weekdays
-            if max_count - min_count > 1:
-                logging.debug(f"Weekday balance violated for worker {worker_id}: {weekday_counts}")
-                return False
-
-            return True
-
-        except Exception as e:
-            logging.error(f"Error checking weekday balance for worker {worker_id}: {str(e)}")
-            return Trueker_id].values())
+        current_min = min(self.worker_weekdays[worker_id].values())
         current_imbalance = current_max - current_min
-    
+
         new_max = max(weekday_counts.values())
         new_min = min(weekday_counts.values())
         new_imbalance = new_max - new_min
-    
+
         # Return a score based on how it affects balance
         if new_imbalance < current_imbalance:
             return 3  # Improves balance
@@ -568,7 +542,11 @@ class ConstraintChecker:
             return 1  # Acceptable imbalance
         else:
             return 0  # Unacceptable imbalance
-    
+      
+        except Exception as e:
+            logging.error(f"Error checking weekday balance for worker {worker_id}: {str(e)}")
+            return True [worker_id].values())
+        
     def _can_swap_assignments(self, worker_id, from_date, from_post, to_date, to_post):
         """
         Check if a worker can be reassigned from one date/post to another
