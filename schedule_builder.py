@@ -33,6 +33,11 @@ class ScheduleBuilder:
         self.end_date = scheduler.end_date
         self.date_utils = scheduler.date_utils
         self.data_manager = scheduler.data_manager
+        self.worker_posts = scheduler.worker_posts
+        self.worker_weekdays = scheduler.worker_weekdays
+        self.worker_weekends = scheduler.worker_weekends
+        self.constraint_skips = scheduler.constraint_skips
+        self.max_shifts_per_worker = scheduler.max_shifts_per_worker
     
         logging.info("ScheduleBuilder initialized")
 
