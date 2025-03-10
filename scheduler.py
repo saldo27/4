@@ -372,7 +372,58 @@ class Scheduler:
             worker = eligible_workers[i % len(eligible_workers)]
             worker['target_shifts'] += 1
             logging.info(f"Redistributed 1 shift to worker {worker['id']}")
+
+    def _ensure_data_integrity(self):
+        """
+        Ensure all data structures are consistent before schedule generation
+        """
+        logging.info("Ensuring data integrity...")
+    
+        # Ensure all workers have proper data structures
+        for worker in self.workers_data:
+            worker_id = worker['id']
+        
+            # Ensure worker assignments tracking
+            if worker_id not in self.worker_assignments:
+                self.worker_assignments[worker_id] = set()
             
+            # Ensure worker posts tracking
+            if worker_id not in self.worker_posts:
+                self.worker_posts[worker_id] = set()
+            
+            # Ensure weekday tracking
+            if worker_id not in self.worker_weekdays:
+                self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
+            
+            # Ensure weekend tracking
+            if worker_id not in self.worker_weekends:
+                self.worker_weekends[worker_id] = []
+    
+        # Ensure schedule dictionary is initialized
+        for current_date in self._get_date_range(self.start_date, self.end_date):
+            if current_date not in self.schedule:
+                self.schedule[current_date] = [None] * self.num_shifts
+    
+        logging.info("Data integrity check completed")
+        return True
+    
+    def _get_date_range(self, start_date, end_date):
+        """
+        Get list of dates between start_date and end_date (inclusive)
+    
+        Args:
+            start_date: Start date
+            end_date: End date
+        Returns:
+            list: List of dates in range
+        """
+        date_range = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_range.append(current_date)
+            current_date += timedelta(days=1)
+        return date_range
+        
     def generate_schedule(self, num_attempts=60, allow_feedback_improvement=True, improvement_attempts=20):
         """
         Generate the complete schedule using a multi-phase approach to maximize shift coverage
