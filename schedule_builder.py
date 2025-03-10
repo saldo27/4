@@ -13,23 +13,23 @@ class ScheduleBuilder:
     
     # Methods
     def __init__(self, scheduler):
-    """
-    Initialize the schedule builder
+        """
+        Initialize the schedule builder
     
-    Args:
-        scheduler: The main Scheduler object
-    """
-    self.scheduler = scheduler
+        Args:
+            scheduler: The main Scheduler object
+        """
+        self.scheduler = scheduler
     
-    # Store references to frequently accessed attributes
-    self.workers_data = scheduler.workers_data
-    self.schedule = scheduler.schedule
-    self.worker_assignments = scheduler.worker_assignments
-    self.num_shifts = scheduler.num_shifts
-    self.holidays = scheduler.holidays
-    self.constraint_checker = scheduler.constraint_checker
+        # Store references to frequently accessed attributes
+        self.workers_data = scheduler.workers_data
+        self.schedule = scheduler.schedule
+        self.worker_assignments = scheduler.worker_assignments
+        self.num_shifts = scheduler.num_shifts
+        self.holidays = scheduler.holidays
+        self.constraint_checker = scheduler.constraint_checker
     
-    logging.info("ScheduleBuilder initialized")
+        logging.info("ScheduleBuilder initialized")
         
     def _assign_mandatory_guards(self):
         """
@@ -479,16 +479,16 @@ class ScheduleBuilder:
         shifts_filled = 0
     
         # Try to fill each empty shift
-            for date, post in empty_shifts:
-                # Get candidates that satisfy ALL constraints (no relaxation)
-                candidates = []
+        for date, post in empty_shifts:
+            # Get candidates that satisfy ALL constraints (no relaxation)
+            candidates = []
         
-                for worker in self.workers_data:
-                    worker_id = worker['id']
+            for worker in self.workers_data:
+                worker_id = worker['id']
             
-                    # Skip if already assigned to this date
-                    if worker_id in self.schedule[date]:
-                        continue
+                # Skip if already assigned to this date
+                if worker_id in self.schedule[date]:
+                    continue
             
                 # Check if worker can be assigned (with strict constraints)
                 if self._can_assign_worker(worker_id, date, post):
