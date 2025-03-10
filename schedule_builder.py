@@ -3,10 +3,9 @@ from datetime import datetime, timedelta
 import logging
 import random
 from typing import TYPE_CHECKING
+from exceptions import SchedulerError
 if TYPE_CHECKING:
     from scheduler import Scheduler
-else:
-    from scheduler import SchedulerError
 
 class ScheduleBuilder:
     """Handles schedule generation and improvement"""
