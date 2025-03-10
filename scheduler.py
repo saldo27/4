@@ -20,11 +20,14 @@ class Scheduler:
     
     # Methods
     def __init__(self, config):
-        """Initialize the scheduler with configuration"""
+       """Initialize the scheduler with configuration"""
         try:
-            # First validate the configuration
+            # Initialize date_utils FIRST, before calling any method that might need it
+            self.date_utils = DateTimeUtils()
+        
+            # Then validate the configuration
             self._validate_config(config)
-
+            
             # Basic setup from config
             self.config = config
             self.start_date = config['start_date']
