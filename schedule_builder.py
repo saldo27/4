@@ -791,24 +791,10 @@ class ScheduleBuilder:
 
     def _ensure_data_integrity(self):
         """
-        Ensure all data structures are consistent
+        Ensure all data structures are consistent - delegates to scheduler
         """
-        # Ensure worker tracking data is initialized
-        for worker in self.workers_data:
-            worker_id = worker['id']
-        
-            if worker_id not in self.worker_assignments:
-                self.worker_assignments[worker_id] = set()
-        
-            if worker_id not in self.worker_posts:
-                self.worker_posts[worker_id] = set()
-        
-            if worker_id not in self.worker_weekdays:
-                self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
-        
-            if worker_id not in self.worker_weekends:
-                self.worker_weekends[worker_id] = []
-
+        # Let the scheduler handle the data integrity check as it has the primary data
+        return self.scheduler._ensure_data_integrity()
     
     def _balance_workloads(self):
         """
@@ -963,6 +949,30 @@ class ScheduleBuilder:
 
         logging.info(f"Workload balancing: made {changes_made} changes")
         return changes_made > 0
+
+       def _are_workers_incompatible(self, worker1_id, worker2_id):
+        """
+        Check if two workers are incompatible with each other
+    
+        Args:
+            worker1_id: ID of first worker
+            worker2_id: ID of second worker
+        
+        Returns:
+            bool: True if workers are incompatible, False otherwise
+        """
+        # Find the worker data for each worker
+        worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
+        worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
+    
+        if not worker1 or not worker2:
+            return False
+    
+        # Check if either worker has the other in their incompatibility list
+        incompatible_with_1 = worker1.get('incompatible_with', [])
+        incompatible_with_2 = worker2.get('incompatible_with', [])
+    
+        return worker2_id in incompatible_with_1 or worker1_id in incompatible_with_2 
 
     def _improve_post_rotation(self):
         """Improve post rotation by swapping assignments"""
