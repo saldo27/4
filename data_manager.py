@@ -46,6 +46,55 @@ class DataManager:
         
         # Mark data as verified
         self.data_integrity_verified = True
+
+    def _get_effective_weekday(self, date):
+        """
+        Get the effective weekday for a date.
+        Holidays are treated as weekends (specifically Sunday).
+
+        Args:
+            date: Date to check
+
+        Returns:
+            int: Weekday index (0-6, where 0=Monday, 6=Sunday)
+        """
+        # If date is a holiday, treat it as Sunday (6)
+        if date in self.scheduler.holidays:
+            return 6
+    
+        # Otherwise return the actual weekday
+        return date.weekday()
+
+    def _is_weekend_day(self, date):
+        """
+        Check if a date is a weekend day or holiday
+
+        Args:
+            date: Date to check
+
+        Returns:
+            bool: True if weekend or holiday, False otherwise
+        """
+        # Weekend days are Friday (4), Saturday (5), Sunday (6) or holidays
+        return date.weekday() >= 4 or date in self.scheduler.holidays
+
+    def _get_weekend_start(self, date):
+        """
+        Get the first day of the weekend containing this date
+
+        Args:
+            date: Date within the weekend
+
+        Returns:
+            datetime: First day of the weekend
+        """
+        # If it's already Friday or earlier, return the date
+        if date.weekday() <= 4:  # Monday through Friday
+            return date
+    
+        # If it's Saturday or Sunday, go back to Friday
+        days_to_subtract = date.weekday() - 4  # Days past Friday
+        return date - timedelta(days=days_to_subtract)
         
     def mark_data_dirty(self):
         """Mark that data integrity needs to be verified again"""
