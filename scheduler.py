@@ -731,14 +731,14 @@ class Scheduler:
                 self._assign_mandatory_guards()
         
                 # STEP 2: Process weekend and holiday assignments next (they're harder to fill)
-                self._assign_priority_days(forward)
+                self.schedule_builder._assign_priority_days(forward)
             
                 # STEP 3: Process the remaining days
-                dates_to_process = self._get_remaining_dates_to_process(forward)
+                dates_to_process = self.schedule_builder._get_remaining_dates_to_process(forward)
                 for date in dates_to_process:
                     # Use strict constraints for first half of attempts, then progressively relax
                     relax_level = min(2, attempt // (num_attempts // 3))
-                    self._assign_day_shifts_with_relaxation(date, attempt, relax_level)
+                    self.schedule_builder._assign_day_shifts_with_relaxation(date, attempt, relax_level)
         
                 # Clean up and validate
                 self._cleanup_schedule()
