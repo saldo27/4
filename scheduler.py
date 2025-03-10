@@ -403,69 +403,7 @@ class Scheduler:
     
         # Log the results
         logging.info("Monthly targets calculated")
-        return True
-        
-    def _assign_mandatory_guards(self):
-        """
-        Assign workers to their mandatory guard dates specified in the configuration
-        """
-        logging.info("Assigning mandatory guard shifts...")
-    
-        # Track workers who have mandatory dates
-        assigned_mandatory = set()
-    
-        # Process each worker's mandatory days
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            mandatory_days = worker.get('mandatory_days', '')
-        
-            if not mandatory_days:
-                continue
-            
-            # Parse the mandatory days string into dates
-            mandatory_dates = self.date_utils.parse_dates(mandatory_days)
-        
-            if not mandatory_dates:
-                logging.warning(f"Worker {worker_id} has mandatory_days specified but none were successfully parsed")
-                continue
-            
-            # Try to assign worker to each mandatory date
-            for date in mandatory_dates:
-                # Skip dates outside our schedule period
-                if date < self.start_date or date > self.end_date:
-                    logging.warning(f"Worker {worker_id} has mandatory date {date.strftime('%Y-%m-%d')} outside schedule period")
-                    continue
-                
-                # Attempt to assign to first available shift on that day
-                assigned = False
-                shifts = self.schedule.get(date, [None] * self.num_shifts)
-            
-                for shift_idx in range(self.num_shifts):
-                    if shifts[shift_idx] is None:
-                        # Assign worker to this shift
-                        self.schedule[date] = shifts  # Ensure the date exists in schedule
-                        self.schedule[date][shift_idx] = worker_id
-                        assigned = True
-                        assigned_mandatory.add(worker_id)
-                    
-                        # Update tracking data
-                        self._update_tracking_data(worker_id, date, shift_idx)
-                    
-                        logging.info(f"Assigned worker {worker_id} to mandatory shift on {date.strftime('%Y-%m-%d')}")
-                        break
-                    
-                if not assigned:
-                    logging.warning(f"Could not assign worker {worker_id} to mandatory date {date.strftime('%Y-%m-%d')}: all shifts taken")
-    
-        # Mark workers with assigned mandatory shifts
-        for worker_id in assigned_mandatory:
-            for worker in self.workers_data:
-                if worker['id'] == worker_id:
-                    worker['has_mandatory_assigned'] = True
-                    break
-    
-        logging.info(f"Mandatory guard assignment complete. {len(assigned_mandatory)} workers assigned to mandatory shifts")
-        return True
+        return True  
     
     def _redistribute_excess_shifts(self, excess_shifts, excluded_worker_id, mandatory_shifts_by_worker):
         """Helper method to redistribute excess shifts from one worker to others, respecting mandatory assignments"""
@@ -646,7 +584,7 @@ class Scheduler:
         
                 # STEP 1: Process mandatory assignments first (always!)
                 logging.info("Processing mandatory guards...")
-                self._assign_mandatory_guards()
+                self.schedule_builder._assign_mandatory_guards()
         
                 # STEP 2: Process weekend and holiday assignments next (they're harder to fill)
                 self.schedule_builder._assign_priority_days(forward)
