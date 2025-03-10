@@ -244,7 +244,7 @@ class WorkerEligibilityTracker:
             if worker_id in self.scheduler.worker_weekdays:
                 weekday = date.weekday()
                 if self.scheduler.worker_weekdays[worker_id][weekday] > 0:
-                self.scheduler.worker_weekdays[worker_id][weekday] -= 1
+                    self.scheduler.worker_weekdays[worker_id][weekday] -= 1
         
             # Update weekend tracking
             is_weekend = self.scheduler.date_utils.is_weekend_day(date, self.scheduler.holidays)
