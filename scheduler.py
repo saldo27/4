@@ -9,7 +9,7 @@ from data_manager import DataManager
 from utilities import DateTimeUtils
 from statistics import StatisticsCalculator
 from exceptions import SchedulerError
-from worker_eligibility import WorkerEligibilityTracke
+from worker_eligibility import WorkerEligibilityTracker
 
 # Class definition
 class SchedulerError(Exception):
