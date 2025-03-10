@@ -404,7 +404,7 @@ class ScheduleBuilder:
     
         except Exception as e:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
-            return float('-inf'))
+            return float('-inf')
         
     def _calculate_improvement_score(self, worker, date, post):
         """
