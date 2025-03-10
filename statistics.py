@@ -2,10 +2,9 @@
 import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
+from exceptions import SchedulerError
 if TYPE_CHECKING:
-    from scheduler import Scheduler
-else:
-    from scheduler import SchedulerError
+    from scheduler import Schedulerr
 
 class StatisticsCalculator:
     """Calculates statistics and metrics for schedules"""
