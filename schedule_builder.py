@@ -14,12 +14,12 @@ class ScheduleBuilder:
     def __init__(self, scheduler):
         """
         Initialize the schedule builder
-    
+
         Args:
             scheduler: The main Scheduler object
         """
         self.scheduler = scheduler
-    
+
         # Store references to frequently accessed attributes
         self.workers_data = scheduler.workers_data
         self.schedule = scheduler.schedule
@@ -27,6 +27,12 @@ class ScheduleBuilder:
         self.num_shifts = scheduler.num_shifts
         self.holidays = scheduler.holidays
         self.constraint_checker = scheduler.constraint_checker
+    
+        # Add these lines:
+        self.start_date = scheduler.start_date
+        self.end_date = scheduler.end_date
+        self.date_utils = scheduler.date_utils
+        self.data_manager = scheduler.data_manager
     
         logging.info("ScheduleBuilder initialized")
         
