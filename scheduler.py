@@ -688,31 +688,31 @@ class Scheduler:
                         logging.info(f"Improvement attempt {i+1}/{improvement_attempts}")
                 
                         # Create a copy of the best schedule to work with
-                        self._backup_best_schedule()
+                        self.schedule_builder._backup_best_schedule()
                 
                         # Try different improvement strategies based on attempt number
                         if i % 5 == 0:
                             logging.info("Strategy: Fix incompatibility violations")
-                            self._fix_incompatibility_violations()
+                            self.schedule_builder._fix_incompatibility_violations()
                         elif i % 5 == 1:
                             logging.info("Strategy: Fill empty shifts")
-                            self._try_fill_empty_shifts()
+                            self.schedule_builder._try_fill_empty_shifts()
                         elif i % 5 == 2:
                             logging.info("Strategy: Balance workloads")
-                            self._balance_workloads()
+                            self.schedule_builder._balance_workloads()
                         elif i % 5 == 3:
                             logging.info("Strategy: Improve post rotation")
-                            self._improve_post_rotation()
+                            self.schedule_builder._improve_post_rotation()
                         elif i % 5 == 4:
                             logging.info("Strategy: Improve weekend distribution")
-                            self._improve_weekend_distribution()
+                            self.schedule_builder._improve_weekend_distribution()
                 
                         # Validate the new schedule
                         try:
                             self._validate_final_schedule()
                         except SchedulerError as e:
                             logging.warning(f"Improvement validation found issues: {str(e)}")
-                            self._restore_best_schedule()
+                            self.schedule_builder._restore_best_schedule()
                             continue
                 
                         # Calculate coverage
@@ -732,7 +732,7 @@ class Scheduler:
                         if coverage > best_coverage + 0.5 or coverage > best_coverage and post_rotation_stats['overall_score'] >= best_post_rotation - 1:
                             best_coverage = coverage
                             best_post_rotation = post_rotation_stats['overall_score']
-                            self._save_current_as_best()
+                            self.schedule_builder._save_current_as_best()
                             improvements_made += 1
                             logging.info(f"Improvement accepted! New best coverage: {best_coverage:.2f}%")
                         else:
