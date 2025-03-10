@@ -277,6 +277,211 @@ class ScheduleBuilder:
                 candidates.append((worker, score))
 
         return candidates
+
+    def _can_assign_worker(self, worker_id, date, post):
+        """
+        Check if a worker can be assigned to a specific date and post
+    
+        Args:
+            worker_id: ID of the worker to check
+            date: The date to assign
+            post: The post number to assign
+        
+        Returns:
+            bool: True if the worker can be assigned, False otherwise
+        """
+        # Skip if already assigned to this date
+        if worker_id in self.schedule.get(date, []):
+            return False
+    
+        # Get worker data
+        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        if not worker:
+            return False
+    
+        # Check worker availability (days off)
+        if self._is_worker_unavailable(worker_id, date):
+            return False
+    
+        # Check for incompatibilities
+        if not self._check_incompatibility(worker_id, date):
+            return False
+    
+        # Check minimum gap between shifts (always at least 2 days)
+        assignments = sorted(self.worker_assignments[worker_id])
+        for prev_date in assignments:
+            days_between = abs((date - prev_date).days)
+            if days_between < 2:  # Absolute minimum gap
+                return False
+    
+        # Check weekend limits
+        if self._would_exceed_weekend_limit(worker_id, date):
+            return False
+    
+        # Check if this worker can swap these assignments
+        work_percentage = worker.get('work_percentage', 100)
+    
+        # Part-time workers need at least 3 days between shifts
+        if work_percentage < 100:
+            for prev_date in assignments:
+                days_between = abs((date - prev_date).days)
+                if days_between < 3:
+                    return False
+    
+        # Check for consecutive week patterns
+        for prev_date in assignments:
+            days_between = abs((date - prev_date).days)
+            # Avoid same day of week in consecutive weeks when possible
+            if days_between in [7, 14, 21] and date.weekday() == prev_date.weekday():
+                return False
+    
+        # If we've made it this far, the worker can be assigned
+        return True
+
+    def _is_worker_unavailable(self, worker_id, date):
+        """
+        Check if a worker is unavailable on a specific date
+    
+        Args:
+            worker_id: ID of the worker to check
+            date: Date to check availability
+        
+        Returns:
+            bool: True if worker is unavailable, False otherwise
+        """
+        # Get worker data
+        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        if not worker:
+            return True
+    
+        # Check days off
+        days_off = worker.get('days_off', '')
+        if days_off:
+            day_ranges = self.date_utils.parse_date_ranges(days_off)
+            for start_date, end_date in day_ranges:
+                if start_date <= date <= end_date:
+                    return True
+    
+        return False
+
+    def _check_incompatibility(self, worker_id, date):
+        """
+        Check for worker incompatibilities on a specific date
+    
+        Args:
+            worker_id: ID of the worker to check
+            date: Date to check for incompatibilities
+        
+        Returns:
+            bool: True if no incompatibilities found, False if incompatibilities exist
+        """
+        # Get worker data
+        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        if not worker:
+            return False
+    
+        # Get incompatible workers
+        incompatible_with = worker.get('incompatible_with', [])
+        if not incompatible_with:
+            return True
+    
+        # Check if any incompatible workers are already assigned to this date
+        for incompatible_id in incompatible_with:
+            if incompatible_id in self.schedule.get(date, []):
+                return False
+    
+        return True
+
+    def _would_exceed_weekend_limit(self, worker_id, date):
+    """
+    Check if adding this date would exceed the worker's weekend limit
+    
+    Args:
+        worker_id: ID of the worker to check
+        date: Date to potentially add
+        
+    Returns:
+        bool: True if weekend limit would be exceeded, False otherwise
+    """
+    # Skip if not a weekend
+    if not self.date_utils.is_weekend_day(date) and date not in self.holidays:
+        return False
+    
+    # Get worker data
+    worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+    if not worker:
+        return True
+    
+    # Get weekend assignments for this worker
+    weekend_dates = self.worker_weekends.get(worker_id, [])
+    
+    # Calculate the maximum allowed weekend shifts based on work percentage
+    work_percentage = worker.get('work_percentage', 100)
+    max_weekend_shifts = 3  # Default for full-time workers
+    if work_percentage < 100:
+        max_weekend_shifts = max(1, int(3 * work_percentage / 100))
+    
+    # Check if adding this date would exceed the limit for any 3-week period
+    if date in weekend_dates:
+        return False  # Already counted
+    
+    # Add the date temporarily
+    test_dates = weekend_dates + [date]
+    test_dates.sort()
+    
+    # Check for any 3-week period with too many weekend shifts
+    three_weeks = timedelta(days=21)
+    for i, start_date in enumerate(test_dates):
+        end_date = start_date + three_weeks
+        count = sum(1 for d in test_dates[i:] if d <= end_date)
+        if count > max_weekend_shifts:
+            return True
+    
+    return False
+
+    def _get_post_counts(self, worker_id):
+        """
+        Get the count of assignments for each post for a specific worker
+    
+        Args:
+            worker_id: ID of the worker
+        
+        Returns:
+            dict: Dictionary with post numbers as keys and counts as values
+        """
+        post_counts = {post: 0 for post in range(self.num_shifts)}
+    
+        for date, shifts in self.schedule.items():
+            for post, assigned_worker in enumerate(shifts):
+                if assigned_worker == worker_id:
+                    post_counts[post] = post_counts.get(post, 0) + 1
+    
+        return post_counts
+
+    def _can_swap_assignments(self, worker_id, date1, post1, date2, post2):
+        """
+        Check if a worker can be swapped from one assignment to another
+    
+        Args:
+            worker_id: ID of the worker to check
+            date1: Original date
+            post1: Original post
+            date2: New date
+            post2: New post
+        
+        Returns:
+            bool: True if the swap is valid, False otherwise
+        """
+        # First remove the worker from the original date (simulate)
+        self.worker_assignments[worker_id].remove(date1)
+    
+        # Now check if they can be assigned to the new date
+        result = self._can_assign_worker(worker_id, date2, post2)
+    
+        # Restore the original assignment
+        self.worker_assignments[worker_id].add(date1)
+    
+        return result
     
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
@@ -490,6 +695,34 @@ class ScheduleBuilder:
             base_score += 5 * (expected_assignments - current_assignments)
     
         return base_score
+
+    def _update_worker_stats(self, worker_id, date, removing=False):
+        """
+        Update worker statistics when adding or removing an assignment
+    
+        Args:
+            worker_id: ID of the worker
+            date: The date of the assignment
+            removing: Whether we're removing (True) or adding (False) an assignment
+        """
+        # Update weekday counts
+        weekday = date.weekday()
+        if worker_id in self.worker_weekdays:
+            if removing:
+                self.worker_weekdays[worker_id][weekday] = max(0, self.worker_weekdays[worker_id][weekday] - 1)
+            else:
+                self.worker_weekdays[worker_id][weekday] += 1
+    
+        # Update weekend tracking
+        is_weekend = date.weekday() >= 4 or date in self.holidays  # Friday, Saturday, Sunday or holiday
+        if is_weekend and worker_id in self.worker_weekends:
+            if removing:
+                if date in self.worker_weekends[worker_id]:
+                    self.worker_weekends[worker_id].remove(date)
+            else:
+                if date not in self.worker_weekends[worker_id]:
+                    self.worker_weekends[worker_id].append(date)
+                    self.worker_weekends[worker_id].sort()
     
     def _try_fill_empty_shifts(self):
         """
@@ -555,6 +788,27 @@ class ScheduleBuilder:
     
         logging.info(f"Filled {shifts_filled} of {len(empty_shifts)} empty shifts")
         return shifts_filled > 0
+
+    def _ensure_data_integrity(self):
+        """
+        Ensure all data structures are consistent
+        """
+        # Ensure worker tracking data is initialized
+        for worker in self.workers_data:
+            worker_id = worker['id']
+        
+            if worker_id not in self.worker_assignments:
+                self.worker_assignments[worker_id] = set()
+        
+            if worker_id not in self.worker_posts:
+                self.worker_posts[worker_id] = set()
+        
+            if worker_id not in self.worker_weekdays:
+                self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
+        
+            if worker_id not in self.worker_weekends:
+                self.worker_weekends[worker_id] = []
+
     
     def _balance_workloads(self):
         """
@@ -970,6 +1224,29 @@ class ScheduleBuilder:
     
         logging.info(f"Weekend distribution improvement: made {changes_made} changes")
         return changes_made > 0
+
+    def _verify_assignment_consistency(self):
+        """
+        Verify and fix data consistency between schedule and tracking data
+        """
+        # Check schedule against worker_assignments and fix inconsistencies
+        for date, shifts in self.schedule.items():
+            for post, worker_id in enumerate(shifts):
+                if worker_id is None:
+                    continue
+                
+                # Ensure worker is tracked for this date
+                if date not in self.worker_assignments.get(worker_id, set()):
+                    self.worker_assignments[worker_id].add(date)
+    
+        # Check worker_assignments against schedule
+        for worker_id, assignments in self.worker_assignments.items():
+            for date in list(assignments):  # Make a copy to safely modify during iteration
+                # Check if this worker is actually in the schedule for this date
+                if date not in self.schedule or worker_id not in self.schedule[date]:
+                    # Remove this inconsistent assignment
+                    self.worker_assignments[worker_id].remove(date)
+                    logging.warning(f"Fixed inconsistency: Worker {worker_id} was tracked for {date} but not in schedule")
     
     def _fix_incompatibility_violations(self):
             """
