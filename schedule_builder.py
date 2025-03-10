@@ -68,7 +68,7 @@ class ScheduleBuilder:
     
         # Get all weekend and holiday dates in the period
         while current <= self.end_date:
-            if self._is_weekend_day(current) or current in self.holidays:
+            if self.date_utils.is_weekend_day(current) or current in self.holidays:
                 dates_to_process.append(current)
             current += timedelta(days=1)
     
@@ -835,7 +835,7 @@ class ScheduleBuilder:
             weekend_counts = {}
             for worker in self.workers_data:
                 worker_id = worker['id']
-                weekend_count = sum(1 for date in dates if date in self.worker_assignments[worker_id] and self._is_weekend_day(date))
+                weekend_count = sum(1 for date in dates if date in self.worker_assignments[worker_id] and self.date_utils.is_weekend_day(date))
                 weekend_counts[worker_id] = weekend_count
             weekend_counts_by_month[month_key] = weekend_counts
     
@@ -869,7 +869,7 @@ class ScheduleBuilder:
         
             # Get dates in this month
             month_dates = months[month_key]
-            weekend_dates = [date for date in month_dates if self._is_weekend_day(date)]
+            weekend_dates = [date for date in month_dates if self.date_utils.is_weekend_day(date)]
         
             # Try to redistribute weekend shifts
             for over_worker_id, over_count, over_limit in overloaded_workers:
