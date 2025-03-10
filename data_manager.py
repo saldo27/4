@@ -262,7 +262,7 @@ class DataManager:
         return [
             date for date in self.schedule.keys()
             if len(self.schedule[date]) < self.num_shifts
-            
+        ]
     def _calculate_monthly_targets(self):
         """Calculate target shifts per month for each worker"""
         try:
