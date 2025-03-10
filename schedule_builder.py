@@ -66,6 +66,21 @@ class ScheduleBuilder:
                         # Update tracking data
                         post = len(self.schedule[date]) - 1
                         self.data_manager._update_tracking_data(worker_id, date, post)
+
+    def _parse_dates(self, date_str):
+        """
+        Parse semicolon-separated dates using the date_utils
+    
+        Args:
+            date_str: String with semicolon-separated dates in DD-MM-YYYY format
+        Returns:
+            list: List of datetime objects
+        """
+        if not date_str:
+            return []
+    
+        # Delegate to the DateTimeUtils class
+        return self.date_utils.parse_dates(date_str)
                         
     def _assign_priority_days(self, forward):
         """Process weekend and holiday assignments first since they're harder to fill"""
