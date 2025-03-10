@@ -75,19 +75,26 @@ class DateTimeUtils:
     def is_weekend_day(self, date, holidays=None):
         """
         Check if date is a weekend day, holiday, or pre-holiday
-    
+
         Args:
             date: datetime object
             holidays: optional list of holidays (if None, no holiday check)
         Returns:
             bool: True if weekend/holiday/pre-holiday, False otherwise
         """
-        if holidays and self.is_holiday(date, holidays):
-            return True
-        if holidays and self.is_pre_holiday(date, holidays):
-            return True
-        return self.scheduler.date_utils.is_weekend_day(date, self.scheduler.holidays)
-
+        # Check if it's a holiday
+        if holidays is not None:
+            if date in holidays:
+                return True
+        
+            # Check if it's a pre-holiday (day before a holiday)
+            next_day = date + timedelta(days=1)
+            if next_day in holidays:
+                return True
+    
+        # Check if it's a weekend (Saturday or Sunday)
+        return date.weekday() >= 4  # 4 = Friday, 5 = Saturday, 6 = Sunday
+        
     def is_holiday(self, date):
         """
         Check if a date is a holiday
