@@ -20,7 +20,7 @@ class Scheduler:
     
     # Methods
     def __init__(self, config):
-       """Initialize the scheduler with configuration"""
+        """Initialize the scheduler with configuration"""
         try:
             # Initialize date_utils FIRST, before calling any method that might need it
             self.date_utils = DateTimeUtils()
