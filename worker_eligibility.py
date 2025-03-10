@@ -6,13 +6,14 @@ class WorkerEligibilityTracker:
     def __init__(self, workers_data, holidays):
         """
         Initialize the worker eligibility tracker
-        
+    
         Args:
             workers_data: List of worker dictionaries
             holidays: List of holiday dates
         """
         self.workers_data = workers_data
-        self.eligibility_tracker = WorkerEligibilityTracker(self.workers_data, self.holidays)
+        # Remove or comment out this line to avoid infinite recursion:
+        # self.eligibility_tracker = WorkerEligibilityTracker(self.workers_data, self.holidays)
         self.holidays = holidays
         self.last_worked_date = {w['id']: None for w in workers_data}
         self.total_assignments = {w['id']: 0 for w in workers_data}
