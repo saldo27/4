@@ -357,6 +357,54 @@ class Scheduler:
             logging.warning(f"Using fallback distribution: {default_target} non-mandatory shifts per worker plus mandatory shifts")
             return False
 
+    def _calculate_monthly_targets(self):
+        """
+        Calculate monthly target shifts for each worker based on their overall targets
+        """
+        logging.info("Calculating monthly target distribution...")
+    
+        # Calculate available days per month
+        month_days = self._get_schedule_months()
+        total_days = (self.end_date - self.start_date).days + 1
+    
+        # Initialize monthly targets for each worker
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            overall_target = worker.get('target_shifts', 0)
+        
+            # Initialize or reset monthly targets
+            if 'monthly_targets' not in worker:
+                worker['monthly_targets'] = {}
+            
+            # Distribute target shifts proportionally by month
+            remaining_target = overall_target
+            for month_key, days_in_month in month_days.items():
+                # Calculate proportion of shifts for this month
+                month_proportion = days_in_month / total_days
+                month_target = round(overall_target * month_proportion)
+            
+                # Ensure we don't exceed overall target
+                month_target = min(month_target, remaining_target)
+                worker['monthly_targets'][month_key] = month_target
+                remaining_target -= month_target
+            
+                logging.debug(f"Worker {worker_id}: {month_key} → {month_target} shifts")
+        
+            # Handle any remaining shifts due to rounding
+            if remaining_target > 0:
+                # Distribute remaining shifts to months with most days first
+                sorted_months = sorted(month_days.items(), key=lambda x: x[1], reverse=True)
+                for month_key, _ in sorted_months:
+                    if remaining_target <= 0:
+                        break
+                    worker['monthly_targets'][month_key] += 1
+                    remaining_target -= 1
+                    logging.debug(f"Worker {worker_id}: Added +1 to {month_key} for rounding")
+    
+        # Log the results
+        logging.info("Monthly targets calculated")
+        return True
+
     def _redistribute_excess_shifts(self, excess_shifts, excluded_worker_id, mandatory_shifts_by_worker):
         """Helper method to redistribute excess shifts from one worker to others, respecting mandatory assignments"""
         eligible_workers = [w for w in self.workers_data if w['id'] != excluded_worker_id]
