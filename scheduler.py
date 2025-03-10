@@ -565,6 +565,9 @@ class Scheduler:
             best_worker_weekends = None
             best_constraint_skips = None
             coverage_stats = []
+            
+            # Initialize relax_level variable for use in coverage stats
+            relax_level = 0
 
             # Start with fewer attempts, but make each one more effective
             for attempt in range(num_attempts):
@@ -973,6 +976,27 @@ class Scheduler:
     
         return metrics
 
+    def _restore_best_schedule(self):
+        """Restore from backup of the best schedule"""
+        if not hasattr(self, 'backup_schedule'):
+            logging.warning("No backup schedule to restore")
+            return False
+        
+        self.schedule = self.backup_schedule.copy()
+        self.worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.backup_worker_assignments.items()}
+        self.worker_posts = {w_id: posts.copy() for w_id, posts in self.backup_worker_posts.items()}
+        self.worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.backup_worker_weekdays.items()}
+        self.worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.backup_worker_weekends.items()}
+        self.constraint_skips = {
+            w_id: {
+                'gap': skips['gap'].copy(),
+                'incompatibility': skips['incompatibility'].copy(),
+                'reduced_gap': skips['reduced_gap'].copy(),
+            }
+            for w_id, skips in self.backup_constraint_skips.items()
+        }
+        return True
+        
     def export_schedule(self, format='txt'):
         """
         Export the schedule in the specified format
