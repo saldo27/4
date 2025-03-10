@@ -135,7 +135,7 @@ class Scheduler:
             # Validate date formats in mandatory_days if present
             if 'mandatory_days' in worker:
                 try:
-                    self._parse_dates(worker['mandatory_days'])
+                    self.date_utils.parse_dates(worker['mandatory_days'])
                 except ValueError as e:
                     raise SchedulerError(f"Invalid mandatory_days format for worker {worker['id']}: {str(e)}")
 
@@ -225,7 +225,7 @@ class Scheduler:
             for worker in self.workers_data:
                 worker_id = worker['id']
                 mandatory_days = worker.get('mandatory_days', [])
-                mandatory_dates = self._parse_dates(mandatory_days)
+                mandatory_dates = self.date_utils.parse_dates(mandatory_days)
             
                 # Count only mandatory days within schedule period
                 valid_mandatory_dates = [d for d in mandatory_dates 
