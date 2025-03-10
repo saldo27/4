@@ -35,6 +35,21 @@ class ScheduleBuilder:
         self.data_manager = scheduler.data_manager
     
         logging.info("ScheduleBuilder initialized")
+
+    def _parse_dates(self, date_str):
+        """
+        Parse semicolon-separated dates using the date_utils
+    
+        Args:
+            date_str: String with semicolon-separated dates in DD-MM-YYYY format
+        Returns:
+            list: List of datetime objects
+        """
+        if not date_str:
+            return []
+    
+        # Delegate to the DateTimeUtils class
+        return self.date_utils.parse_dates(date_str)
         
     def _assign_mandatory_guards(self):
         """
