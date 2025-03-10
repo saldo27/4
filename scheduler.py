@@ -8,6 +8,7 @@ from schedule_builder import ScheduleBuilder
 from data_manager import DataManager
 from utilities import DateTimeUtils
 from statistics import StatisticsCalculator
+from exceptions import SchedulerError
 
 # Class definition
 class SchedulerError(Exception):
