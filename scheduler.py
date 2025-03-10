@@ -480,6 +480,56 @@ class Scheduler:
         logging.info(f"Priority days feature not yet implemented - skipping")
         return True
 
+    def _get_remaining_dates_to_process(self, forward=True):
+        """
+        Get a list of dates that still need to be processed, optionally in reverse order
+    
+        Args:
+            forward: If True, process dates in chronological order, otherwise reverse
+    
+        Returns:
+            list: List of dates that need processing, in the specified order
+        """
+        logging.info(f"Getting remaining dates to process ({'forward' if forward else 'backward'} direction)...")
+    
+        # Get all dates in the schedule period
+        all_dates = self._get_date_range(self.start_date, self.end_date)
+    
+        # Filter dates that need additional processing
+        dates_to_process = []
+        for date in all_dates:
+            # Get the shifts for this date, or initialize if not existing
+            shifts = self.schedule.get(date, [None] * self.num_shifts)
+        
+            # Check if any shifts are still unassigned
+            if any(shift is None for shift in shifts):
+                dates_to_process.append(date)
+    
+        # Sort based on the direction
+        if not forward:
+            dates_to_process.reverse()
+        
+        # Prioritize weekends and holidays if processing forward
+        if forward:
+            # Separate weekend/holiday dates and weekday dates
+            weekend_dates = []
+            weekday_dates = []
+        
+            for date in dates_to_process:
+                is_weekend = date.weekday() >= 5  # Saturday or Sunday
+                is_holiday = date in self.holidays
+            
+                if is_weekend or is_holiday:
+                    weekend_dates.append(date)
+                else:
+                    weekday_dates.append(date)
+                
+            # Process weekends/holidays first, then weekdays
+            dates_to_process = weekend_dates + weekday_dates
+    
+        logging.info(f"Found {len(dates_to_process)} dates with shifts that need assignment")
+        return dates_to_process
+
     def _redistribute_excess_shifts(self, excess_shifts, excluded_worker_id, mandatory_shifts_by_worker):
         """Helper method to redistribute excess shifts from one worker to others, respecting mandatory assignments"""
         eligible_workers = [w for w in self.workers_data if w['id'] != excluded_worker_id]
