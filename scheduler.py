@@ -467,6 +467,18 @@ class Scheduler:
         logging.info(f"Mandatory guard assignment complete. {len(assigned_mandatory)} workers assigned to mandatory shifts")
         return True
 
+    def _assign_priority_days(self, forward=True):
+        """
+        Assign workers to their priority days (placeholder for future implementation)
+    
+        This is currently a placeholder method for a future feature that would allow
+        workers to specify preferred days to work, as opposed to mandatory days.
+    
+        Args:
+            forward: If True, process dates in chronological order, otherwise reverse
+        """
+        logging.info(f"Priority days feature not yet implemented - skipping")
+        return True
 
     def _redistribute_excess_shifts(self, excess_shifts, excluded_worker_id, mandatory_shifts_by_worker):
         """Helper method to redistribute excess shifts from one worker to others, respecting mandatory assignments"""
