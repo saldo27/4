@@ -870,6 +870,108 @@ class Scheduler:
     
         logging.info("Schedule validation successful!")
         return True
+        
+    def _calculate_post_rotation_coverage(self):
+        """
+        Calculate post rotation coverage metrics
+    
+        Evaluates how well posts are distributed across workers
+    
+        Returns:
+            dict: Dictionary containing post rotation metrics
+        """
+        logging.info("Calculating post rotation coverage...")
+    
+        # Initialize metrics
+        metrics = {
+            'overall_score': 0,
+            'worker_scores': {},
+            'post_distribution': {}
+        }
+    
+        # Count assignments per post
+        post_counts = {post: 0 for post in range(self.num_shifts)}
+        total_assignments = 0
+    
+        for shifts in self.schedule.values():
+            for post, worker in enumerate(shifts):
+                if worker is not None:
+                    post_counts[post] = post_counts.get(post, 0) + 1
+                    total_assignments += 1
+    
+        # Calculate post distribution stats
+        if total_assignments > 0:
+            expected_per_post = total_assignments / self.num_shifts
+            post_deviation = 0
+        
+            for post, count in post_counts.items():
+                metrics['post_distribution'][post] = {
+                    'count': count,
+                    'percentage': (count / total_assignments * 100) if total_assignments > 0 else 0
+                }
+                post_deviation += abs(count - expected_per_post)
+        
+            # Calculate overall post distribution uniformity (100% = perfect distribution)
+            post_uniformity = max(0, 100 - (post_deviation / total_assignments * 100))
+        else:
+            post_uniformity = 0
+    
+        # Calculate individual worker post rotation scores
+        worker_scores = {}
+        overall_worker_deviation = 0
+    
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            worker_assignments = len(self.worker_assignments.get(worker_id, []))
+        
+            # Skip workers with no or very few assignments
+            if worker_assignments < 2:
+                worker_scores[worker_id] = 100  # Perfect score for workers with minimal assignments
+                continue
+        
+            # Get post counts for this worker
+            worker_post_counts = {post: 0 for post in range(self.num_shifts)}
+        
+            for date, shifts in self.schedule.items():
+                for post, assigned_worker in enumerate(shifts):
+                    if assigned_worker == worker_id:
+                        worker_post_counts[post] = worker_post_counts.get(post, 0) + 1
+        
+            # Calculate deviation from ideal distribution
+            expected_per_post_for_worker = worker_assignments / self.num_shifts
+            worker_deviation = 0
+        
+            for post, count in worker_post_counts.items():
+                worker_deviation += abs(count - expected_per_post_for_worker)
+        
+            # Calculate worker's post rotation score (100% = perfect distribution)
+            if worker_assignments > 0:
+                worker_score = max(0, 100 - (worker_deviation / worker_assignments * 100))
+                normalized_worker_deviation = worker_deviation / worker_assignments
+            else:
+                worker_score = 100
+                normalized_worker_deviation = 0
+        
+            worker_scores[worker_id] = worker_score
+            overall_worker_deviation += normalized_worker_deviation
+    
+        # Calculate overall worker post rotation score
+        if len(self.workers_data) > 0:
+            avg_worker_score = sum(worker_scores.values()) / len(worker_scores)
+        else:
+            avg_worker_score = 0
+    
+        # Combine post distribution and worker rotation scores
+        # Weigh post distribution more heavily (60%) than individual worker scores (40%)
+        metrics['overall_score'] = (post_uniformity * 0.6) + (avg_worker_score * 0.4)
+        metrics['post_uniformity'] = post_uniformity
+        metrics['avg_worker_score'] = avg_worker_score
+        metrics['worker_scores'] = worker_scores
+    
+        logging.info(f"Post rotation overall score: {metrics['overall_score']:.2f}%")
+        logging.info(f"Post uniformity: {post_uniformity:.2f}%, Avg worker score: {avg_worker_score:.2f}%")
+    
+        return metrics
 
     def export_schedule(self, format='txt'):
         """
