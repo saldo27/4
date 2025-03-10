@@ -158,8 +158,7 @@ class ScheduleBuilder:
                 # If we've tried all relaxation levels and still failed, leave shift unfilled
                 self.schedule[date].append(None)
                 logging.debug(f"No suitable worker found for {date}, post {post} - shift unfilled")
-                xation_level=0)
-                
+                              
     def _get_candidates(self, date, post, relaxation_level=0):
         """
         Get suitable candidates with their scores using the specified relaxation level
