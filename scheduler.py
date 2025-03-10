@@ -142,7 +142,7 @@ class Scheduler:
             # Validate date formats in days_off if present
             if 'days_off' in worker:
                 try:
-                    self._parse_date_ranges(worker['days_off'])
+                    self.date_utils.parse_date_ranges(worker['days_off'])
                 except ValueError as e:
                     raise SchedulerError(f"Invalid days_off format for worker {worker['id']}: {str(e)}")
 
