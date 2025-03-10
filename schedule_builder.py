@@ -86,21 +86,6 @@ class ScheduleBuilder:
                         # Update tracking data
                         post = len(self.schedule[date]) - 1
                         self.data_manager._update_tracking_data(worker_id, date, post)
-
-    def _parse_dates(self, date_str):
-        """
-        Parse semicolon-separated dates using the date_utils
-    
-        Args:
-            date_str: String with semicolon-separated dates in DD-MM-YYYY format
-        Returns:
-            list: List of datetime objects
-        """
-        if not date_str:
-            return []
-    
-        # Delegate to the DateTimeUtils class
-        return self.date_utils.parse_dates(date_str)
                         
     def _assign_priority_days(self, forward):
         """Process weekend and holiday assignments first since they're harder to fill"""
@@ -393,51 +378,51 @@ class ScheduleBuilder:
         return True
 
     def _would_exceed_weekend_limit(self, worker_id, date):
-    """
-    Check if adding this date would exceed the worker's weekend limit
+        """
+        Check if adding this date would exceed the worker's weekend limit
     
-    Args:
-        worker_id: ID of the worker to check
-        date: Date to potentially add
+        Args:
+            worker_id: ID of the worker to check
+            date: Date to potentially add
         
-    Returns:
-        bool: True if weekend limit would be exceeded, False otherwise
-    """
-    # Skip if not a weekend
-    if not self.date_utils.is_weekend_day(date) and date not in self.holidays:
-        return False
+        Returns:
+            bool: True if weekend limit would be exceeded, False otherwise
+        """
+        # Skip if not a weekend
+        if not self.date_utils.is_weekend_day(date) and date not in self.holidays:
+            return False
     
-    # Get worker data
-    worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
-    if not worker:
-        return True
-    
-    # Get weekend assignments for this worker
-    weekend_dates = self.worker_weekends.get(worker_id, [])
-    
-    # Calculate the maximum allowed weekend shifts based on work percentage
-    work_percentage = worker.get('work_percentage', 100)
-    max_weekend_shifts = 3  # Default for full-time workers
-    if work_percentage < 100:
-        max_weekend_shifts = max(1, int(3 * work_percentage / 100))
-    
-    # Check if adding this date would exceed the limit for any 3-week period
-    if date in weekend_dates:
-        return False  # Already counted
-    
-    # Add the date temporarily
-    test_dates = weekend_dates + [date]
-    test_dates.sort()
-    
-    # Check for any 3-week period with too many weekend shifts
-    three_weeks = timedelta(days=21)
-    for i, start_date in enumerate(test_dates):
-        end_date = start_date + three_weeks
-        count = sum(1 for d in test_dates[i:] if d <= end_date)
-        if count > max_weekend_shifts:
+        # Get worker data
+        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        if not worker:
             return True
     
-    return False
+        # Get weekend assignments for this worker
+        weekend_dates = self.worker_weekends.get(worker_id, [])
+    
+        # Calculate the maximum allowed weekend shifts based on work percentage
+        work_percentage = worker.get('work_percentage', 100)
+        max_weekend_shifts = 3  # Default for full-time workers
+        if work_percentage < 100:
+            max_weekend_shifts = max(1, int(3 * work_percentage / 100))
+    
+        # Check if adding this date would exceed the limit for any 3-week period
+        if date in weekend_dates:
+            return False  # Already counted
+    
+        # Add the date temporarily
+        test_dates = weekend_dates + [date]
+        test_dates.sort()
+    
+        # Check for any 3-week period with too many weekend shifts
+        three_weeks = timedelta(days=21)
+        for i, start_date in enumerate(test_dates):
+            end_date = start_date + three_weeks
+            count = sum(1 for d in test_dates[i:] if d <= end_date)
+            if count > max_weekend_shifts:
+                return True
+    
+        return False
 
     def _get_post_counts(self, worker_id):
         """
@@ -950,7 +935,7 @@ class ScheduleBuilder:
         logging.info(f"Workload balancing: made {changes_made} changes")
         return changes_made > 0
 
-       def _are_workers_incompatible(self, worker1_id, worker2_id):
+    def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
         Check if two workers are incompatible with each other
     
