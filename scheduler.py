@@ -762,7 +762,115 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Schedule generation error: {str(e)}", exc_info=True)
             raise SchedulerError(f"Failed to generate schedule: {str(e)}")
+
+    def _validate_final_schedule(self):
+        """
+        Validate the final schedule to ensure all constraints are met
+    
+        Raises:
+            SchedulerError: If validation fails
+        """
+        logging.info("Validating final schedule...")
+    
+        # Track validation issues
+        validation_issues = []
+    
+        # Check 1: Ensure all dates have the correct number of shifts
+        for date in self._get_date_range(self.start_date, self.end_date):
+            if date not in self.schedule:
+                validation_issues.append(f"Date {date.strftime('%Y-%m-%d')} is missing from the schedule")
+            elif len(self.schedule[date]) != self.num_shifts:
+                validation_issues.append(
+                    f"Date {date.strftime('%Y-%m-%d')} has {len(self.schedule[date])} shifts, expected {self.num_shifts}"
+                )
+    
+        # Check 2: Ensure no worker is assigned to multiple shifts on the same day
+        for date, shifts in self.schedule.items():
+            worker_counts = {}
+            for worker_id in shifts:
+                if worker_id is not None:
+                    worker_counts[worker_id] = worker_counts.get(worker_id, 0) + 1
+                    if worker_counts[worker_id] > 1:
+                        validation_issues.append(
+                            f"Worker {worker_id} is assigned to multiple shifts on {date.strftime('%Y-%m-%d')}"
+                        )
+    
+        # Check 3: Ensure workers have at least minimum gap between shifts
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            dates = sorted(list(self.worker_assignments.get(worker_id, [])))
         
+            for i in range(len(dates) - 1):
+                gap = (dates[i+1] - dates[i]).days
+                if gap < 2:  # Minimum gap is 2 days
+                    validation_issues.append(
+                        f"Worker {worker_id} has insufficient gap ({gap} days) between shifts on "
+                        f"{dates[i].strftime('%Y-%m-%d')} and {dates[i+1].strftime('%Y-%m-%d')}"
+                    )
+    
+        # Check 4: Ensure all mandatory shifts are assigned
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            mandatory_days = worker.get('mandatory_days', '')
+            if mandatory_days:
+                mandatory_dates = self.date_utils.parse_dates(mandatory_days)
+                relevant_mandatory_dates = [
+                    d for d in mandatory_dates if self.start_date <= d <= self.end_date
+                ]
+            
+                for date in relevant_mandatory_dates:
+                    if date not in self.worker_assignments.get(worker_id, []):
+                        validation_issues.append(
+                            f"Worker {worker_id} is not assigned to mandatory date {date.strftime('%Y-%m-%d')}"
+                        )
+    
+        # Check 5: Ensure no worker is assigned on their days off
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            days_off = worker.get('days_off', '')
+            if days_off:
+                day_ranges = self.date_utils.parse_date_ranges(days_off)
+                for start_date, end_date in day_ranges:
+                    current = start_date
+                    while current <= end_date:
+                        if current in self.worker_assignments.get(worker_id, []):
+                            validation_issues.append(
+                                f"Worker {worker_id} is assigned on day off {current.strftime('%Y-%m-%d')}"
+                            )
+                        current += timedelta(days=1)
+    
+        # Check 6: Ensure tracking data is consistent with schedule
+        for worker_id, assignment_dates in self.worker_assignments.items():
+            for date in assignment_dates:
+                if date not in self.schedule or worker_id not in self.schedule[date]:
+                    validation_issues.append(
+                        f"Tracking inconsistency: Worker {worker_id} is tracked for {date.strftime('%Y-%m-%d')} "
+                        f"but not in schedule"
+                    )
+    
+        # Check for reverse consistency
+        for date, shifts in self.schedule.items():
+            for worker_id in [w for w in shifts if w is not None]:
+                if date not in self.worker_assignments.get(worker_id, []):
+                    validation_issues.append(
+                        f"Tracking inconsistency: Worker {worker_id} is in schedule for {date.strftime('%Y-%m-%d')} "
+                        f"but not in tracking"
+                    )
+    
+        # Report validation issues
+        if validation_issues:
+            # Log at most 10 issues to keep logs manageable
+            for issue in validation_issues[:10]:
+                logging.error(f"Validation issue: {issue}")
+        
+            if len(validation_issues) > 10:
+                logging.error(f"... and {len(validation_issues) - 10} more issues")
+        
+            raise SchedulerError(f"Schedule validation failed with {len(validation_issues)} issues")
+    
+        logging.info("Schedule validation successful!")
+        return True
+
     def export_schedule(self, format='txt'):
         """
         Export the schedule in the specified format
