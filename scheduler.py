@@ -571,6 +571,37 @@ class Scheduler:
             date_range.append(current_date)
             current_date += timedelta(days=1)
         return date_range
+
+    def _cleanup_schedule(self):
+        """
+        Clean up the schedule before validation
+    
+        - Ensure all dates have proper shift lists
+        - Remove any empty shifts at the end of lists
+        - Sort schedule by date
+        """
+        logging.info("Cleaning up schedule...")
+
+        # Ensure all dates in the period are in the schedule
+        for date in self._get_date_range(self.start_date, self.end_date):
+            if date not in self.schedule:
+                self.schedule[date] = [None] * self.num_shifts
+            elif len(self.schedule[date]) < self.num_shifts:
+                # Fill missing shifts with None
+                self.schedule[date].extend([None] * (self.num_shifts - len(self.schedule[date])))
+            elif len(self.schedule[date]) > self.num_shifts:
+                # Trim excess shifts (shouldn't happen, but just in case)
+                self.schedule[date] = self.schedule[date][:self.num_shifts]
+    
+        # Create a sorted version of the schedule
+        sorted_schedule = {}
+        for date in sorted(self.schedule.keys()):
+            sorted_schedule[date] = self.schedule[date]
+    
+        self.schedule = sorted_schedule
+    
+        logging.info("Schedule cleanup complete")
+        return True
         
     def generate_schedule(self, num_attempts=60, allow_feedback_improvement=True, improvement_attempts=20):
         """
