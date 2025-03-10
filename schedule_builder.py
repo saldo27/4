@@ -41,7 +41,7 @@ class ScheduleBuilder:
     
         logging.info("ScheduleBuilder initialized")
 
-     # 2. Utility Methods
+    # 2. Utility Methods
     def _parse_dates(self, date_str):
         """
         Parse semicolon-separated dates using the date_utils
@@ -87,7 +87,7 @@ class ScheduleBuilder:
                     self.worker_assignments[worker_id].remove(date)
                     logging.warning(f"Fixed inconsistency: Worker {worker_id} was tracked for {date} but not in schedule")
 
-      # 3. Worker Constraint Check Methods   
+    # 3. Worker Constraint Check Methods   
     def _is_worker_unavailable(self, worker_id, date):
         """
         Check if a worker is unavailable on a specific date
@@ -515,7 +515,7 @@ class ScheduleBuilder:
             logging.error(f"Error calculating score for worker {worker['id']}: {str(e)}")
             return float('-inf')
 
-     def _calculate_improvement_score(self, worker, date, post):
+    def _calculate_improvement_score(self, worker, date, post):
         """
         Calculate a score for a worker assignment during the improvement phase.
     
@@ -1252,39 +1252,39 @@ class ScheduleBuilder:
         return changes_made > 0
 
     def _fix_incompatibility_violations(self):
-            """
-            Check the entire schedule for incompatibility violations and fix them
-            by reassigning incompatible workers to different days
-            """
-            logging.info("Checking and fixing incompatibility violations")
+        """
+        Check the entire schedule for incompatibility violations and fix them
+        by reassigning incompatible workers to different days
+        """
+        logging.info("Checking and fixing incompatibility violations")
     
-            violations_fixed = 0
-            violations_found = 0
+        violations_fixed = 0
+        violations_found = 0
     
-            # Check each date for incompatible worker assignments
-            for date in sorted(self.schedule.keys()):
-                workers_today = [w for w in self.schedule[date] if w is not None]
+        # Check each date for incompatible worker assignments
+        for date in sorted(self.schedule.keys()):
+            workers_today = [w for w in self.schedule[date] if w is not None]
         
-                # Check each pair of workers
-                for i, worker1_id in enumerate(workers_today):
-                    for worker2_id in workers_today[i+1:]:
-                        # Check if these workers are incompatible
-                        if self._are_workers_incompatible(worker1_id, worker2_id):
-                            violations_found += 1
-                            logging.warning(f"Found incompatibility violation: {worker1_id} and {worker2_id} on {date}")
+            # Check each pair of workers
+            for i, worker1_id in enumerate(workers_today):
+                for worker2_id in workers_today[i+1:]:
+                    # Check if these workers are incompatible
+                    if self._are_workers_incompatible(worker1_id, worker2_id):
+                        violations_found += 1
+                        logging.warning(f"Found incompatibility violation: {worker1_id} and {worker2_id} on {date}")
                     
-                            # Try to fix the violation by moving one of the workers
-                            # Let's try to move the second worker first
-                            if self._try_reassign_worker(worker2_id, date):
-                                violations_fixed += 1
-                                logging.info(f"Fixed by reassigning {worker2_id} from {date}")
-                            # If that didn't work, try moving the first worker
-                            elif self._try_reassign_worker(worker1_id, date):
-                                violations_fixed += 1
-                                logging.info(f"Fixed by reassigning {worker1_id} from {date}")
+                    # Try to fix the violation by moving one of the workers
+                        # Let's try to move the second worker first
+                        if self._try_reassign_worker(worker2_id, date):
+                            violations_fixed += 1
+                            logging.info(f"Fixed by reassigning {worker2_id} from {date}")
+                        # If that didn't work, try moving the first worker
+                        elif self._try_reassign_worker(worker1_id, date):
+                            violations_fixed += 1
+                            logging.info(f"Fixed by reassigning {worker1_id} from {date}")
     
-            logging.info(f"Incompatibility check: found {violations_found} violations, fixed {violations_fixed}")
-            return violations_fixed > 0
+        logging.info(f"Incompatibility check: found {violations_found} violations, fixed {violations_fixed}")
+        return violations_fixed > 0
         
     def _try_reassign_worker(self, worker_id, date):
         """
@@ -1405,25 +1405,3 @@ class ScheduleBuilder:
             }
             for w_id, skips in self.constraint_skips.items()
         }
-
-
-
-
-
-
-    
-
-        
-
-    
-    
-
-
-
-
-    
-
-
-    
-
-        
