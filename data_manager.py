@@ -255,14 +255,16 @@ class DataManager:
     def _find_incomplete_days(self):
         """
         Find days with incomplete shift assignments
-        
+    
         Returns:
             list: Dates where not all shifts are assigned
         """
-        return [
-            date for date in self.schedule.keys()
-            if len(self.schedule[date]) < self.num_shifts
-        ]
+        incomplete_days = []
+        for date in self.schedule.keys():
+            if len(self.schedule[date]) < self.num_shifts:
+                incomplete_days.append(date)
+        return incomplete_days
+        
     def _calculate_monthly_targets(self):
         """Calculate target shifts per month for each worker"""
         try:
