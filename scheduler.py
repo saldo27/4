@@ -697,7 +697,12 @@ class Scheduler:
         logging.info("Starting cadence-based assignment method")
     
         # Get all dates that need to be scheduled
-        all_dates = self._get_date_range(self.start_date, self.end_date)
+        all_dates = []
+        current_date = self.start_date
+        while current_date <= self.end_date:
+            all_dates.append(current_date)
+            current_date += timedelta(days=1)
+    
         days_in_schedule = len(all_dates)
         total_shifts = days_in_schedule * self.num_shifts
     
@@ -708,13 +713,25 @@ class Scheduler:
                 self.worker_assignments[worker_id] = set()
             if worker_id not in self.worker_posts:
                 self.worker_posts[worker_id] = set()
-            
-        # Calculate ideal cadence for each worker based on their target shifts
-        worker_cadences = {}
+    
+        # Calculate worker targets based on availability percentages
+        total_workers = len(self.workers_data)
+        worker_targets = {}
+    
         for worker in self.workers_data:
             worker_id = worker['id']
-            # Get target shifts for this worker
-            target = self.worker_targets.get(worker_id, 0)
+            # Get the worker's availability percentage (default to equal distribution)
+            availability_pct = worker.get('availability_pct', 100.0) / 100.0
+        
+            # Calculate target shifts for this worker based on availability
+            target_shifts = round((total_shifts / total_workers) * availability_pct)
+            worker_targets[worker_id] = target_shifts
+        
+            logging.debug(f"Worker {worker_id} target: {target_shifts} shifts (based on {availability_pct*100}% availability)")
+    
+        # Calculate ideal cadence for each worker based on their target shifts
+        worker_cadences = {}
+        for worker_id, target in worker_targets.items():
             if target > 0:
                 # Calculate ideal spacing between shifts
                 cadence = days_in_schedule / target if target > 0 else 0
@@ -725,7 +742,7 @@ class Scheduler:
         mandatory_assigned = 0
         for worker in self.workers_data:
             worker_id = worker['id']
-            if worker_id in self.worker_mandatory_shifts:
+            if hasattr(self, 'worker_mandatory_shifts') and worker_id in self.worker_mandatory_shifts:
                 for mandatory_date in self.worker_mandatory_shifts[worker_id]:
                     mandatory_shift_number = 0  # Default to first shift if not specified
                 
@@ -773,7 +790,7 @@ class Scheduler:
                 
                     # Skip workers who have reached their target
                     current_assigned = len(self.worker_assignments.get(worker_id, set()))
-                    worker_target = self.worker_targets.get(worker_id, 0)
+                    worker_target = worker_targets.get(worker_id, 0)
                     if worker_target > 0 and current_assigned >= worker_target:
                         continue
                     
@@ -826,50 +843,77 @@ class Scheduler:
         """
         logging.info("Using mixed strategy approach to generate optimal schedule")
     
-        # Strategy 1: Simple assignment
-        self._backup_best_schedule()  # Save current state
-        success1 = self._assign_workers_simple()
-        coverage1 = self._calculate_coverage() if success1 else 0
-        post_rotation1 = self._calculate_post_rotation()['overall_score'] if success1 else 0
-    
-        # Create a copy of the simple assignment result
-        simple_schedule = {date: shifts.copy() for date, shifts in self.schedule.items()}
-        simple_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
-    
-        # Strategy 2: Cadence-based assignment
-        self._restore_best_schedule()  # Restore to original state
-        success2 = self._assign_workers_cadence()
-        coverage2 = self._calculate_coverage() if success2 else 0
-        post_rotation2 = self._calculate_post_rotation()['overall_score'] if success2 else 0
-    
-        # Create a copy of the cadence result
-        cadence_schedule = {date: shifts.copy() for date, shifts in self.schedule.items()}
-        cadence_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
-    
-        # Compare results
-        logging.info(f"Strategy comparison: Simple ({coverage1:.1f}% coverage, {post_rotation1:.1f}% rotation) vs "
-                    f"Cadence ({coverage2:.1f}% coverage, {post_rotation2:.1f}% rotation)")
-    
-        # Choose the better strategy based on combined score (coverage is more important)
-        score1 = coverage1 * 0.7 + post_rotation1 * 0.3
-        score2 = coverage2 * 0.7 + post_rotation2 * 0.3
-    
-        if score1 >= score2:
-            # Use simple assignment results
-            self.schedule = simple_schedule
-            self.worker_assignments = simple_assignments
-            logging.info(f"Selected simple assignment strategy (score: {score1:.1f})")
-        else:
-            # Use cadence assignment results
-            self.schedule = cadence_schedule
-            self.worker_assignments = cadence_assignments
-            logging.info(f"Selected cadence assignment strategy (score: {score2:.1f})")
-    
-        # Final coverage calculation
-        final_coverage = self._calculate_coverage()
-        logging.info(f"Final mixed strategy coverage: {final_coverage:.1f}%")
-    
-        return final_coverage > 0
+        try:
+            # Strategy 1: Simple assignment
+            self._backup_best_schedule()  # Save current state
+            success1 = self._assign_workers_simple()
+            coverage1 = self._calculate_coverage() if success1 else 0
+            post_rotation1 = self._calculate_post_rotation()['overall_score'] if success1 else 0
+        
+            # Create a copy of the simple assignment result
+            simple_schedule = {}
+            for date, shifts in self.schedule.items():
+                simple_schedule[date] = shifts.copy() if shifts else []
+            
+            simple_assignments = {}
+            for worker_id, assignments in self.worker_assignments.items():
+                simple_assignments[worker_id] = set(assignments)
+        
+            logging.info(f"Simple assignment strategy: {coverage1:.1f}% coverage, {post_rotation1:.1f}% rotation")
+        
+            # Strategy 2: Cadence-based assignment
+            self._restore_best_schedule()  # Restore to original state
+            try:
+                success2 = self._assign_workers_cadence()
+                coverage2 = self._calculate_coverage() if success2 else 0
+                post_rotation2 = self._calculate_post_rotation()['overall_score'] if success2 else 0
+            
+                # Create a copy of the cadence result
+                cadence_schedule = {}
+                for date, shifts in self.schedule.items():
+                    cadence_schedule[date] = shifts.copy() if shifts else []
+                
+                cadence_assignments = {}
+                for worker_id, assignments in self.worker_assignments.items():
+                    cadence_assignments[worker_id] = set(assignments)
+                
+                logging.info(f"Cadence assignment strategy: {coverage2:.1f}% coverage, {post_rotation2:.1f}% rotation")
+            except Exception as e:
+                logging.error(f"Error in cadence assignment: {str(e)}", exc_info=True)
+                # Default to simple assignment if cadence fails
+                success2 = False
+                coverage2 = 0
+                post_rotation2 = 0
+        
+            # Compare results
+            logging.info(f"Strategy comparison: Simple ({coverage1:.1f}% coverage, {post_rotation1:.1f}% rotation) vs "
+                        f"Cadence ({coverage2:.1f}% coverage, {post_rotation2:.1f}% rotation)")
+        
+            # Choose the better strategy based on combined score (coverage is more important)
+            score1 = coverage1 * 0.7 + post_rotation1 * 0.3
+            score2 = coverage2 * 0.7 + post_rotation2 * 0.3
+        
+            if score1 >= score2:
+                # Use simple assignment results
+                self.schedule = simple_schedule
+                self.worker_assignments = simple_assignments
+                logging.info(f"Selected simple assignment strategy (score: {score1:.1f})")
+            else:
+                # Use cadence assignment results
+                self.schedule = cadence_schedule
+                self.worker_assignments = cadence_assignments
+                logging.info(f"Selected cadence assignment strategy (score: {score2:.1f})")
+        
+            # Final coverage calculation
+            final_coverage = self._calculate_coverage()
+            logging.info(f"Final mixed strategy coverage: {final_coverage:.1f}%")
+        
+            return final_coverage > 0
+        
+        except Exception as e:
+            logging.error(f"Error in mixed strategy assignment: {str(e)}", exc_info=True)
+            # Fall back to simple assignment if mixed strategy fails
+            return self._assign_workers_simple()
 
     def _is_allowed_assignment(self, worker_id, date, shift_num):
         """
