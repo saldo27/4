@@ -689,6 +689,225 @@ class Scheduler:
     
         return total_assigned > 0
 
+    def _assign_workers_cadence(self):
+        """
+        Assign workers to shifts using a cadence-based approach,
+        creating evenly spaced patterns of assignments.
+        """
+        logging.info("Starting cadence-based assignment method")
+    
+        # Get all dates that need to be scheduled
+        all_dates = self._get_date_range(self.start_date, self.end_date)
+        days_in_schedule = len(all_dates)
+        total_shifts = days_in_schedule * self.num_shifts
+    
+        # Initialize tracking structures if needed
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            if worker_id not in self.worker_assignments:
+                self.worker_assignments[worker_id] = set()
+            if worker_id not in self.worker_posts:
+                self.worker_posts[worker_id] = set()
+            
+        # Calculate ideal cadence for each worker based on their target shifts
+        worker_cadences = {}
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            # Get target shifts for this worker
+            target = self.worker_targets.get(worker_id, 0)
+            if target > 0:
+                # Calculate ideal spacing between shifts
+                cadence = days_in_schedule / target if target > 0 else 0
+                worker_cadences[worker_id] = cadence
+                logging.debug(f"Worker {worker_id} cadence: {cadence:.2f} days between shifts (target: {target})")
+    
+        # First, handle all mandatory assignments
+        mandatory_assigned = 0
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            if worker_id in self.worker_mandatory_shifts:
+                for mandatory_date in self.worker_mandatory_shifts[worker_id]:
+                    mandatory_shift_number = 0  # Default to first shift if not specified
+                
+                    # Ensure date is within our schedule range
+                    if self.start_date <= mandatory_date <= self.end_date:
+                        # Initialize schedule entry if needed
+                        if mandatory_date not in self.schedule:
+                            self.schedule[mandatory_date] = [None] * self.num_shifts
+                    
+                        # Ensure the shift list is long enough
+                        while len(self.schedule[mandatory_date]) <= mandatory_shift_number:
+                            self.schedule[mandatory_date].append(None)
+                        
+                        # Assign the worker
+                        self.schedule[mandatory_date][mandatory_shift_number] = worker_id
+                        self.worker_assignments[worker_id].add(mandatory_date)
+                        mandatory_assigned += 1
+                        logging.info(f"Assigned mandatory shift: Worker {worker_id} on {mandatory_date.strftime('%Y-%m-%d')}")
+    
+        # Next, assign remaining shifts using cadence
+        # Track the last assigned date for each worker
+        last_assigned = {worker['id']: self.start_date - timedelta(days=30) for worker in self.workers_data}
+    
+        # For each date and shift in order
+        for date in all_dates:
+            for shift_num in range(self.num_shifts):
+                # Skip if already assigned (e.g., mandatory)
+                if date in self.schedule and len(self.schedule[date]) > shift_num and self.schedule[date][shift_num] is not None:
+                    continue
+                
+                # Ensure schedule structure exists
+                if date not in self.schedule:
+                    self.schedule[date] = [None] * self.num_shifts
+            
+                # Ensure shift list is long enough
+                while len(self.schedule[date]) <= shift_num:
+                    self.schedule[date].append(None)
+            
+                # Find the best worker to assign based on cadence
+                best_worker = None
+                best_score = -float('inf')
+            
+                for worker in self.workers_data:
+                    worker_id = worker['id']
+                
+                    # Skip workers who have reached their target
+                    current_assigned = len(self.worker_assignments.get(worker_id, set()))
+                    worker_target = self.worker_targets.get(worker_id, 0)
+                    if worker_target > 0 and current_assigned >= worker_target:
+                        continue
+                    
+                    # Calculate how well this assignment would match the worker's cadence
+                    days_since_last = (date - last_assigned[worker_id]).days
+                    ideal_cadence = worker_cadences.get(worker_id, 7)  # Default to weekly if no cadence
+                
+                    # Score is how close we are to the ideal cadence (higher is better)
+                    # We want to be at least at the cadence, but not too far past it
+                    if days_since_last < ideal_cadence:
+                        # Too soon - penalty based on how early we are
+                        cadence_score = -5 * (ideal_cadence - days_since_last)
+                    else:
+                        # At or past cadence - higher score the closer we are to ideal
+                        # but with diminishing penalty the further we go
+                        cadence_score = 10 - min(10, (days_since_last - ideal_cadence) / 2)
+                
+                    # Check constraints (worker availability, preferences, etc.)
+                    if self._is_allowed_assignment(worker_id, date, shift_num):
+                        constraint_score = 5
+                    else:
+                        # Heavy penalty for violating constraints
+                        constraint_score = -20
+                
+                    # Combined score
+                    score = cadence_score + constraint_score
+                
+                    # Update best if this is better
+                    if score > best_score:
+                        best_score = score
+                        best_worker = worker_id
+            
+                # Assign the best worker
+                if best_worker is not None:
+                    self.schedule[date][shift_num] = best_worker
+                    self.worker_assignments[best_worker].add(date)
+                    last_assigned[best_worker] = date
+                    logging.debug(f"Cadence assigned: Worker {best_worker} to {date.strftime('%Y-%m-%d')}, shift {shift_num}")
+    
+        # Count assigned shifts
+        filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+        coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
+    
+        logging.info(f"Cadence assignment complete: {filled_shifts}/{total_shifts} shifts filled ({coverage:.1f}%)")
+        return filled_shifts > 0
+
+    def _assign_mixed_strategy(self):
+        """
+        Try multiple assignment strategies and choose the best result.
+        """
+        logging.info("Using mixed strategy approach to generate optimal schedule")
+    
+        # Strategy 1: Simple assignment
+        self._backup_best_schedule()  # Save current state
+        success1 = self._assign_workers_simple()
+        coverage1 = self._calculate_coverage() if success1 else 0
+        post_rotation1 = self._calculate_post_rotation()['overall_score'] if success1 else 0
+    
+        # Create a copy of the simple assignment result
+        simple_schedule = {date: shifts.copy() for date, shifts in self.schedule.items()}
+        simple_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
+    
+        # Strategy 2: Cadence-based assignment
+        self._restore_best_schedule()  # Restore to original state
+        success2 = self._assign_workers_cadence()
+        coverage2 = self._calculate_coverage() if success2 else 0
+        post_rotation2 = self._calculate_post_rotation()['overall_score'] if success2 else 0
+    
+        # Create a copy of the cadence result
+        cadence_schedule = {date: shifts.copy() for date, shifts in self.schedule.items()}
+        cadence_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
+    
+        # Compare results
+        logging.info(f"Strategy comparison: Simple ({coverage1:.1f}% coverage, {post_rotation1:.1f}% rotation) vs "
+                    f"Cadence ({coverage2:.1f}% coverage, {post_rotation2:.1f}% rotation)")
+    
+        # Choose the better strategy based on combined score (coverage is more important)
+        score1 = coverage1 * 0.7 + post_rotation1 * 0.3
+        score2 = coverage2 * 0.7 + post_rotation2 * 0.3
+    
+        if score1 >= score2:
+            # Use simple assignment results
+            self.schedule = simple_schedule
+            self.worker_assignments = simple_assignments
+            logging.info(f"Selected simple assignment strategy (score: {score1:.1f})")
+        else:
+            # Use cadence assignment results
+            self.schedule = cadence_schedule
+            self.worker_assignments = cadence_assignments
+            logging.info(f"Selected cadence assignment strategy (score: {score2:.1f})")
+    
+        # Final coverage calculation
+        final_coverage = self._calculate_coverage()
+        logging.info(f"Final mixed strategy coverage: {final_coverage:.1f}%")
+    
+        return final_coverage > 0
+
+    def _is_allowed_assignment(self, worker_id, date, shift_num):
+        """
+        Check if assigning this worker to this date/shift would violate any constraints.
+        Returns True if assignment is allowed, False otherwise.
+        """
+        try:
+            # Check if worker is available on this date
+            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+            if not worker:
+                return False
+            
+            # Check if date is within worker's work period
+            if hasattr(self, 'worker_work_periods') and worker_id in self.worker_work_periods:
+                start_period, end_period = self.worker_work_periods[worker_id]
+                if date < start_period or date > end_period:
+                    return False
+        
+            # Check if worker is already assigned on this date
+            if worker_id in self.worker_assignments and date in self.worker_assignments[worker_id]:
+                return False
+            
+            # Check rest constraints - worker should have enough rest days
+            min_rest_days = 1  # Default minimum rest between shifts
+        
+            # Check last assignment date for this worker
+            recent_assignments = [d for d in self.worker_assignments.get(worker_id, set()) 
+                                 if (date - d).days <= min_rest_days and d < date]
+            if recent_assignments:
+                return False
+        
+            # All checks passed
+            return True
+        except Exception as e:
+            logging.error(f"Error checking assignment constraints: {str(e)}")
+            # Default to not allowing on error
+            return False
+
     def _prepare_worker_data(self):
         """
         Prepare worker data before schedule generation:
@@ -847,20 +1066,20 @@ class Scheduler:
                 if allow_feedback_improvement and best_coverage < 99.9:
                     logging.info("\n=== Starting targeted improvement phase ===")
     
-                    # Add simple assignment if coverage is zero
+                    # Try mixed strategy first
                     if best_coverage == 0:
-                        logging.warning("Zero coverage detected, using simple assignment method")
-                        success = self._assign_workers_simple()
+                        logging.warning("Zero coverage detected, using mixed assignment strategies")
+                        success = self._assign_mixed_strategy()
                         if success:
                             # Recalculate coverage
                             coverage = self._calculate_coverage() 
                             post_rotation_stats = self._calculate_post_rotation()
                             best_coverage = coverage
                             best_post_rotation = post_rotation_stats['overall_score']
-                            logging.info(f"Simple assignment resulted in coverage: {coverage:.2f}%")
-            
-                            # IMPORTANT: Create a backup of this successful assignment
-                            # Update best_schedule with the current schedule
+                            logging.info(f"Mixed strategy assignment resulted in coverage: {coverage:.2f}%")
+                
+                            # Create a backup of this successful assignment
+                            self._backup_best_schedule()
                             best_schedule = self.schedule.copy()
                             best_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
                             best_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}    
