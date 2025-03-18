@@ -813,8 +813,8 @@ class Scheduler:
                              # Final stats
                             total_shifts = sum(len(shifts) for shifts in self.schedule.values())
                             filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
-                            logging.info(f"Final schedule coverage: {(filled_shifts / total_shifts * 100 if total_shifts > 0 else 0):.2f}% "
-                                    f"({filled_shifts}/{total_shifts} shifts filled)")
+                                logging.info(f"Final schedule coverage: {(filled_shifts / total_shifts * 100 if total_shifts > 0 else 0):.2f}% "
+                                        f"({filled_shifts}/{total_shifts} shifts filled)")
 
                             return self.schedule
     
