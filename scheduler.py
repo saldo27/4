@@ -551,6 +551,7 @@ class Scheduler:
             improvement_attempts: Number of attempts to improve the best schedule
         """
         logging.info("=== Starting schedule generation with multi-phase approach ===")
+        
         try:
             # Ensure data structures are consistent before we start
             self._ensure_data_integrity()
@@ -778,9 +779,9 @@ class Scheduler:
 
                 return True
         
-        except Exception as e:
-            logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
-            raise SchedulerError(f"Failed to generate schedule: {str(e)}")
+            except Exception as e:
+                logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
+                raise SchedulerError(f"Failed to generate schedule: {str(e)}")
 
     def _validate_final_schedule(self):
         """
