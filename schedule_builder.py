@@ -88,14 +88,15 @@ class ScheduleBuilder:
                     logging.warning(f"Fixed inconsistency: Worker {worker_id} was tracked for {date} but not in schedule")
 
     # 3. Worker Constraint Check Methods   
+    
     def _is_worker_unavailable(self, worker_id, date):
         """
         Check if a worker is unavailable on a specific date
-    
+
         Args:
             worker_id: ID of the worker to check
             date: Date to check availability
-        
+    
         Returns:
             bool: True if worker is unavailable, False otherwise
         """
@@ -103,6 +104,25 @@ class ScheduleBuilder:
         worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
         if not worker:
             return True
+
+        # Check work periods - if empty, worker is available for all dates
+        work_periods = worker.get('work_periods', '')
+        if work_periods:
+            # Parse work periods
+            try:
+                day_ranges = self.date_utils.parse_date_ranges(work_periods)
+                within_work_period = False
+                for start_date, end_date in day_ranges:
+                    if start_date <= date <= end_date:
+                        within_work_period = True
+                        break
+            
+                # If not within any work period, worker is unavailable
+                if not within_work_period:
+                    return True
+            except Exception as e:
+                # On parsing error, assume worker is available
+                logging.error(f"Error parsing work periods for worker {worker_id}: {str(e)}")
     
         # Check days off
         days_off = worker.get('days_off', '')
@@ -111,7 +131,7 @@ class ScheduleBuilder:
             for start_date, end_date in day_ranges:
                 if start_date <= date <= end_date:
                     return True
-    
+
         return False
 
     def _check_incompatibility(self, worker_id, date):
