@@ -124,22 +124,27 @@ class DateTimeUtils:
         next_day = date + timedelta(days=1)
         return next_day in holidays
         
-    def get_weekend_start(self, date):
+    def get_weekend_start(self, date, holidays=None):
         """
         Get the start date (Friday) of the weekend containing this date
     
         Args:
             date: datetime object
+            holidays: optional list of holidays
         Returns:
             datetime: Friday date of the weekend (or holiday start)
         """
-        if self.is_pre_holiday(date):
+        if self.is_pre_holiday(date, holidays):
             return date
-        elif self.is_holiday(date):
+        elif self.is_holiday(date, holidays):
             return date - timedelta(days=1)
         else:
             # Regular weekend - get to Friday
-            return date - timedelta(days=date.weekday() - 4)
+            weekday = date.weekday()
+            if weekday < 4:  # Monday-Thursday
+                return date + timedelta(days=4 - weekday)  # Move forward to Friday
+            else:  # Friday-Sunday
+                return date - timedelta(days=weekday - 4)  # Move back to Friday
         
     def get_effective_weekday(self, date, holidays=None):
         """
