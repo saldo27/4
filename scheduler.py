@@ -540,6 +540,18 @@ class Scheduler:
     
         logging.info("Schedule cleanup complete")
         return True
+
+    def _calculate_coverage(self):
+        """Calculate the percentage of shifts that are filled in the schedule."""
+        try:
+            total_shifts = sum(len(shifts) for shifts in self.schedule.values())
+            filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+            if total_shifts > 0:
+                return (filled_shifts / total_shifts) * 100
+            return 0
+        except Exception as e:
+            logging.error(f"Error calculating coverage: {str(e)}")
+            return 0
         
     def generate_schedule(self, num_attempts=60, allow_feedback_improvement=True, improvement_attempts=20):
         """
@@ -721,7 +733,7 @@ class Scheduler:
                 
                         # Calculate new metrics
                         post_rotation_stats = self._calculate_post_rotation_coverage()
-                        coverage = self._calculate_schedule_coverage()
+                        coverage = self._calculate_coverage()
                 
                         logging.info(f"[Post rotation overall score] {post_rotation_stats['overall_score']:.2f}%")
                         logging.info(f"[Post uniformity] {post_rotation_stats['uniformity']:.2f}%, Avg worker score: {post_rotation_stats['avg_worker']:.2f}%")
@@ -1053,7 +1065,7 @@ class Scheduler:
             metrics = self.get_schedule_metrics()
             
             # Calculate coverage
-            coverage = self._calculate_schedule_coverage()
+            coverage = self._calculate_coverage()
             if coverage < 95:  # Less than 95% coverage is considered problematic
                 logging.warning(f"Low schedule coverage: {coverage:.1f}%")
             
