@@ -544,8 +544,19 @@ class Scheduler:
     def _calculate_coverage(self):
         """Calculate the percentage of shifts that are filled in the schedule."""
         try:
-            total_shifts = sum(len(shifts) for shifts in self.schedule.values())
-            filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+            total_shifts = (self.end_date - self.start_date).days + 1  # One shift per day
+        
+            # Count filled shifts (where worker is not None)
+            filled_shifts = 0
+            for date, shifts in self.schedule.items():
+                for worker in shifts:
+                    if worker is not None:
+                        filled_shifts += 1
+        
+            # Debug log to see the actual numbers
+            logging.info(f"Coverage calculation: {filled_shifts} filled out of {total_shifts} total shifts")
+        
+            # Calculate percentage
             if total_shifts > 0:
                 return (filled_shifts / total_shifts) * 100
             return 0
@@ -907,6 +918,11 @@ class Scheduler:
                         f"Tracking inconsistency: Worker {worker_id} is in schedule for {date.strftime('%Y-%m-%d')} "
                         f"but not in tracking"
                     )
+
+        # Direct update of schedule from backup after improvements
+        if hasattr(self, 'backup_schedule') and self.backup_schedule:
+            self.schedule = self.backup_schedule.copy()
+            logging.info("Explicitly updated schedule from backup after improvements")
     
         # Report validation issues
         if validation_issues:
