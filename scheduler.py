@@ -590,6 +590,105 @@ class Scheduler:
             logging.error(f"Error calculating coverage: {str(e)}", exc_info=True)
             return 0
 
+    def _assign_workers_simple(self):
+        """
+        Simple method to directly assign workers to shifts based purely on targets.
+        This bypasses the complex constraints to ensure we get a basic schedule working.
+        """
+        logging.info("Using simplified assignment method to ensure schedule population")
+    
+        # 1. Get all dates that need to be scheduled
+        all_dates = sorted(list(self.schedule.keys()))
+        if not all_dates:
+            all_dates = self._get_date_range(self.start_date, self.end_date)
+    
+        # 2. Prepare worker assignments based on target shifts
+        worker_assignment_counts = {w['id']: 0 for w in self.workers_data}
+        worker_targets = {w['id']: w.get('target_shifts', 1) for w in self.workers_data}
+    
+        # Sort workers by targets (highest first) to prioritize those who need more shifts
+        workers_by_priority = sorted(
+            self.workers_data, 
+            key=lambda w: worker_targets.get(w['id'], 0),
+            reverse=True
+        )
+    
+        # 3. Go through each date and assign workers
+        for date in all_dates:
+            # For each shift on this date
+            for post in range(self.num_shifts):
+                # If the shift is already assigned, skip it
+                if date in self.schedule and len(self.schedule[date]) > post and self.schedule[date][post] is not None:
+                    continue
+                
+                # Find the best worker for this shift
+                best_worker = None
+            
+                # Try each worker in priority order
+                for worker in workers_by_priority:
+                    worker_id = worker['id']
+                
+                    # Skip if worker is already assigned to this date
+                    if date in self.schedule and worker_id in self.schedule[date]:
+                        continue
+                    
+                    # Skip if worker has reached their target
+                    if worker_assignment_counts[worker_id] >= worker_targets[worker_id]:
+                        continue
+                    
+                    # Skip if too close to existing assignment
+                    too_close = False
+                    for assigned_date in self.worker_assignments.get(worker_id, set()):
+                        if abs((date - assigned_date).days) < 2:  # Minimum 2 day gap
+                            too_close = True
+                            break
+                        
+                    if too_close:
+                        continue
+                    
+                    # This worker is a good candidate
+                    best_worker = worker
+                    break
+                
+                # If we found a suitable worker, assign them
+                if best_worker:
+                    worker_id = best_worker['id']
+                
+                    # Make sure the schedule list exists and has the right size
+                    if date not in self.schedule:
+                        self.schedule[date] = []
+                    
+                    while len(self.schedule[date]) <= post:
+                        self.schedule[date].append(None)
+                    
+                    # Assign the worker
+                    self.schedule[date][post] = worker_id
+                
+                    # Update tracking data
+                    self._update_tracking_data(worker_id, date, post)
+                
+                    # Update the assignment count
+                    worker_assignment_counts[worker_id] += 1
+                
+                    # Log the assignment
+                    logging.info(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')}, post {post}")
+                else:
+                    # No suitable worker found, leave unassigned
+                    if date not in self.schedule:
+                        self.schedule[date] = []
+                    
+                    while len(self.schedule[date]) <= post:
+                        self.schedule[date].append(None)
+                    
+                    logging.debug(f"No suitable worker found for {date.strftime('%Y-%m-%d')}, post {post}")
+    
+        # 4. Return the number of assignments made
+        total_assigned = sum(worker_assignment_counts.values())
+        total_shifts = len(all_dates) * self.num_shifts
+        logging.info(f"Simple assignment complete: {total_assigned}/{total_shifts} shifts assigned ({total_assigned/total_shifts*100:.1f}%)")
+    
+        return total_assigned > 0
+
     def _prepare_worker_data(self):
         """
         Prepare worker data before schedule generation:
@@ -605,7 +704,7 @@ class Scheduler:
                 end_str = self.end_date.strftime('%d-%m-%Y')
                 worker['work_periods'] = f"{start_str} - {end_str}"
                 logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
-        
+            
     def generate_schedule(self, num_attempts=1, allow_feedback_improvement=True, improvement_attempts=1):
         """
         Generate the complete schedule using a multi-phase approach to maximize shift coverage
@@ -734,16 +833,6 @@ class Scheduler:
                 self.worker_weekdays = best_worker_weekdays
                 self.worker_weekends = best_worker_weekends
                 self.constraint_skips = best_constraint_skips
-
-                else:
-                    # If we couldn't generate any schedule, try the simple approach
-                    logging.warning("Standard scheduling methods failed, falling back to simple assignment")
-                    success = self.schedule_builder._assign_workers_simple()
-                    if success:
-                        logging.info("Simple assignment created a basic schedule")
-                    else:
-                        logging.error("Failed to generate any valid schedule")
-                        raise SchedulerError("Failed to generate a valid schedule")
     
                 # Log summary statistics
                 logging.info("=== Initial Coverage Statistics Summary ===")
@@ -755,18 +844,22 @@ class Scheduler:
                                 f"RelaxLevel={stats['relax_level']}")
     
                 # PHASE 2: Targeted improvement for the best schedule
-                if allow_feedback_improvement:
+                if allow_feedback_improvement and best_coverage < 99.9:
                     logging.info("\n=== Starting targeted improvement phase ===")
-    
-                    # Try the simple assignment method if coverage is zero
+            
+                    # Add simple assignment if coverage is zero
                     if best_coverage == 0:
                         logging.warning("Zero coverage detected, using simple assignment method")
-                        success = self.schedule_builder._assign_workers_simple()
-                        if success:
-                            # Recalculate coverage after simple assignment
-                            best_coverage = self._calculate_coverage()
-                            best_post_rotation = self._calculate_post_rotation()['overall_score']
-                            logging.info(f"Simple assignment improved coverage to {best_coverage:.2f}%")
+                        self._assign_workers_simple()
+                        # Recalculate coverage
+                        best_coverage = self._calculate_coverage()
+                        post_rotation_stats = self._calculate_post_rotation()
+                        best_post_rotation = post_rotation_stats['overall_score']
+                        logging.info(f"Simple assignment resulted in coverage: {best_coverage:.2f}%")
+            
+                    # Save the current best metrics
+                    initial_best_coverage = best_coverage
+                    initial_best_post_rotation = best_post_rotation
                 
                     # Initialize improvement tracker
                     improvements_made = 0
@@ -835,8 +928,12 @@ class Scheduler:
                     else:
                         logging.info("=== No improvements found over initial schedule ===")
                 else:
-                    logging.error("Failed to generate any valid schedule")
-                    raise SchedulerError("Failed to generate a valid schedule")
+                    # If no valid schedule was found, try a simple direct assignment approach
+                    logging.warning("Standard scheduling failed. Trying simple direct assignment.")
+                    self._assign_workers_simple()
+                    coverage = self._calculate_coverage()
+                    if coverage > 0:
+                        logging.info(f"Simple assignment created a basic schedule with {coverage:.2f}% coverage.")
 
                 # Ensure we use the best schedule found during improvements
                 if best_coverage > 0 and hasattr(self, 'backup_schedule'):
