@@ -464,7 +464,6 @@ class Scheduler:
             date: Date of assignment
             shift_idx: Index of the shift being assigned (0-indexed)
         """
-        logging.debug(f"Updating tracking data for worker {worker_id} on {date.strftime('%Y-%m-%d')}, shift {shift_idx}")
         try:
             # Update worker assignments
             if worker_id not in self.worker_assignments:
@@ -498,7 +497,7 @@ class Scheduler:
             # Update the main schedule
             if date not in self.schedule:
                 self.schedule[date] = [None] * self.num_shifts
-        
+            
             # Fill any gaps in the schedule list
             while len(self.schedule[date]) <= shift_idx:
                 self.schedule[date].append(None)
@@ -506,7 +505,7 @@ class Scheduler:
             # Set the worker at the specific shift
             self.schedule[date][shift_idx] = worker_id
         
-            logging.debug(f"Successfully updated tracking data for worker {worker_id} on {date.strftime('%Y-%m-%d')}")
+            logging.debug(f"Updated tracking data for worker {worker_id} on {date.strftime('%Y-%m-%d')}, shift {shift_idx}")
         
         except Exception as e:
             logging.error(f"Error updating tracking data for worker {worker_id}: {str(e)}", exc_info=True)
@@ -735,6 +734,16 @@ class Scheduler:
                 self.worker_weekdays = best_worker_weekdays
                 self.worker_weekends = best_worker_weekends
                 self.constraint_skips = best_constraint_skips
+
+                else:
+                    # If we couldn't generate any schedule, try the simple approach
+                    logging.warning("Standard scheduling methods failed, falling back to simple assignment")
+                    success = self.schedule_builder._assign_workers_simple()
+                    if success:
+                        logging.info("Simple assignment created a basic schedule")
+                    else:
+                        logging.error("Failed to generate any valid schedule")
+                        raise SchedulerError("Failed to generate a valid schedule")
     
                 # Log summary statistics
                 logging.info("=== Initial Coverage Statistics Summary ===")
