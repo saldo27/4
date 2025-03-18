@@ -552,6 +552,22 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error calculating coverage: {str(e)}")
             return 0
+
+    def _prepare_worker_data(self):
+        """
+        Prepare worker data before schedule generation:
+        - Set empty work periods to the full schedule period
+        - Handle other default values
+        """
+        logging.info("Preparing worker data...")
+    
+        for worker in self.workers_data:
+            # Handle empty work periods - default to full schedule period
+            if 'work_periods' not in worker or not worker['work_periods'].strip():
+                start_str = self.start_date.strftime('%d-%m-%Y')
+                end_str = self.end_date.strftime('%d-%m-%Y')
+                worker['work_periods'] = f"{start_str} - {end_str}"
+                logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
         
     def generate_schedule(self, num_attempts=60, allow_feedback_improvement=True, improvement_attempts=20):
         """
@@ -567,6 +583,9 @@ class Scheduler:
         try:
             # Ensure data structures are consistent before we start
             self._ensure_data_integrity()
+        
+            # Prepare worker data - set defaults for empty fields
+            self._prepare_worker_data()
             
             # PHASE 1: Generate multiple initial schedules and select the best one
             best_schedule = None
