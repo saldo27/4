@@ -212,48 +212,6 @@ class Scheduler:
     
         return month_days
 
-    def _prepare_worker_data(self):
-        """
-        Prepare worker data before schedule generation:
-        - Convert empty work periods to work_dates
-        - Process other default values
-        """
-        logging.info("Preparing worker data...")
-    
-        for worker in self.workers_data:
-            # Handle empty work periods - default to full schedule period
-            if 'work_periods' not in worker or not worker['work_periods'].strip():
-                start_str = self.start_date.strftime('%d-%m-%Y')
-                end_str = self.end_date.strftime('%d-%m-%Y')
-                worker['work_periods'] = f"{start_str} - {end_str}"
-                logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
-            
-            # Process work periods into work_dates for efficient lookup
-            try:
-                work_periods = worker.get('work_periods', '')
-                if work_periods:
-                    date_ranges = self.date_utils.parse_date_ranges(work_periods)
-                    work_dates = set()
-                    for start_date, end_date in date_ranges:
-                        current_date = start_date
-                        while current_date <= end_date:
-                            work_dates.add(current_date.strftime('%Y-%m-%d'))
-                            current_date += timedelta(days=1)
-                    worker['work_dates'] = work_dates
-                else:
-                    # Default to all dates in schedule period
-                    work_dates = set()
-                    for date in self._get_date_range(self.start_date, self.end_date):
-                        work_dates.add(date.strftime('%Y-%m-%d'))
-                    worker['work_dates'] = work_dates
-            except Exception as e:
-                logging.error(f"Error processing work periods for worker {worker['id']}: {str(e)}")
-                # Default to all dates
-                work_dates = set()
-                for date in self._get_date_range(self.start_date, self.end_date):
-                    work_dates.add(date.strftime('%Y-%m-%d'))
-                worker['work_dates'] = work_dates
-    
     def _calculate_target_shifts(self):
         """
         Calculate target number of shifts for each worker based on their work percentage,
