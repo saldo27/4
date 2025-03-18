@@ -95,58 +95,65 @@ class DateTimeUtils:
         # Check if it's a weekend (Saturday or Sunday)
         return date.weekday() >= 4  # 4 = Friday, 5 = Saturday, 6 = Sunday
         
-    def is_holiday(self, date):
+    def is_holiday(self, date, holidays=None):
         """
         Check if a date is a holiday
-        
+    
         Args:
             date: datetime object
+            holidays: optional list of holidays
         Returns:
             bool: True if holiday, False otherwise
         """
-        return date in self.holidays
+        if holidays is None:
+            return False
+        return date in holidays
 
-    def is_pre_holiday(self, date):
+    def is_pre_holiday(self, date, holidays=None):
         """
         Check if a date is the day before a holiday
-        
+    
         Args:
             date: datetime object
+            holidays: optional list of holidays
         Returns:
             bool: True if pre-holiday, False otherwise
         """
+        if holidays is None:
+            return False
         next_day = date + timedelta(days=1)
-        return next_day in self.holidays
-
+        return next_day in holidays
+        
     def get_weekend_start(self, date):
         """
         Get the start date (Friday) of the weekend containing this date
-        
+    
         Args:
             date: datetime object
         Returns:
             datetime: Friday date of the weekend (or holiday start)
         """
-        if self._is_pre_holiday(date):
+        if self.is_pre_holiday(date):
             return date
-        elif self._is_holiday(date):
+        elif self.is_holiday(date):
             return date - timedelta(days=1)
         else:
             # Regular weekend - get to Friday
             return date - timedelta(days=date.weekday() - 4)
         
-    def get_effective_weekday(self, date):
+    def get_effective_weekday(self, date, holidays=None):
         """
         Get the effective weekday, treating holidays as Sundays and pre-holidays as Fridays
-        
+    
         Args:
             date: datetime object
+            holidays: optional list of holidays
         Returns:
             int: 0-6 representing Monday-Sunday, with holidays as 6 and pre-holidays as 4
         """
-        if self._is_holiday(date):
+        if self.is_holiday(date, holidays):
             return 6  # Sunday
-        if self._is_pre_holiday(date):
+        if self.is_pre_holiday(date, holidays):
             return 4  # Friday
         return date.weekday()
     
