@@ -606,7 +606,7 @@ class Scheduler:
                 worker['work_periods'] = f"{start_str} - {end_str}"
                 logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
         
-    def generate_schedule(self, num_attempts=60, allow_feedback_improvement=True, improvement_attempts=20):
+    def generate_schedule(self, num_attempts=1, allow_feedback_improvement=True, improvement_attempts=1):
         """
         Generate the complete schedule using a multi-phase approach to maximize shift coverage
     
