@@ -732,7 +732,7 @@ class Scheduler:
                             continue
                 
                         # Calculate new metrics
-                        post_rotation_stats = self._calculate_post_rotation_coverage()
+                        post_rotation_stats = self._calculate_post_rotation()
                         coverage = self._calculate_coverage()
                 
                         logging.info(f"[Post rotation overall score] {post_rotation_stats['overall_score']:.2f}%")
