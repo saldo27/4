@@ -828,10 +828,8 @@ class ScheduleBuilder:
             return False
     
         logging.info(f"Attempting to fill {len(empty_shifts)} empty shifts")
-        for worker in self.workers_data:
-            worker_id = worker['id']
 
-       # Sort empty shifts by date (earlier dates first)
+        # Sort empty shifts by date (earlier dates first)
         empty_shifts.sort(key=lambda x: x[0])
     
         shifts_filled = 0
@@ -840,38 +838,42 @@ class ScheduleBuilder:
         for date, post in empty_shifts:
             # Get candidates that satisfy ALL constraints (no relaxation)
             candidates = []
-        
+    
             for worker in self.workers_data:
                 worker_id = worker['id']
-            
+        
                 # Skip if already assigned to this date
                 if worker_id in self.schedule[date]:
                     continue
-            
+        
                 # Check if worker can be assigned (with strict constraints)
                 if self._can_assign_worker(worker_id, date, post):
                     # Calculate score for this assignment
                     score = self._calculate_worker_score(worker, date, post, relaxation_level=0)
                     if score > float('-inf'):
                         candidates.append((worker, score))
-        
+    
             if candidates:
                 # Sort candidates by score (highest first)
                 candidates.sort(key=lambda x: x[1], reverse=True)
-            
+        
                 # Select the best candidate
                 best_worker = candidates[0][0]
                 worker_id = best_worker['id']
-            
+        
                 # Assign the worker
                 self.schedule[date][post] = worker_id
                 self.worker_assignments[worker_id].add(date)
                 self.data_manager._update_tracking_data(worker_id, date, post)
-            
+        
                 logging.info(f"Filled empty shift on {date} post {post} with worker {worker_id}")
                 shifts_filled += 1
-                
-            self._save_current_as_best()
+            
+                # Make sure to update the scheduler's main schedule too
+                self.scheduler.schedule = self.schedule.copy()
+    
+        # Save the current schedule as best AFTER all updates
+        self._save_current_as_best()
     
         logging.info(f"Filled {shifts_filled} of {len(empty_shifts)} empty shifts")
         return shifts_filled > 0
