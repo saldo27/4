@@ -1438,6 +1438,22 @@ class ScheduleBuilder:
 
     def _save_current_as_best(self):
         """Save current schedule as the best"""
+        # Save the schedule to the parent scheduler object (CRITICAL!)
+        self.scheduler.backup_schedule = self.schedule.copy()
+        self.scheduler.backup_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
+        self.scheduler.backup_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}
+        self.scheduler.backup_worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.worker_weekdays.items()}
+        self.scheduler.backup_worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.worker_weekends.items()}
+        self.scheduler.backup_constraint_skips = {
+            w_id: {
+                'gap': skips['gap'].copy(),
+                'incompatibility': skips['incompatibility'].copy(),
+                'reduced_gap': skips['reduced_gap'].copy(),
+            }
+            for w_id, skips in self.constraint_skips.items()
+        }
+
+        # Also update local backup
         self.backup_schedule = self.schedule.copy()
         self.backup_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
         self.backup_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}
