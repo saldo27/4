@@ -755,12 +755,18 @@ class Scheduler:
                                 f"RelaxLevel={stats['relax_level']}")
     
                 # PHASE 2: Targeted improvement for the best schedule
-                if allow_feedback_improvement and best_coverage < 99.9:
+                if allow_feedback_improvement:
                     logging.info("\n=== Starting targeted improvement phase ===")
-            
-                    # Save the current best metrics
-                    initial_best_coverage = best_coverage
-                    initial_best_post_rotation = best_post_rotation
+    
+                    # Try the simple assignment method if coverage is zero
+                    if best_coverage == 0:
+                        logging.warning("Zero coverage detected, using simple assignment method")
+                        success = self.schedule_builder._assign_workers_simple()
+                        if success:
+                            # Recalculate coverage after simple assignment
+                            best_coverage = self._calculate_coverage()
+                            best_post_rotation = self._calculate_post_rotation()['overall_score']
+                            logging.info(f"Simple assignment improved coverage to {best_coverage:.2f}%")
                 
                     # Initialize improvement tracker
                     improvements_made = 0
@@ -815,7 +821,11 @@ class Scheduler:
                         else:
                             # Restore the previous best schedule
                             self.schedule_builder._restore_best_schedule()
-                
+
+                    # Save the current best metrics
+                    initial_best_coverage = best_coverage
+                    initial_best_post_rotation = best_post_rotation
+
                     # Final report on improvements
                     if best_coverage > initial_best_coverage or best_post_rotation > initial_best_post_rotation:
                         improvement = f"Coverage improved by {best_coverage - initial_best_coverage:.2f}%, " \
