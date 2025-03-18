@@ -649,5 +649,20 @@ class ConstraintChecker:
         return True
     
     def _get_post_counts(self, worker_id):
-        """Get post distribution for a worker"""
-        return self.scheduler.stats.get_post_counts(worker_id)
+        """
+        Get the count of assignments for each post for a specific worker
+    
+        Args:
+            worker_id: ID of the worker
+        
+        Returns:
+            dict: Dictionary with post numbers as keys and counts as values
+        """
+        post_counts = {post: 0 for post in range(self.num_shifts)}
+    
+        for date, shifts in self.schedule.items():
+            for post, assigned_worker in enumerate(shifts):
+                if assigned_worker == worker_id:
+                    post_counts[post] = post_counts.get(post, 0) + 1
+                
+        return post_counts
