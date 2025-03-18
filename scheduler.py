@@ -1016,9 +1016,7 @@ class Scheduler:
                     logging.info(improvement)
                 else:
                     logging.info("=== No improvements found over initial schedule ===")
-            
-            except Exception as e:  # This is the matching except for the try above
-                logging.error(f"Error in improvement phase: {str(e)}", exc_info=True)
+                        
                 # If we encountered an error but had a working schedule, restore it
                 if best_coverage > 0:
                     self.schedule = best_schedule
