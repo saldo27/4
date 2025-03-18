@@ -793,9 +793,9 @@ class Scheduler:
                             if best_coverage > 0 and hasattr(self, 'backup_schedule'):
                                 self.schedule = self.backup_schedule.copy()
                                 self.worker_assignments = {w_id: assignments.copy() 
-                                                      for w_id, assignments in self.backup_worker_assignments.items()}
+                                                        for w_id, assignments in self.backup_worker_assignments.items()}
                                 self.worker_posts = {w_id: posts.copy() 
-                                                  for w_id, posts in self.backup_worker_posts.items()}
+                                                    for w_id, posts in self.backup_worker_posts.items()}
                                 self.worker_weekdays = {w_id: weekdays.copy() 
                                                      for w_id, weekdays in self.backup_worker_weekdays.items()}
                                 self.worker_weekends = {w_id: weekends.copy() 
