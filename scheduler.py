@@ -458,40 +458,58 @@ class Scheduler:
     def _update_tracking_data(self, worker_id, date, shift_idx):
         """
         Update tracking data structures when a worker is assigned to a shift
-    
+
         Args:
             worker_id: ID of the worker being assigned
             date: Date of assignment
             shift_idx: Index of the shift being assigned (0-indexed)
         """
-        # Update worker assignments
-        if worker_id not in self.worker_assignments:
-            self.worker_assignments[worker_id] = set()
-        self.worker_assignments[worker_id].add(date)
+        logging.debug(f"Updating tracking data for worker {worker_id} on {date.strftime('%Y-%m-%d')}, shift {shift_idx}")
+        try:
+            # Update worker assignments
+            if worker_id not in self.worker_assignments:
+                self.worker_assignments[worker_id] = set()
+            self.worker_assignments[worker_id].add(date)
     
-        # Update post tracking
-        if worker_id not in self.worker_posts:
-            self.worker_posts[worker_id] = set()
-        self.worker_posts[worker_id].add(shift_idx)
+            # Update post tracking
+            if worker_id not in self.worker_posts:
+                self.worker_posts[worker_id] = set()
+            self.worker_posts[worker_id].add(shift_idx)
     
-        # Update weekday counts
-        if worker_id not in self.worker_weekdays:
-            self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
-        weekday = date.weekday()
-        self.worker_weekdays[worker_id][weekday] += 1
+            # Update weekday counts
+            if worker_id not in self.worker_weekdays:
+                self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
+            weekday = date.weekday()
+            self.worker_weekdays[worker_id][weekday] += 1
     
-        # Update weekend tracking
-        if worker_id not in self.worker_weekends:
-            self.worker_weekends[worker_id] = []
-        is_weekend = date.weekday() >= 4 or date in self.holidays  # Friday, Saturday, Sunday or holiday
-        if is_weekend:
-            if date not in self.worker_weekends[worker_id]:
-                self.worker_weekends[worker_id].append(date)
-            self.worker_weekends[worker_id].sort()  # Keep sorted
+            # Update weekend tracking
+            if worker_id not in self.worker_weekends:
+                self.worker_weekends[worker_id] = []
+            is_weekend = date.weekday() >= 4 or date in self.holidays  # Friday, Saturday, Sunday or holiday
+            if is_weekend:
+                if date not in self.worker_weekends[worker_id]:
+                    self.worker_weekends[worker_id].append(date)
+                self.worker_weekends[worker_id].sort()  # Keep sorted
     
-        # Update the worker eligibility tracker if it exists
-        if hasattr(self, 'eligibility_tracker'):
-            self.eligibility_tracker.update_worker_status(worker_id, date)
+            # Update the worker eligibility tracker if it exists
+            if hasattr(self, 'eligibility_tracker'):
+                self.eligibility_tracker.update_worker_status(worker_id, date)
+            
+            # Update the main schedule
+            if date not in self.schedule:
+                self.schedule[date] = [None] * self.num_shifts
+        
+            # Fill any gaps in the schedule list
+            while len(self.schedule[date]) <= shift_idx:
+                self.schedule[date].append(None)
+            
+            # Set the worker at the specific shift
+            self.schedule[date][shift_idx] = worker_id
+        
+            logging.debug(f"Successfully updated tracking data for worker {worker_id} on {date.strftime('%Y-%m-%d')}")
+        
+        except Exception as e:
+            logging.error(f"Error updating tracking data for worker {worker_id}: {str(e)}", exc_info=True)
     
     def _get_date_range(self, start_date, end_date):
         """
@@ -545,6 +563,7 @@ class Scheduler:
         """Calculate the percentage of shifts that are filled in the schedule."""
         try:
             total_shifts = (self.end_date - self.start_date).days + 1  # One shift per day
+            total_shifts *= self.num_shifts  # Multiply by number of shifts per day
         
             # Count filled shifts (where worker is not None)
             filled_shifts = 0
@@ -552,16 +571,24 @@ class Scheduler:
                 for worker in shifts:
                     if worker is not None:
                         filled_shifts += 1
-        
-            # Debug log to see the actual numbers
+                    
+            # Debug logs to see what's happening
             logging.info(f"Coverage calculation: {filled_shifts} filled out of {total_shifts} total shifts")
+            logging.debug(f"Schedule contains {len(self.schedule)} dates with shifts")
+        
+            # Output some sample of the schedule to debug
+            sample_size = min(3, len(self.schedule))
+            if sample_size > 0:
+                sample_dates = list(self.schedule.keys())[:sample_size]
+                for date in sample_dates:
+                    logging.debug(f"Sample date {date.strftime('%Y-%m-%d')}: {self.schedule[date]}")
         
             # Calculate percentage
             if total_shifts > 0:
                 return (filled_shifts / total_shifts) * 100
             return 0
         except Exception as e:
-            logging.error(f"Error calculating coverage: {str(e)}")
+            logging.error(f"Error calculating coverage: {str(e)}", exc_info=True)
             return 0
 
     def _prepare_worker_data(self):
