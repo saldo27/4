@@ -1300,69 +1300,91 @@ class Scheduler:
     def _backup_best_schedule(self):
         """Save a backup of the current best schedule"""
         try:
-            # Create all needed backup attributes
-            self.scheduler.backup_schedule = {date: list(shifts) for date, shifts in self.schedule.items()}
-            self.scheduler.backup_worker_assignments = {
-                w_id: set(assignments) for w_id, assignments in self.worker_assignments.items()
-            }
-            self.scheduler.backup_worker_posts = {
-                w_id: set(posts) for w_id, posts in self.worker_posts.items()
-            }
-            self.scheduler.backup_worker_weekdays = {
-                w_id: dict(weekdays) for w_id, weekdays in self.worker_weekdays.items()
-            }
-            self.scheduler.backup_worker_weekends = {
-                w_id: list(weekends) for w_id, weekends in self.worker_weekends.items()
-            }
-        
-            # Create the backup_constraint_skips attribute
-            self.scheduler.backup_constraint_skips = {}
-            for w_id, skips in self.scheduler.constraint_skips.items():
-                self.scheduler.backup_constraint_skips[w_id] = {
-                    'gap': list(skips['gap']) if 'gap' in skips else [],
-                    'incompatibility': list(skips['incompatibility']) if 'incompatibility' in skips else [],
-                    'reduced_gap': list(skips['reduced_gap']) if 'reduced_gap' in skips else []
-                }
-        
-            # Create local backups too
-            self.backup_schedule = {date: list(shifts) for date, shifts in self.schedule.items()}
-            self.backup_worker_assignments = {
-                w_id: set(assignments) for w_id, assignments in self.worker_assignments.items()
-            }
+            # Create deep copies of all structures
+            self.backup_schedule = {}
+            for date, shifts in self.schedule.items():
+                self.backup_schedule[date] = shifts.copy() if shifts else []
+            
+            self.backup_worker_assignments = {}
+            for worker_id, assignments in self.worker_assignments.items():
+                self.backup_worker_assignments[worker_id] = assignments.copy()
+            
+            # Include other backup structures if needed
             self.backup_worker_posts = {
-                w_id: set(posts) for w_id, posts in self.worker_posts.items()
-            }
-            self.backup_worker_weekdays = {
-                w_id: dict(weekdays) for w_id, weekdays in self.worker_weekdays.items()
-            }
-            self.backup_worker_weekends = {
-                w_id: list(weekends) for w_id, weekends in self.worker_weekends.items()
+                worker_id: posts.copy() for worker_id, posts in self.worker_posts.items()
             }
         
-            logging.info("Backed up current schedule")
+            self.backup_worker_weekdays = {
+                worker_id: weekdays.copy() for worker_id, weekdays in self.worker_weekdays.items()
+            }
+        
+            self.backup_worker_weekends = {
+                worker_id: weekends.copy() for worker_id, weekends in self.worker_weekends.items()
+            }    
+        
+            # Only backup constraint_skips if it exists to avoid errors
+            if hasattr(self, 'constraint_skips'):
+                self.backup_constraint_skips = {}
+                for worker_id, skips in self.constraint_skips.items():
+                    self.backup_constraint_skips[worker_id] = {}
+                    for skip_type, skip_values in skips.items():
+                        if skip_values is not None:
+                            self.backup_constraint_skips[worker_id][skip_type] = skip_values.copy()
+        
+            filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+            logging.info(f"Backed up current schedule in scheduler with {filled_shifts} filled shifts")
+            return True
         except Exception as e:
-            logging.error(f"Error backing up schedule: {str(e)}", exc_info=True)
+            logging.error(f"Error in scheduler backup: {str(e)}", exc_info=True)
+            return False
 
     def _restore_best_schedule(self):
-        """Restore from backup of the best schedule"""
-        if not hasattr(self, 'backup_schedule'):
-            logging.warning("No backup schedule to restore")
-            return False
+        """Restore the backed up schedule"""
+        try:
+            if not hasattr(self, 'backup_schedule'):
+                logging.warning("No scheduler backup available to restore")
+                return False
+            
+            # Restore from our backups
+            self.schedule = {}
+            for date, shifts in self.backup_schedule.items():
+                self.schedule[date] = shifts.copy() if shifts else []
+            
+            self.worker_assignments = {}
+            for worker_id, assignments in self.backup_worker_assignments.items():
+                self.worker_assignments[worker_id] = assignments.copy()
+            
+            # Restore other structures if they exist
+            if hasattr(self, 'backup_worker_posts'):
+                self.worker_posts = {
+                    worker_id: posts.copy() for worker_id, posts in self.backup_worker_posts.items()
+                }
+            
+            if hasattr(self, 'backup_worker_weekdays'):
+                self.worker_weekdays = {
+                    worker_id: weekdays.copy() for worker_id, weekdays in self.backup_worker_weekdays.items()
+                }
+            
+            if hasattr(self, 'backup_worker_weekends'):
+                self.worker_weekends = {
+                    worker_id: weekends.copy() for worker_id, weekends in self.backup_worker_weekends.items()
+                }
+            
+            # Only restore constraint_skips if backup exists
+            if hasattr(self, 'backup_constraint_skips'):
+                self.constraint_skips = {}
+                for worker_id, skips in self.backup_constraint_skips.items():
+                    self.constraint_skips[worker_id] = {}
+                    for skip_type, skip_values in skips.items():
+                        if skip_values is not None:
+                            self.constraint_skips[worker_id][skip_type] = skip_values.copy()
         
-        self.schedule = self.backup_schedule.copy()
-        self.worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.backup_worker_assignments.items()}
-        self.worker_posts = {w_id: posts.copy() for w_id, posts in self.backup_worker_posts.items()}
-        self.worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.backup_worker_weekdays.items()}
-        self.worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.backup_worker_weekends.items()}
-        self.constraint_skips = {
-            w_id: {
-                'gap': skips['gap'].copy(),
-                'incompatibility': skips['incompatibility'].copy(),
-                'reduced_gap': skips['reduced_gap'].copy(),
-            }
-            for w_id, skips in self.backup_constraint_skips.items()
-        }
-        return True
+            filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+            logging.info(f"Restored schedule in scheduler with {filled_shifts} filled shifts")
+            return True
+        except Exception as e:
+            logging.error(f"Error in scheduler restore: {str(e)}", exc_info=True)
+            return False
         
     def export_schedule(self, format='txt'):
         """
