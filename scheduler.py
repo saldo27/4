@@ -1039,13 +1039,33 @@ class Scheduler:
                     logging.warning("Schedule is empty. Running simple assignment as last resort.")
                     self._assign_workers_simple()
 
-                # Final stats
-                total_shifts = sum(len(shifts) for shifts in self.schedule.values())
-                filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
-                logging.info(f"Final schedule coverage: {(filled_shifts / total_shifts * 100 if total_shifts > 0 else 0):.2f}% "
-                            f"({filled_shifts}/{total_shifts} shifts filled)")
-
-                return True
+                # Ensure we have a valid schedule with assignments
+                try:
+                    # Check if our schedule got wiped out
+                    filled_count = sum(1 for date in self.schedule for shift in self.schedule[date] if shift is not None)
+                    logging.info(f"Final check: Schedule has {filled_count} filled shifts")
+    
+                    if filled_count == 0:
+                        logging.warning("Schedule is empty at end of processing, running simple assignment")
+                        self._assign_workers_simple()
+    
+                    # Final coverage stats
+                    total_shifts = sum(len(shifts) for shifts in self.schedule.values())
+                    filled_shifts = sum(1 for date in self.schedule for shift in self.schedule[date] if shift is not None)
+                    coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
+                    logging.info(f"Final schedule coverage: {coverage:.2f}% ({filled_shifts}/{total_shifts} shifts filled)")
+    
+                    return True
+                except Exception as e:
+                    logging.error(f"Error in final schedule check: {str(e)}", exc_info=True)
+                    # Run simple assignment as a last resort
+                    try:
+                        logging.info("Attempting emergency simple assignment")
+                        self._assign_workers_simple()
+                        return True
+                    except Exception as e2:
+                        logging.error(f"Emergency simple assignment failed: {str(e2)}", exc_info=True)
+                        return False
 
                 # Final report on improvements
                 if best_coverage > initial_best_coverage or best_post_rotation > initial_best_post_rotation:
