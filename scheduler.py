@@ -1008,17 +1008,25 @@ class Scheduler:
                             f"({filled_shifts}/{total_shifts} shifts filled)")
 
                 return True
-                # At the very end of the improvement phase, add:
-                except Exception as e:
-                    logging.error(f"Error in improvement phase: {str(e)}", exc_info=True)
-                    # If we encountered an error but had a working schedule, restore it
-                    if best_coverage > 0:
-                        self.schedule = best_schedule
-                        self.worker_assignments = best_worker_assignments
-                        self.worker_posts = best_worker_posts
-                        self.worker_weekdays = best_worker_weekdays
-                        self.worker_weekends = best_worker_weekends
-                        # Don't try to restore constraint_skips here since it might be the source of the error
+                # Final report on improvements
+                if best_coverage > initial_best_coverage or best_post_rotation > initial_best_post_rotation:
+                    improvement = f"Coverage improved by {best_coverage - initial_best_coverage:.2f}%, " \
+                                f"Post Rotation improved by {best_post_rotation - initial_best_post_rotation:.2f}%"
+                    logging.info(f"=== Schedule successfully improved! ===")
+                        logging.info(improvement)
+                else:
+                    logging.info("=== No improvements found over initial schedule ===")
+            
+            except Exception as e:  # This is the matching except for the try above
+                logging.error(f"Error in improvement phase: {str(e)}", exc_info=True)
+                # If we encountered an error but had a working schedule, restore it
+                if best_coverage > 0:
+                    self.schedule = best_schedule
+                    self.worker_assignments = best_worker_assignments
+                    self.worker_posts = best_worker_posts
+                    self.worker_weekdays = best_worker_weekdays
+                    self.worker_weekends = best_worker_weekends
+                    # Don't try to restore constraint_skips here since it might be the source of the error
         
         except Exception as e:
             logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
