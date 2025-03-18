@@ -1472,11 +1472,17 @@ class ScheduleBuilder:
 
     def _backup_best_schedule(self):
         """Save a backup of the current best schedule"""
-        self.scheduler.backup_schedule = self.scheduler.schedule.copy()
-        self.scheduler.backup_worker_assignments = {
-            w_id: assignments.copy() for w_id, assignments in self.scheduler.worker_assignments.items()
-        }
-        logging.info("Backed up current schedule")
+        try:
+            # Create new copies of all tracking structures
+            self.scheduler.backup_schedule = {date: list(shifts) for date, shifts in self.schedule.items()}
+            self.scheduler.backup_worker_assignments = {w_id: set(assignments) for w_id, assignments in self.worker_assignments.items()}
+            self.scheduler.backup_worker_posts = {w_id: set(posts) for w_id, posts in self.worker_posts.items()}
+            self.scheduler.backup_worker_weekdays = {w_id: dict(weekdays) for w_id, weekdays in self.worker_weekdays.items()}
+            self.scheduler.backup_worker_weekends = {w_id: list(weekends) for w_id, weekends in self.worker_weekends.items()}
+        
+            logging.info("Backed up current schedule")
+        except Exception as e:
+            logging.error(f"Error backing up schedule: {str(e)}", exc_info=True)
     
     def _restore_best_schedule(self):
         """Restore from backup of the best schedule"""
