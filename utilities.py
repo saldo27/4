@@ -86,13 +86,13 @@ class DateTimeUtils:
         if holidays is not None:
             if date in holidays:
                 return True
-        
+    
             # Check if it's a pre-holiday (day before a holiday)
             next_day = date + timedelta(days=1)
             if next_day in holidays:
                 return True
-    
-        # Check if it's a weekend (Saturday or Sunday)
+
+        # Check if it's a weekend (Friday, Saturday, Sunday)
         return date.weekday() >= 4  # 4 = Friday, 5 = Saturday, 6 = Sunday
         
     def is_holiday(self, date, holidays=None):
@@ -123,7 +123,7 @@ class DateTimeUtils:
             return False
         next_day = date + timedelta(days=1)
         return next_day in holidays
-        
+
     def get_weekend_start(self, date, holidays=None):
         """
         Get the start date (Friday) of the weekend containing this date
