@@ -625,7 +625,7 @@ class Scheduler:
                 coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
         
                 # Calculate post rotation scores
-                post_rotation_stats = self._calculate_post_rotation_coverage()
+                post_rotation_stats = self._calculate_post_rotation()
         
                 # Log detailed coverage information
                 logging.info(f"Attempt {attempt + 1} coverage: {coverage:.2f}%")
@@ -746,7 +746,7 @@ class Scheduler:
                             self.schedule_builder._save_current_as_best()
                             improvements_made += 1
                             logging.info(f"Improvement accepted! New best coverage: {best_coverage:.2f}%")
-                    else:
+                        else:
                             # Restore the previous best schedule
                             self.schedule_builder._restore_best_schedule()
                 
@@ -902,6 +902,18 @@ class Scheduler:
     
         logging.info("Schedule validation successful!")
         return True
+
+    def _calculate_post_rotation(self):
+        """
+        Adapter method to ensure post rotation stats have the expected format.
+        """
+        stats = self._calculate_post_rotation_coverage()
+        # Make sure all expected keys exist
+        if 'uniformity' not in stats:
+            stats['uniformity'] = stats.get('post_uniformity', 0)
+        if 'avg_worker' not in stats:
+            stats['avg_worker'] = stats.get('avg_worker_score', 100)
+        return stats
         
     def _calculate_post_rotation_coverage(self):
         """
