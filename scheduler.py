@@ -822,10 +822,10 @@ class Scheduler:
 
                 # Extra check to see if schedule is actually filled
                 filled_count = 0
-                    for date, shifts in self.schedule.items():
-                        for worker in shifts:
-                            if worker is not None:
-                                filled_count += 1
+                for date, shifts in self.schedule.items():
+                    for worker in shifts:
+                        if worker is not None:
+                            filled_count += 1
                 logging.info(f"Final schedule check: {filled_count} filled shifts before final calculation")
 
                 # Final stats
