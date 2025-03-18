@@ -789,59 +789,38 @@ class Scheduler:
                             else:
                                 logging.warning("No backup schedule to restore")
                                 
-                        # Ensure we use the best schedule found during improvements
-                                    if best_coverage > 0 and hasattr(self, 'backup_schedule'):
-                                        self.schedule = self.backup_schedule.copy()
-                                        self.worker_assignments = {w_id: assignments.copy() 
-                                                              for w_id, assignments in self.backup_worker_assignments.items()}
-                                        self.worker_posts = {w_id: posts.copy() 
-                                                          for w_id, posts in self.backup_worker_posts.items()}
-                                        self.worker_weekdays = {w_id: weekdays.copy() 
-                                                             for w_id, weekdays in self.backup_worker_weekdays.items()}
-                                        self.worker_weekends = {w_id: weekends.copy() 
-                                                             for w_id, weekends in self.backup_worker_weekends.items()}
-                                        self.constraint_skips = {
-                                            w_id: {
-                                                'gap': skips['gap'].copy(),
-                                                'incompatibility': skips['incompatibility'].copy(),
-                                                'reduced_gap': skips['reduced_gap'].copy(),
-                                            }
-                                            for w_id, skips in self.backup_constraint_skips.items()
-                                        }
-                                        logging.info("Restored best schedule found during improvements")
+                            # Ensure we use the best schedule found during improvements
+                            if best_coverage > 0 and hasattr(self, 'backup_schedule'):
+                                self.schedule = self.backup_schedule.copy()
+                                self.worker_assignments = {w_id: assignments.copy() 
+                                                        for w_id, assignments in self.backup_worker_assignments.items()}
+                                self.worker_posts = {w_id: posts.copy() 
+                                                 for w_id, posts in self.backup_worker_posts.items()}
+                                self.worker_weekdays = {w_id: weekdays.copy() 
+                                                     for w_id, weekdays in self.backup_worker_weekdays.items()}
+                                self.worker_weekends = {w_id: weekends.copy() 
+                                                    for w_id, weekends in self.backup_worker_weekends.items()}
+                                self.constraint_skips = {
+                                    w_id: {
+                                        'gap': skips['gap'].copy(),
+                                        'incompatibility': skips['incompatibility'].copy(),
+                                        'reduced_gap': skips['reduced_gap'].copy(),
+                                     }
+                                    for w_id, skips in self.backup_constraint_skips.items()
+                                 }
+                                logging.info("Restored best schedule found during improvements")
 
-                                    # Ensure we use the best schedule found during improvements
-                                    if best_coverage > 0 and hasattr(self, 'backup_schedule'):
-                                        self.schedule = self.backup_schedule.copy()
-                                        self.worker_assignments = {w_id: assignments.copy() 
-                                                              for w_id, assignments in self.backup_worker_assignments.items()}
-                                        self.worker_posts = {w_id: posts.copy() 
-                                                          for w_id, posts in self.backup_worker_posts.items()}
-                                        self.worker_weekdays = {w_id: weekdays.copy() 
-                                                             for w_id, weekdays in self.backup_worker_weekdays.items()}
-                                        self.worker_weekends = {w_id: weekends.copy() 
-                                                             for w_id, weekends in self.backup_worker_weekends.items()}
-                                        self.constraint_skips = {
-                                            w_id: {
-                                                'gap': skips['gap'].copy(),
-                                                'incompatibility': skips['incompatibility'].copy(),
-                                                'reduced_gap': skips['reduced_gap'].copy(),
-                                            }
-                                            for w_id, skips in self.backup_constraint_skips.items()
-                                        }
-                                        logging.info("Restored best schedule found during improvements")
+                             # Final stats
+                            total_shifts = sum(len(shifts) for shifts in self.schedule.values())
+                            filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+                                logging.info(f"Final schedule coverage: {(filled_shifts / total_shifts * 100 if total_shifts > 0 else 0):.2f}% "
+                                        f"({filled_shifts}/{total_shifts} shifts filled)")
 
-                                    # Final stats
-                                    total_shifts = sum(len(shifts) for shifts in self.schedule.values())
-                                    filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
-                                        logging.info(f"Final schedule coverage: {(filled_shifts / total_shifts * 100 if total_shifts > 0 else 0):.2f}% "
-                                                f"({filled_shifts}/{total_shifts} shifts filled)")
-
-                                    return self.schedule
+                            return self.schedule
     
-                                except Exception as e:
-                                    logging.error(f"Schedule generation error: {str(e)}", exc_info=True)
-                                    raise SchedulerError(f"Failed to generate schedule: {str(e)}")
+                        except Exception as e:
+                            logging.error(f"Schedule generation error: {str(e)}", exc_info=True)
+                            raise SchedulerError(f"Failed to generate schedule: {str(e)}")
 
     def _validate_final_schedule(self):
         """
