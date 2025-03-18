@@ -1013,7 +1013,7 @@ class Scheduler:
                     improvement = f"Coverage improved by {best_coverage - initial_best_coverage:.2f}%, " \
                                 f"Post Rotation improved by {best_post_rotation - initial_best_post_rotation:.2f}%"
                     logging.info(f"=== Schedule successfully improved! ===")
-                        logging.info(improvement)
+                    logging.info(improvement)
                 else:
                     logging.info("=== No improvements found over initial schedule ===")
             
