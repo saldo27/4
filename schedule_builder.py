@@ -104,25 +104,35 @@ class ScheduleBuilder:
         worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
         if not worker:
             return True
+    
+        # Debug log
+        logging.debug(f"Checking availability for worker {worker_id} on {date.strftime('%Y-%m-%d')}")
 
-        # Check work periods - if empty, worker is available for all dates
-        work_periods = worker.get('work_periods', '')
+        # Check work periods - if work_periods is empty, worker is available for all dates
+        work_periods = worker.get('work_periods', '').strip()
         if work_periods:
-            # Parse work periods
-            try:
-                day_ranges = self.date_utils.parse_date_ranges(work_periods)
-                within_work_period = False
-                for start_date, end_date in day_ranges:
-                    if start_date <= date <= end_date:
-                        within_work_period = True
-                        break
-            
-                # If not within any work period, worker is unavailable
-                if not within_work_period:
+            date_str = date.strftime('%Y-%m-%d')
+            if 'work_dates' in worker:
+                # If we've precomputed work dates, use those
+                if date_str not in worker.get('work_dates', set()):
+                    logging.debug(f"Worker {worker_id} not available - date {date_str} not in work_dates")
                     return True
-            except Exception as e:
-                # On parsing error, assume worker is available
-                logging.error(f"Error parsing work periods for worker {worker_id}: {str(e)}")
+            else:
+                # Otherwise, parse the work periods
+                try:
+                    date_ranges = self.date_utils.parse_date_ranges(work_periods)
+                    within_work_period = False
+                
+                    for start_date, end_date in date_ranges:
+                        if start_date <= date <= end_date:
+                            within_work_period = True
+                            break
+                
+                    if not within_work_period:
+                        logging.debug(f"Worker {worker_id} not available - date outside work periods")
+                        return True
+                except Exception as e:
+                    logging.error(f"Error parsing work periods for worker {worker_id}: {str(e)}")
     
         # Check days off
         days_off = worker.get('days_off', '')
@@ -130,8 +140,10 @@ class ScheduleBuilder:
             day_ranges = self.date_utils.parse_date_ranges(days_off)
             for start_date, end_date in day_ranges:
                 if start_date <= date <= end_date:
+                    logging.debug(f"Worker {worker_id} not available - date in days off")
                     return True
 
+        logging.debug(f"Worker {worker_id} is available on {date.strftime('%Y-%m-%d')}")
         return False
 
     def _check_incompatibility(self, worker_id, date):
@@ -671,17 +683,20 @@ class ScheduleBuilder:
     
     def _assign_day_shifts_with_relaxation(self, date, attempt_number=0, relaxation_level=0):
         """Assign shifts for a given date with optional constraint relaxation"""
-        logging.debug(f"Assigning shifts for {date.strftime('%Y-%m-%d')} (relaxation level: {relaxation_level})")
+        logging.info(f"Assigning shifts for {date.strftime('%Y-%m-%d')} (relaxation level: {relaxation_level})")
     
         if date not in self.schedule:
             self.schedule[date] = []
 
         remaining_shifts = self.num_shifts - len(self.schedule[date])
-    
+
         for post in range(len(self.schedule[date]), self.num_shifts):
             # Try each relaxation level until we succeed or run out of options
             for relax_level in range(relaxation_level + 1):
                 candidates = self._get_candidates(date, post, relax_level)
+            
+                # Add this debug log
+                logging.info(f"Found {len(candidates)} candidates for {date.strftime('%Y-%m-%d')}, post {post}")
             
                 if candidates:
                     # Sort candidates by score (descending)
@@ -703,12 +718,12 @@ class ScheduleBuilder:
                     self.worker_assignments[worker_id].add(date)
                     self.data_manager._update_tracking_data(worker_id, date, post)
                 
-                    logging.debug(f"Assigned worker {worker_id} to {date}, post {post}")
+                    logging.info(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')}, post {post}")
                     break  # Success at this relaxation level
             else:
                 # If we've tried all relaxation levels and still failed, leave shift unfilled
                 self.schedule[date].append(None)
-                logging.debug(f"No suitable worker found for {date}, post {post} - shift unfilled")
+                logging.info(f"No suitable worker found for {date.strftime('%Y-%m-%d')}, post {post} - shift unfilled")
                                 
     def _get_candidates(self, date, post, relaxation_level=0):
         """
@@ -725,6 +740,9 @@ class ScheduleBuilder:
             worker_id = worker['id']
             work_percentage = float(worker.get('work_percentage', 100))
 
+            # Log each worker's availability check
+            logging.debug(f"Checking worker {worker_id} for {date.strftime('%Y-%m-%d')}, post {post}")
+        
             # Skip if max shifts reached
             if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
                 continue
