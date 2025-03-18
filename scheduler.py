@@ -713,7 +713,7 @@ class Scheduler:
                 
                          # Validate the schedule
                         logging.info("Validating final schedule...")
-                        if not self.validate_schedule():
+                        if not self._validate_final_schedule():
                             logging.warning("Schedule validation failed after improvement attempt")
                             # If validation fails, restore previous best
                             self.schedule_builder._restore_best_schedule()
