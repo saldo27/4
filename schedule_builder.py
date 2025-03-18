@@ -683,26 +683,29 @@ class ScheduleBuilder:
     
     def _assign_day_shifts_with_relaxation(self, date, attempt_number=0, relaxation_level=0):
         """Assign shifts for a given date with optional constraint relaxation"""
-        logging.info(f"Assigning shifts for {date.strftime('%Y-%m-%d')} (relaxation level: {relaxation_level})")
+        logging.debug(f"Assigning shifts for {date.strftime('%Y-%m-%d')} (relaxation level: {relaxation_level})")
     
         if date not in self.schedule:
             self.schedule[date] = []
 
         remaining_shifts = self.num_shifts - len(self.schedule[date])
-        logging.info(f"Need to assign {remaining_shifts} shifts for date {date.strftime('%Y-%m-%d')}")
+    
+        # Debug log to see how many shifts need to be assigned
+        logging.debug(f"Need to assign {remaining_shifts} shifts for {date.strftime('%Y-%m-%d')}")
 
         for post in range(len(self.schedule[date]), self.num_shifts):
             # Try each relaxation level until we succeed or run out of options
             for relax_level in range(relaxation_level + 1):
                 candidates = self._get_candidates(date, post, relax_level)
             
-                logging.info(f"Found {len(candidates)} candidates for {date.strftime('%Y-%m-%d')}, post {post}")
+                # Debug log to see how many candidates were found
+                logging.debug(f"Found {len(candidates)} candidates for {date.strftime('%Y-%m-%d')}, post {post}, relax level {relax_level}")
             
                 if candidates:
-                    # Log the candidate information
-                    for i, (worker, score) in enumerate(candidates):
+                    # Log each candidate for debugging
+                    for i, (worker, score) in enumerate(candidates[:3]):  # Just log first 3 to avoid clutter
                         logging.debug(f"Candidate {i+1}: Worker {worker['id']} with score {score}")
-            
+                
                     # Sort candidates by score (descending)
                     candidates.sort(key=lambda x: x[1], reverse=True)
                 
@@ -720,14 +723,14 @@ class ScheduleBuilder:
                     # Assign the worker
                     self.schedule[date].append(worker_id)
                     self.worker_assignments[worker_id].add(date)
-                    self.scheduler._update_tracking_data(worker_id, date, post)  # Use the scheduler's method
+                    self.scheduler._update_tracking_data(worker_id, date, post)
                 
                     logging.info(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')}, post {post}")
                     break  # Success at this relaxation level
             else:
                 # If we've tried all relaxation levels and still failed, leave shift unfilled
                 self.schedule[date].append(None)
-                logging.info(f"No suitable worker found for {date.strftime('%Y-%m-%d')}, post {post} - shift unfilled")
+                logging.debug(f"No suitable worker found for {date.strftime('%Y-%m-%d')}, post {post} - shift unfilled")
                                 
     def _get_candidates(self, date, post, relaxation_level=0):
         """
