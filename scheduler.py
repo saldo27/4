@@ -778,9 +778,9 @@ class Scheduler:
 
                 return True
         
-            except Exception as e:
-                logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
-                raise SchedulerError(f"Failed to generate schedule: {str(e)}")
+        except Exception as e:
+            logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
+            raise SchedulerError(f"Failed to generate schedule: {str(e)}")
 
     def _validate_final_schedule(self):
         """
