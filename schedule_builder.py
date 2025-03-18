@@ -1395,40 +1395,26 @@ class ScheduleBuilder:
 
     def _backup_best_schedule(self):
         """Save a backup of the current best schedule"""
-        self.backup_schedule = self.schedule.copy()
-        self.backup_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
-        self.backup_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}
-        self.backup_worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.worker_weekdays.items()}
-        self.backup_worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.worker_weekends.items()}
-        self.backup_constraint_skips = {
-            w_id: {
-                'gap': skips['gap'].copy(),
-                'incompatibility': skips['incompatibility'].copy(),
-                'reduced_gap': skips['reduced_gap'].copy(),
-            }
-            for w_id, skips in self.constraint_skips.items()
+        self.scheduler.backup_schedule = self.scheduler.schedule.copy()
+        self.scheduler.backup_worker_assignments = {
+            w_id: assignments.copy() for w_id, assignments in self.scheduler.worker_assignments.items()
         }
-        
+        logging.info("Backed up current schedule")
+    
     def _restore_best_schedule(self):
-        """Restore the previously backed up schedule"""
-        try:
-            if hasattr(self.scheduler, 'backup_schedule'):
-                self.scheduler.schedule = self.scheduler.backup_schedule.copy()
-                self.scheduler.worker_assignments = {w_id: assignments.copy() 
-                                      for w_id, assignments in self.scheduler.backup_worker_assignments.items()}
-                self.scheduler.worker_posts = {w_id: posts.copy() 
-                                      for w_id, posts in self.scheduler.backup_worker_posts.items()}
-                self.scheduler.worker_weekdays = {w_id: weekdays.copy() 
-                                      for w_id, weekdays in self.scheduler.backup_worker_weekdays.items()}
-                self.scheduler.worker_weekends = {w_id: weekends.copy() 
-                                      for w_id, weekends in self.scheduler.backup_worker_weekends.items()}
-                self.mark_data_dirty()  # Mark for re-verification
-                return True
-            else:
-                logging.warning("No backup schedule to restore")
-                return False
-        except Exception as e:
-            logging.error(f"Error restoring schedule: {str(e)}")
+        """Restore from backup of the best schedule"""
+        if hasattr(self.scheduler, 'backup_schedule'):
+            self.scheduler.schedule = self.scheduler.backup_schedule.copy()
+            self.scheduler.worker_assignments = {
+                w_id: assignments.copy() for w_id, assignments in self.scheduler.backup_worker_assignments.items()
+            }
+            # Update local references
+            self.schedule = self.scheduler.schedule
+            self.worker_assignments = self.scheduler.worker_assignments
+            logging.info("Restored schedule from backup")
+            return True
+        else:
+            logging.warning("No backup schedule to restore")
             return False
 
     def _save_current_as_best(self):
