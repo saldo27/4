@@ -955,36 +955,56 @@ class Scheduler:
 
                 # Ensure we use the best schedule found during improvements
                 if best_coverage > 0:
-                    if hasattr(self, 'backup_schedule') and self.backup_schedule:
-                        self.schedule = self.backup_schedule.copy()
-                        self.worker_assignments = {w_id: assignments.copy() 
-                                                  for w_id, assignments in self.backup_worker_assignments.items()}
-                        self.worker_posts = {w_id: posts.copy() 
-                                            for w_id, posts in self.backup_worker_posts.items()}
-                        self.worker_weekdays = {w_id: weekdays.copy() 
-                                                for w_id, weekdays in self.backup_worker_weekdays.items()}
-                        self.worker_weekends = {w_id: weekends.copy() 
-                                                for w_id, weekends in self.backup_worker_weekends.items()}
+                    try:
+                        # First ensure all required backup attributes exist
+                        if not hasattr(self, 'backup_schedule'):
+                            self.backup_schedule = {}
+                            for date, shifts in self.schedule.items():
+                                self.backup_schedule[date] = shifts.copy() if shifts else []
         
-                        # Handle constraint_skips carefully
-                        if hasattr(self, 'backup_constraint_skips'):
-                            self.constraint_skips = {}
-                            for w_id, skips in self.backup_constraint_skips.items():
-                                self.constraint_skips[w_id] = {
-                                    'gap': skips['gap'].copy() if 'gap' in skips else [],
-                                    'incompatibility': skips['incompatibility'].copy() if 'incompatibility' in skips else [],
-                                    'reduced_gap': skips['reduced_gap'].copy() if 'reduced_gap' in skips else []
-                                }
+                        if not hasattr(self, 'backup_worker_assignments'):
+                            self.backup_worker_assignments = {
+                                w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()
+                            }
+        
+                        if not hasattr(self, 'backup_worker_posts'):
+                            self.backup_worker_posts = {
+                                w_id: set() if w_id not in self.worker_posts else self.worker_posts[w_id].copy() 
+                                for w_id in self.worker_assignments
+                            }
+        
+                        if not hasattr(self, 'backup_worker_weekdays'):
+                            self.backup_worker_weekdays = {
+                                w_id: {} if w_id not in self.worker_weekdays else self.worker_weekdays[w_id].copy()
+                                for w_id in self.worker_assignments
+                            }
+        
+                        if not hasattr(self, 'backup_worker_weekends'):
+                            self.backup_worker_weekends = {
+                                w_id: [] if w_id not in self.worker_weekends else self.worker_weekends[w_id].copy()
+                                for w_id in self.worker_assignments
+                            }
+        
+                        # Now do the actual assignment from backups
+                        self.schedule = {date: shifts.copy() for date, shifts in self.backup_schedule.items()}
+                        self.worker_assignments = {
+                            w_id: assignments.copy() for w_id, assignments in self.backup_worker_assignments.items()
+                        }
+                        self.worker_posts = {
+                            w_id: posts.copy() for w_id, posts in self.backup_worker_posts.items()
+                        }
+                        self.worker_weekdays = {
+                            w_id: weekdays.copy() for w_id, weekdays in self.backup_worker_weekdays.items()
+                        }
+                        self.worker_weekends = {
+                            w_id: weekends.copy() for w_id, weekends in self.backup_worker_weekends.items()
+                        }
         
                         logging.info("Restored best schedule found during improvements")
-                    else:
-                        # If no backup exists but we know we had a good schedule, use the best_schedule
-                        self.schedule = best_schedule
-                        self.worker_assignments = best_worker_assignments
-                        self.worker_posts = best_worker_posts 
-                        self.worker_weekdays = best_worker_weekdays
-                        self.worker_weekends = best_worker_weekends
-                        self.constraint_skips = best_constraint_skips
+                    except Exception as e:
+                        logging.error(f"Error restoring from backup: {str(e)}")
+                        # Fallback: just use simple assignment if restoration fails
+                        self._assign_workers_simple(
 
                 # Before calculating final stats, make sure we're using the most up-to-date schedule
                 if hasattr(self, 'backup_schedule') and self.backup_schedule:
