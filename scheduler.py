@@ -1004,7 +1004,7 @@ class Scheduler:
                     except Exception as e:
                         logging.error(f"Error restoring from backup: {str(e)}")
                         # Fallback: just use simple assignment if restoration fails
-                        self._assign_workers_simple(
+                        self._assign_workers_simple()
 
                 # Before calculating final stats, make sure we're using the most up-to-date schedule
                 if hasattr(self, 'backup_schedule') and self.backup_schedule:
