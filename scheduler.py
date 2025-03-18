@@ -721,7 +721,7 @@ class Scheduler:
                 
                         # Calculate new metrics
                         post_rotation_stats = self._calculate_post_rotation_coverage()
-                        coverage = self._calculate_coverage()
+                        coverage = self._calculate_schedule_coverage()
                 
                         logging.info(f"[Post rotation overall score] {post_rotation_stats['overall_score']:.2f}%")
                         logging.info(f"[Post uniformity] {post_rotation_stats['uniformity']:.2f}%, Avg worker score: {post_rotation_stats['avg_worker']:.2f}%")
@@ -1053,7 +1053,7 @@ class Scheduler:
             metrics = self.get_schedule_metrics()
             
             # Calculate coverage
-            coverage = self._calculate_coverage()
+            coverage = self._calculate_schedule_coverage()
             if coverage < 95:  # Less than 95% coverage is considered problematic
                 logging.warning(f"Low schedule coverage: {coverage:.1f}%")
             
