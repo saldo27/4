@@ -1001,6 +1001,24 @@ class Scheduler:
                             filled_count += 1
                 logging.info(f"Final schedule check: {filled_count} filled shifts before final calculation")
 
+                # Before final stats, make sure we have assignments
+                filled_count = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
+                logging.info(f"Final schedule check: {filled_count} filled shifts before final calculation")
+
+                # If we lost our assignments but have a backup with assignments, use it
+                if filled_count == 0 and hasattr(self, 'backup_schedule'):
+                    backup_filled = sum(1 for shifts in self.backup_schedule.values() for worker in shifts if worker is not None)
+                    if backup_filled > 0:
+                        logging.info(f"Using backup schedule which has {backup_filled} filled shifts")
+                        self.schedule = {date: shifts.copy() for date, shifts in self.backup_schedule.items()}
+                        # Update filled_count
+                        filled_count = backup_filled
+
+                # If we still don't have assignments, retry with simple assignment
+                if filled_count == 0:
+                    logging.warning("Schedule is empty. Running simple assignment as last resort.")
+                    self._assign_workers_simple()
+
                 # Final stats
                 total_shifts = sum(len(shifts) for shifts in self.schedule.values())
                 filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
@@ -1008,6 +1026,7 @@ class Scheduler:
                             f"({filled_shifts}/{total_shifts} shifts filled)")
 
                 return True
+
                 # Final report on improvements
                 if best_coverage > initial_best_coverage or best_post_rotation > initial_best_post_rotation:
                     improvement = f"Coverage improved by {best_coverage - initial_best_coverage:.2f}%, " \
