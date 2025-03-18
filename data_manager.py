@@ -97,23 +97,23 @@ class DataManager:
         return date - timedelta(days=days_to_subtract)
 
     def _get_post_counts(self, worker_id):
-    """
-    Get the count of assignments for each post for a specific worker
+        """
+        Get the count of assignments for each post for a specific worker
     
-    Args:
-        worker_id: ID of the worker
+        Args:
+            worker_id: ID of the worker
         
-    Returns:
-        dict: Dictionary with post numbers as keys and counts as values
-    """
-    post_counts = {post: 0 for post in range(self.num_shifts)}
+        Returns:
+            dict: Dictionary with post numbers as keys and counts as values
+        """
+        post_counts = {post: 0 for post in range(self.num_shifts)}
     
-    for date, shifts in self.schedule.items():
-        for post, assigned_worker in enumerate(shifts):
-            if assigned_worker == worker_id:
-                post_counts[post] += 1
+        for date, shifts in self.schedule.items():
+            for post, assigned_worker in enumerate(shifts):
+                if assigned_worker == worker_id:
+                    post_counts[post] += 1
                 
-    return post_counts
+        return post_counts
 
     def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
@@ -158,161 +158,162 @@ class DataManager:
         return monthly_shifts
 
     def _is_holiday(self, date):
-    """
-    Check if a date is a holiday
+        """
+        Check if a date is a holiday
     
-    Args:
-        date: Date to check
+        Args:
+            date: Date to check
         
-    Returns:
-        bool: True if the date is a holiday, False otherwise
-    """
-    return date in self.scheduler.holidays
+        Returns:
+            bool: True if the date is a holiday, False otherwise
+        """
+        return date in self.scheduler.holidays
 
-def _is_pre_holiday(self, date):
-    """
-    Check if a date is the day before a holiday
+    def _is_pre_holiday(self, date):
+        """
+        Check if a date is the day before a holiday
     
-    Args:
-        date: Date to check
+        Args:
+            date: Date to check
         
-    Returns:
-        bool: True if the next day is a holiday, False otherwise
-    """
-    next_day = date + timedelta(days=1)
-    return next_day in self.scheduler.holidays
+        Returns:
+            bool: True if the next day is a holiday, False otherwise
+        """
+        next_day = date + timedelta(days=1)
+        return next_day in self.scheduler.holidays
 
-def _is_authorized_incompatibility(self, date, worker1_id, worker2_id):
-    """
-    Check if two incompatible workers are authorized to work together on a specific date
+    def _is_authorized_incompatibility(self, date, worker1_id, worker2_id):
+        """
+        Check if two incompatible workers are authorized to work together on a specific date
     
-    Args:
-        date: The date to check
-        worker1_id: First worker ID
-        worker2_id: Second worker ID
+        Args:
+            date: The date to check
+            worker1_id: First worker ID
+            worker2_id: Second worker ID
         
-    Returns:
-        bool: True if the incompatibility is authorized, False otherwise
-    """
-    # Check if this incompatibility is recorded as deliberately skipped
-    date_str = date.strftime('%Y-%m-%d')
-    for skip in self.scheduler.constraint_skips.get(worker1_id, {}).get('incompatibility', []):
-        if isinstance(skip, tuple) and skip[0] == date_str:
-            if worker2_id in skip[1]:
-                return True
+        Returns:
+            bool: True if the incompatibility is authorized, False otherwise
+        """
+        # Check if this incompatibility is recorded as deliberately skipped
+        date_str = date.strftime('%Y-%m-%d')
+        for skip in self.scheduler.constraint_skips.get(worker1_id, {}).get('incompatibility', []):
+            if isinstance(skip, tuple) and skip[0] == date_str:
+                if worker2_id in skip[1]:
+                    return True
                 
-    return False
+        return False
 
-def _analyze_gaps(self, worker_id):
-    """
-    Analyze the gaps between shifts for a worker
+    def _analyze_gaps(self, worker_id):
+        """
+        Analyze the gaps between shifts for a worker
     
-    Args:
-        worker_id: Worker ID to analyze
+        Args:
+            worker_id: Worker ID to analyze
         
-    Returns:
-        dict: Gap analysis statistics
-    """
-    assignments = sorted(list(self.worker_assignments.get(worker_id, [])))
+        Returns:
+            dict: Gap analysis statistics
+        """
+        assignments = sorted(list(self.worker_assignments.get(worker_id, [])))
     
-    if len(assignments) <= 1:
+        if len(assignments) <= 1:
+            return {
+                "min_gap": None,
+                "max_gap": None,
+                "avg_gap": None,
+                "gaps": []
+            }
+    
+        gaps = []
+        for i in range(len(assignments) - 1):
+            gap = (assignments[i+1] - assignments[i]).days
+            gaps.append(gap)
+    
         return {
-            "min_gap": None,
-            "max_gap": None,
-            "avg_gap": None,
-            "gaps": []
+            "min_gap": min(gaps) if gaps else None,
+            "max_gap": max(gaps) if gaps else None,
+            "avg_gap": sum(gaps) / len(gaps) if gaps else None,
+            "gaps": gaps
         }
-    
-    gaps = []
-    for i in range(len(assignments) - 1):
-        gap = (assignments[i+1] - assignments[i]).days
-        gaps.append(gap)
-    
-    return {
-        "min_gap": min(gaps) if gaps else None,
-        "max_gap": max(gaps) if gaps else None,
-        "avg_gap": sum(gaps) / len(gaps) if gaps else None,
-        "gaps": gaps
-    }
 
-def _get_schedule_months(self):
-    """
-    Calculate number of days in each month of the schedule period
+    def _get_schedule_months(self):
+        """
+        Calculate number of days in each month of the schedule period
     
-    Returns:
-        dict: Dictionary with month keys and their available days count
-    """
-    month_days = {}
-    current = self.scheduler.start_date
-    while current <= self.scheduler.end_date:
-        month_key = f"{current.year}-{current.month:02d}"
+        Returns:
+            dict: Dictionary with month keys and their available days count
+        """
+        month_days = {}
+        current = self.scheduler.start_date
+        while current <= self.scheduler.end_date:
+            month_key = f"{current.year}-{current.month:02d}"
     
-        # Calculate available days for this month
-        month_start = max(
-            current.replace(day=1),
-            self.scheduler.start_date
-        )
-        month_end = min(
-            (current.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1),
-            self.scheduler.end_date
-        )
+            # Calculate available days for this month
+            month_start = max(
+                current.replace(day=1),
+                self.scheduler.start_date
+            )
+            month_end = min(
+                (current.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1),
+                self.scheduler.end_date
+            )
     
-        days_in_month = (month_end - month_start).days + 1
-        month_days[month_key] = days_in_month
+            days_in_month = (month_end - month_start).days + 1
+            month_days[month_key] = days_in_month
     
-        # Move to first day of next month
-        current = (current.replace(day=1) + timedelta(days=32)).replace(day=1)
+            # Move to first day of next month
+            current = (current.replace(day=1) + timedelta(days=32)).replace(day=1)
 
-    return month_days
+        return month_days
 
-def _ensure_data_integrity(self):
-    """
-    Ensure all data structures are consistent before schedule operations
-    """
-    # Ensure all workers have proper data structures
-    for worker in self.workers_data:
-        worker_id = worker['id']
+    def _ensure_data_integrity(self):
+        """
+        Ensure all data structures are consistent before schedule operations
+        """
+        # Ensure all workers have proper data structures
+        for worker in self.workers_data:
+            worker_id = worker['id']
     
-        # Ensure worker assignments tracking
-        if worker_id not in self.worker_assignments:
-            self.worker_assignments[worker_id] = set()
+            # Ensure worker assignments tracking
+            if worker_id not in self.worker_assignments:
+                self.worker_assignments[worker_id] = set()
         
-        # Ensure worker posts tracking
-        if worker_id not in self.worker_posts:
-            self.worker_posts[worker_id] = set()
+            # Ensure worker posts tracking
+            if worker_id not in self.worker_posts:
+                self.worker_posts[worker_id] = set()
         
-        # Ensure weekday tracking
-        if worker_id not in self.worker_weekdays:
-            self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
+            # Ensure weekday tracking
+            if worker_id not in self.worker_weekdays:
+                self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
         
-        # Ensure weekend tracking
-        if worker_id not in self.worker_weekends:
-            self.worker_weekends[worker_id] = []
+            # Ensure weekend tracking
+            if worker_id not in self.worker_weekends:
+                self.worker_weekends[worker_id] = []
     
-    # Ensure schedule dictionary is initialized
-    for current_date in self._get_date_range(self.scheduler.start_date, self.scheduler.end_date):
-        if current_date not in self.schedule:
-            self.schedule[current_date] = []
+        # Ensure schedule dictionary is initialized
+        for current_date in self._get_date_range(self.scheduler.start_date, self.scheduler.end_date):
+            if current_date not in self.schedule:
+                self.schedule[current_date] = []
     
-    return True
+        return True
 
-def _get_date_range(self, start_date, end_date):
-    """
-    Get list of dates between start_date and end_date (inclusive)
+    def _get_date_range(self, start_date, end_date):
+        """
+        Get list of dates between start_date and end_date (inclusive)
     
-    Args:
-        start_date: Start date
-        end_date: End date
+        Args:
+            start_date: Start date
+            end_date: End date
         
-    Returns:
-        list: List of dates in range
-    """
-    date_range = []
-    current_date = start_date
-    while current_date <= end_date:
-        date_range.append(current_date)
-        current_date += timedelta(days=1)
-    return date_range
+        Returns:
+            list: List of dates in range
+        """
+        date_range = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_range.append(current_date)
+            current_date += timedelta(days=1)
+        return date_range
+        
     def mark_data_dirty(self):
         """Mark that data integrity needs to be verified again"""
         self.data_integrity_verified = False
