@@ -689,16 +689,20 @@ class ScheduleBuilder:
             self.schedule[date] = []
 
         remaining_shifts = self.num_shifts - len(self.schedule[date])
+        logging.info(f"Need to assign {remaining_shifts} shifts for date {date.strftime('%Y-%m-%d')}")
 
         for post in range(len(self.schedule[date]), self.num_shifts):
             # Try each relaxation level until we succeed or run out of options
             for relax_level in range(relaxation_level + 1):
                 candidates = self._get_candidates(date, post, relax_level)
             
-                # Add this debug log
                 logging.info(f"Found {len(candidates)} candidates for {date.strftime('%Y-%m-%d')}, post {post}")
             
                 if candidates:
+                    # Log the candidate information
+                    for i, (worker, score) in enumerate(candidates):
+                        logging.debug(f"Candidate {i+1}: Worker {worker['id']} with score {score}")
+            
                     # Sort candidates by score (descending)
                     candidates.sort(key=lambda x: x[1], reverse=True)
                 
@@ -716,7 +720,7 @@ class ScheduleBuilder:
                     # Assign the worker
                     self.schedule[date].append(worker_id)
                     self.worker_assignments[worker_id].add(date)
-                    self.data_manager._update_tracking_data(worker_id, date, post)
+                    self.scheduler._update_tracking_data(worker_id, date, post)  # Use the scheduler's method
                 
                     logging.info(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')}, post {post}")
                     break  # Success at this relaxation level
@@ -736,29 +740,33 @@ class ScheduleBuilder:
         """
         candidates = []
     
+        logging.info(f"Looking for candidates for {date.strftime('%Y-%m-%d')}, post {post}")
+    
         for worker in self.workers_data:
             worker_id = worker['id']
             work_percentage = float(worker.get('work_percentage', 100))
-
-            # Log each worker's availability check
+        
+            # Debug log for each worker check
             logging.debug(f"Checking worker {worker_id} for {date.strftime('%Y-%m-%d')}, post {post}")
         
             # Skip if max shifts reached
             if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
+                logging.debug(f"Worker {worker_id} skipped - max shifts reached: {len(self.worker_assignments[worker_id])}/{self.max_shifts_per_worker}")
                 continue
 
             # Skip if already assigned to this date
-            if worker_id in self.schedule[date]:
+            if worker_id in self.schedule.get(date, []):
+                logging.debug(f"Worker {worker_id} skipped - already assigned to {date.strftime('%Y-%m-%d')}")
                 continue
         
-            # CRITICAL: Hard constraints that should never be relaxed
-        
-            # 1. Check worker availability (days off)
+            # Check worker availability (days off and work periods)
             if self._is_worker_unavailable(worker_id, date):
+                logging.debug(f"Worker {worker_id} skipped - unavailable on {date.strftime('%Y-%m-%d')}")
                 continue
-        
-            # 2. Check for incompatibilities - CRITICAL
+            
+            # Check for incompatibilities
             if not self._check_incompatibility(worker_id, date):
+                logging.debug(f"Worker {worker_id} skipped - incompatibility found for {date.strftime('%Y-%m-%d')}")
                 continue
     
             # Check gap constraints with appropriate relaxation
@@ -766,44 +774,29 @@ class ScheduleBuilder:
             assignments = sorted(self.worker_assignments[worker_id])
     
             if assignments:
-                # CRITICAL: Always maintain minimum gap of 2 days regardless of relaxation
+                # Always maintain minimum gap of 2 days regardless of relaxation
                 min_gap = 2  # Never go below 2 days
         
                 # Check minimum gap
                 for prev_date in assignments:
                     days_between = abs((date - prev_date).days)
             
-                    # CRITICAL: Basic minimum gap check - never relax below 2
+                    # Basic minimum gap check - never relax below 2
                     if days_between < min_gap:
                         passed_gap = False
+                        logging.debug(f"Worker {worker_id} skipped - insufficient gap ({days_between} days) from {prev_date.strftime('%Y-%m-%d')}")
                         break
-            
-                    # Relax some non-critical gap constraints to improve coverage
-                    if relaxation_level < 2:  # Only enforce at lower relaxation levels
-                        # Special rule for full-time workers: No Friday -> Monday assignments
-                        if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
-                            (date.weekday() == 4 and prev_date.weekday() == 0)):
-                            if days_between == 3:  # The gap between Friday and Monday
-                                passed_gap = False
-                                break
-            
-                    # Allow same day of week in consecutive weeks at higher relaxation
-                    if relaxation_level == 0 and days_between in [7, 14, 21]:
-                        passed_gap = False
-                        break
-    
+        
             if not passed_gap:
                 continue
     
-            # CRITICAL: Check weekend limit constraints - never relax completely
-            # But allow more flexibility at higher relaxation levels
-            if relaxation_level == 0 and self._would_exceed_weekend_limit(worker_id, date):
-                continue
-    
-            # Calculate score
+            # Calculate score with relaxed constraints
             score = self._calculate_worker_score(worker, date, post, relaxation_level)
             if score > float('-inf'):
                 candidates.append((worker, score))
+                logging.debug(f"Worker {worker_id} added as candidate with score {score}")
+            else:
+                logging.debug(f"Worker {worker_id} skipped - score calculation returned -infinity")
 
         return candidates
 
