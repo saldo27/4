@@ -63,7 +63,7 @@ class DataManager:
             return 6
     
         # Otherwise return the actual weekday
-        return date.weekday()
+        return self.scheduler.date_utils.get_effective_weekday(date, self.scheduler.holidays)
 
     def _is_weekend_day(self, date):
         """
@@ -75,26 +75,19 @@ class DataManager:
         Returns:
             bool: True if weekend or holiday, False otherwise
         """
-        # Weekend days are Friday (4), Saturday (5), Sunday (6) or holidays
-        return date.weekday() >= 4 or date in self.scheduler.holidays
+        return self.scheduler.date_utils.is_weekend_day(date, self.scheduler.holidays)
 
     def _get_weekend_start(self, date):
         """
         Get the first day of the weekend containing this date
-
+    
         Args:
             date: Date within the weekend
-
+        
         Returns:
             datetime: First day of the weekend
         """
-        # If it's already Friday or earlier, return the date
-        if date.weekday() <= 4:  # Monday through Friday
-            return date
-    
-        # If it's Saturday or Sunday, go back to Friday
-        days_to_subtract = date.weekday() - 4  # Days past Friday
-        return date - timedelta(days=days_to_subtract)
+        return self.scheduler.date_utils.get_weekend_start(date, self.scheduler.holidays)
 
     def _get_post_counts(self, worker_id):
         """
@@ -167,7 +160,7 @@ class DataManager:
         Returns:
             bool: True if the date is a holiday, False otherwise
         """
-        return date in self.scheduler.holidays
+        return self.scheduler.date_utils.is_holiday(date, self.scheduler.holidays)
 
     def _is_pre_holiday(self, date):
         """
@@ -179,8 +172,7 @@ class DataManager:
         Returns:
             bool: True if the next day is a holiday, False otherwise
         """
-        next_day = date + timedelta(days=1)
-        return next_day in self.scheduler.holidays
+        return self.scheduler.date_utils.is_pre_holiday(date, self.scheduler.holidays)
 
     def _is_authorized_incompatibility(self, date, worker1_id, worker2_id):
         """
