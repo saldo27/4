@@ -22,12 +22,12 @@ class ScheduleBuilder:
 
         # Store references to frequently accessed attributes
         self.workers_data = scheduler.workers_data
-        self.schedule = scheduler.schedule
-        self.worker_assignments = scheduler.worker_assignments
+        self.schedule = scheduler.schedule  # Use the same reference, not a copy
+        self.worker_assignments = scheduler.worker_assignments  # Use the same reference
         self.num_shifts = scheduler.num_shifts
         self.holidays = scheduler.holidays
         self.constraint_checker = scheduler.constraint_checker
-    
+
         # Add these lines:
         self.start_date = scheduler.start_date
         self.end_date = scheduler.end_date
@@ -38,7 +38,7 @@ class ScheduleBuilder:
         self.worker_weekends = scheduler.worker_weekends
         self.constraint_skips = scheduler.constraint_skips
         self.max_shifts_per_worker = scheduler.max_shifts_per_worker
-    
+
         logging.info("ScheduleBuilder initialized")
 
     # 2. Utility Methods
