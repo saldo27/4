@@ -813,6 +813,21 @@ class Scheduler:
                     }
                     logging.info("Restored best schedule found during improvements")
 
+                # Before calculating final stats, make sure we're using the most up-to-date schedule
+                if hasattr(self, 'backup_schedule') and self.backup_schedule:
+                    self.schedule = self.backup_schedule.copy()
+                    logging.info("Final update of schedule from backup before stats")
+                else:
+                    logging.warning("No backup schedule found for final update")
+
+                # Extra check to see if schedule is actually filled
+                filled_count = 0
+                    for date, shifts in self.schedule.items():
+                    for worker in shifts:
+                        if worker is not None:
+                            filled_count += 1
+                logging.info(f"Final schedule check: {filled_count} filled shifts before final calculation")
+
                 # Final stats
                 total_shifts = sum(len(shifts) for shifts in self.schedule.values())
                 filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
