@@ -1000,14 +1000,35 @@ class Scheduler:
             if worker_id in self.worker_assignments and date in self.worker_assignments[worker_id]:
                 return False
             
-            # Check rest constraints - worker should have enough rest days
-            min_rest_days = 1  # Default minimum rest between shifts
+            # Check rest constraints - minimum 2 days between shifts
+            min_rest_days = 2  # As specified by user
         
-            # Check last assignment date for this worker
-            recent_assignments = [d for d in self.worker_assignments.get(worker_id, set()) 
-                                 if (date - d).days <= min_rest_days and d < date]
-            if recent_assignments:
-                return False
+            # Check past and future assignments for this worker
+            for assigned_date in self.worker_assignments.get(worker_id, set()):
+                days_difference = abs((date - assigned_date).days)
+            
+                # Check minimum gap (less than 2 days)
+                if 0 < days_difference < min_rest_days:
+                    logging.debug(f"Worker {worker_id} cannot be assigned on {date} due to insufficient rest (needs {min_rest_days} days)")
+                    return False
+                
+                # Check 7 or 14 day patterns (to avoid same day of week assignments)
+                if days_difference == 7 or days_difference == 14:
+                    logging.debug(f"Worker {worker_id} cannot be assigned on {date} as it would create a 7 or 14 day pattern")
+                    return False
+        
+            # Check incompatibility constraints
+            if hasattr(self, 'worker_incompatibilities') and worker_id in self.worker_incompatibilities:
+                # Check if any incompatible workers are already scheduled for this date/shift
+                incompatible_workers = self.worker_incompatibilities[worker_id]
+            
+                # Check if this date exists in schedule
+                if date in self.schedule:
+                    # Check if any incompatible worker is assigned to this date
+                    for incompatible_id in incompatible_workers:
+                        if incompatible_id in self.worker_assignments and date in self.worker_assignments[incompatible_id]:
+                            logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} on {date}")
+                            return False
         
             # All checks passed
             return True
@@ -1015,7 +1036,7 @@ class Scheduler:
             logging.error(f"Error checking assignment constraints: {str(e)}")
             # Default to not allowing on error
             return False
-
+        
     def _prepare_worker_data(self):
         """
         Prepare worker data before schedule generation:
