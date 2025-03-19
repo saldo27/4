@@ -979,6 +979,90 @@ class Scheduler:
             # Fall back to simple assignment if mixed strategy fails
             return self._assign_workers_simple()
 
+    def _check_schedule_constraints(self):
+        """
+        Check the current schedule for constraint violations.
+        Returns a list of violations found.
+        """
+        violations = []
+    
+        try:
+            # Check for minimum rest days violations and weekly pattern violations
+            for worker in self.workers_data:
+                worker_id = worker['id']
+                if worker_id not in self.worker_assignments:
+                    continue
+                
+                # Get worker's minimum rest days
+                min_rest_days = 2  # As specified by user
+            
+                # Sort the worker's assignments by date
+                assigned_dates = sorted(list(self.worker_assignments[worker_id]))
+            
+                # Check all pairs of dates for violations
+                for i, date1 in enumerate(assigned_dates):
+                    for j, date2 in enumerate(assigned_dates):
+                        if i >= j:  # Skip same date or already checked pairs
+                            continue
+                        
+                        days_between = abs((date2 - date1).days)
+                    
+                        # Check for insufficient rest periods (less than 2 days)
+                        if 0 < days_between < min_rest_days:
+                            violations.append({
+                                'type': 'min_rest_days',
+                                'worker_id': worker_id,
+                                'date1': date1,
+                                'date2': date2,
+                                'days_between': days_between,
+                                'min_required': min_rest_days
+                            })
+                    
+                        # Check for 7 or 14 day patterns
+                        if days_between == 7 or days_between == 14:
+                            violations.append({
+                                'type': 'weekly_pattern',
+                                'worker_id': worker_id,
+                                'date1': date1,
+                                'date2': date2,
+                                'days_between': days_between
+                            })
+        
+            # Check for incompatibility violations
+            if hasattr(self, 'worker_incompatibilities'):
+                for worker_id, incompatible_workers in self.worker_incompatibilities.items():
+                    if worker_id not in self.worker_assignments:
+                        continue
+                    
+                    for date in self.worker_assignments[worker_id]:
+                        for incompatible_id in incompatible_workers:
+                            if incompatible_id in self.worker_assignments and date in self.worker_assignments[incompatible_id]:
+                                violations.append({
+                                    'type': 'incompatibility',
+                                    'worker_id': worker_id,
+                                    'incompatible_id': incompatible_id,
+                                    'date': date
+                                })
+        
+            # Log summary of violations
+            if violations:
+                logging.warning(f"Found {len(violations)} constraint violations in schedule")
+                for i, v in enumerate(violations[:5]):  # Log first 5 violations
+                    if v['type'] == 'min_rest_days':
+                        logging.warning(f"Violation {i+1}: Worker {v['worker_id']} has only {v['days_between']} days between shifts on {v['date1']} and {v['date2']} (min required: {v['min_required']})")
+                    elif v['type'] == 'weekly_pattern':
+                        logging.warning(f"Violation {i+1}: Worker {v['worker_id']} has shifts exactly {v['days_between']} days apart on {v['date1']} and {v['date2']}")
+                    elif v['type'] == 'incompatibility':
+                        logging.warning(f"Violation {i+1}: Incompatible workers {v['worker_id']} and {v['incompatible_id']} are both assigned on {v['date']}")
+                    
+                if len(violations) > 5:
+                    logging.warning(f"...and {len(violations) - 5} more violations")
+                
+            return violations
+        except Exception as e:
+            logging.error(f"Error checking schedule constraints: {str(e)}", exc_info=True)
+            return []
+
     def _is_allowed_assignment(self, worker_id, date, shift_num):
         """
         Check if assigning this worker to this date/shift would violate any constraints.
@@ -1035,6 +1119,87 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error checking assignment constraints: {str(e)}")
             # Default to not allowing on error
+            return False
+
+    def _fix_constraint_violations(self):
+        """
+        Try to fix constraint violations in the current schedule.
+        Returns True if fixed, False if couldn't fix all.
+        """
+        try:
+            violations = self._check_schedule_constraints()
+            if not violations:
+                return True
+            
+            logging.info(f"Attempting to fix {len(violations)} constraint violations")
+            fixes_made = 0
+        
+            # Fix each violation
+            for violation in violations:
+                if violation['type'] == 'min_rest_days' or violation['type'] == 'weekly_pattern':
+                    # Fix by unassigning one of the shifts
+                    worker_id = violation['worker_id']
+                    date1 = violation['date1']
+                    date2 = violation['date2']
+                
+                    # Decide which date to unassign
+                    # Generally prefer to unassign the later date
+                    date_to_unassign = date2
+                
+                    # Find the shift number for this worker on this date
+                    shift_num = None
+                    if date_to_unassign in self.schedule:
+                        for i, worker in enumerate(self.schedule[date_to_unassign]):
+                            if worker == worker_id:
+                                shift_num = i
+                                break
+                
+                    if shift_num is not None:
+                        # Unassign this worker
+                        self.schedule[date_to_unassign][shift_num] = None
+                        self.worker_assignments[worker_id].remove(date_to_unassign)
+                        violation_type = "rest period" if violation['type'] == 'min_rest_days' else "weekly pattern"
+                        logging.info(f"Fixed {violation_type} violation: Unassigned worker {worker_id} from {date_to_unassign}")
+                        fixes_made += 1
+                
+                elif violation['type'] == 'incompatibility':
+                    # Fix incompatibility by unassigning one of the workers
+                    worker_id = violation['worker_id']
+                    incompatible_id = violation['incompatible_id']
+                    date = violation['date']
+                
+                    # Decide which worker to unassign (prefer the one with more assignments)
+                    w1_assignments = len(self.worker_assignments.get(worker_id, set()))
+                    w2_assignments = len(self.worker_assignments.get(incompatible_id, set()))
+                
+                    worker_to_unassign = worker_id if w1_assignments >= w2_assignments else incompatible_id
+                
+                    # Find the shift number for this worker on this date
+                    shift_num = None
+                    if date in self.schedule:
+                        for i, worker in enumerate(self.schedule[date]):
+                            if worker == worker_to_unassign:
+                                shift_num = i
+                                break
+                
+                    if shift_num is not None:
+                        # Unassign this worker
+                        self.schedule[date][shift_num] = None
+                        self.worker_assignments[worker_to_unassign].remove(date)
+                        logging.info(f"Fixed incompatibility violation: Unassigned worker {worker_to_unassign} from {date}")
+                        fixes_made += 1
+        
+            # Check if we fixed all violations
+            remaining_violations = self._check_schedule_constraints()
+            if remaining_violations:
+                logging.warning(f"After fixing attempts, {len(remaining_violations)} violations still remain")
+                return False
+            else:
+                logging.info(f"Successfully fixed all {fixes_made} constraint violations")
+                return True
+            
+        except Exception as e:
+            logging.error(f"Error fixing constraint violations: {str(e)}", exc_info=True)
             return False
         
     def _prepare_worker_data(self):
