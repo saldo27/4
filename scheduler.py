@@ -757,7 +757,7 @@ class Scheduler:
             current_date += timedelta(days=1)
     
         days_in_schedule = len(all_dates)
-        total_shifts = days_in_schedule * self.num_shiftss
+        total_shifts = days_in_schedule * self.num_shifts
     
         # Initialize tracking structures if needed
         for worker in self.workers_data:
