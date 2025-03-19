@@ -85,9 +85,9 @@ class WorkerEligibilityTracker:
         if worker_id in assigned_workers:
             return False
             
-        # Check minimum gap (3 days)
+        # Check minimum gap (2 days)
         last_worked = self.last_worked_date[worker_id]
-        if last_worked and (date - last_worked).days < 3:
+        if last_worked and (date - last_worked).days < 2:
             return False
             
         return True
