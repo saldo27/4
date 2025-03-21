@@ -726,7 +726,7 @@ class Scheduler:
                             if incompatible_id in currently_assigned:
                                 has_conflict = True
                                 break
-                    
+    
                         if has_conflict:
                             continue
                 
