@@ -667,53 +667,88 @@ class Scheduler:
                 # If the shift is already assigned, skip it
                 if date in self.schedule and len(self.schedule[date]) > post and self.schedule[date][post] is not None:
                     continue
-                
+            
                 # Find the best worker for this shift
                 best_worker = None
-            
+        
                 # Try each worker in priority order
                 for worker in workers_by_priority:
                     worker_id = worker['id']
-                
+            
                     # Skip if worker is already assigned to this date
                     if date in self.schedule and worker_id in self.schedule[date]:
                         continue
-                    
+                
                     # Skip if worker has reached their target
                     if worker_assignment_counts[worker_id] >= worker_targets[worker_id]:
                         continue
-                    
-                    # Skip if too close to existing assignment
+                
+                    # Check minimum gap between shifts (always at least 2 days)
                     too_close = False
                     for assigned_date in self.worker_assignments.get(worker_id, set()):
-                        if abs((date - assigned_date).days) < 2:  # Minimum 2 day gap
+                        days_between = abs((date - assigned_date).days)
+                    
+                        # Basic 2-day gap check
+                        if days_between < 2:
                             too_close = True
                             break
-                        
+                    
+                        # Special case: Friday-Monday (3-day gap needed)
+                        if days_between == 3:
+                            if ((date.weekday() == 0 and assigned_date.weekday() == 4) or 
+                                (date.weekday() == 4 and assigned_date.weekday() == 0)):
+                                # Friday-Monday pattern detected
+                                too_close = True
+                                break
+                
                     if too_close:
                         continue
-                    
+                
+                    # Check for 7 or 14 day patterns to avoid
+                    same_day_pattern = False
+                    for assigned_date in self.worker_assignments.get(worker_id, set()):
+                        days_between = abs((date - assigned_date).days)
+                        if days_between == 7 or days_between == 14:
+                            same_day_pattern = True
+                            break
+                
+                    if same_day_pattern:
+                        continue
+                
+                    # Check for incompatible workers already assigned to this date
+                    incompatible_with = worker.get('incompatible_with', [])
+                    has_incompatible = False
+                
+                    if date in self.schedule:
+                        for incompatible_id in incompatible_with:
+                            if incompatible_id in self.schedule[date]:
+                                has_incompatible = True
+                                break
+                
+                    if has_incompatible:
+                        continue
+                
                     # This worker is a good candidate
                     best_worker = worker
                     break
-                
+            
                 # If we found a suitable worker, assign them
                 if best_worker:
                     worker_id = best_worker['id']
-                
+            
                     # Make sure the schedule list exists and has the right size
                     if date not in self.schedule:
                         self.schedule[date] = []
-                    
+                
                     while len(self.schedule[date]) <= post:
                         self.schedule[date].append(None)
-                    
+                
                     # Assign the worker
                     self.schedule[date][post] = worker_id
-                
+            
                     # Update tracking data
                     self._update_tracking_data(worker_id, date, post)
-                
+            
                     # Update the assignment count
                     worker_assignment_counts[worker_id] += 1
                 
@@ -723,10 +758,10 @@ class Scheduler:
                     # No suitable worker found, leave unassigned
                     if date not in self.schedule:
                         self.schedule[date] = []
-                    
+                
                     while len(self.schedule[date]) <= post:
                         self.schedule[date].append(None)
-                    
+                
                     logging.debug(f"No suitable worker found for {date.strftime('%Y-%m-%d')}, post {post}")
     
         # 4. Return the number of assignments made
