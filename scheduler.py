@@ -639,8 +639,12 @@ class Scheduler:
 
     def _assign_workers_simple(self):
         """
-        Simple method to directly assign workers to shifts based purely on targets.
-        This bypasses the complex constraints to ensure we get a basic schedule working.
+        Simple method to directly assign workers to shifts based on targets and ensuring
+        all constraints are properly respected:
+        - Minimum 2 days off between shifts (3+ days between assignments)
+        - Special Friday-Monday constraint
+        - 7/14 day pattern avoidance
+        - Worker incompatibility checking
         """
         logging.info("Using simplified assignment method to ensure schedule population")
     
@@ -658,7 +662,7 @@ class Scheduler:
             self.workers_data, 
             key=lambda w: worker_targets.get(w['id'], 0),
             reverse=True
-        )
+        )    
     
         # 3. Go through each date and assign workers
         for date in all_dates:
@@ -670,63 +674,61 @@ class Scheduler:
             
                 # Find the best worker for this shift
                 best_worker = None
+            
+                # Get currently assigned workers for this date
+                currently_assigned = []
+                if date in self.schedule:
+                    currently_assigned = [w for w in self.schedule[date] if w is not None]
         
                 # Try each worker in priority order
                 for worker in workers_by_priority:
                     worker_id = worker['id']
             
                     # Skip if worker is already assigned to this date
-                    if date in self.schedule and worker_id in self.schedule[date]:
+                    if worker_id in currently_assigned:
                         continue
                 
                     # Skip if worker has reached their target
                     if worker_assignment_counts[worker_id] >= worker_targets[worker_id]:
                         continue
                 
-                    # Check minimum gap between shifts (always at least 2 days)
+                    # IMPORTANT: Check for minimum gap of 2 days off (3+ days between assignments)
                     too_close = False
                     for assigned_date in self.worker_assignments.get(worker_id, set()):
-                        days_between = abs((date - assigned_date).days)
+                        days_difference = abs((date - assigned_date).days)
                     
-                        # Basic 2-day gap check
-                        if days_between < 2:
+                        # We need at least 2 days off, so 3+ days between assignments
+                        if days_difference < 3:  # THIS IS THE KEY CHANGE
                             too_close = True
                             break
                     
-                        # Special case: Friday-Monday (3-day gap needed)
-                        if days_between == 3:
+                        # Special case: Friday-Monday (needs 3 days off, so 4+ days between)
+                        # This is handled by the general case above (< 3), but keeping for clarity
+                        if days_difference == 3:
                             if ((date.weekday() == 0 and assigned_date.weekday() == 4) or 
                                 (date.weekday() == 4 and assigned_date.weekday() == 0)):
-                                # Friday-Monday pattern detected
                                 too_close = True
                                 break
+                    
+                        # Check for 7 or 14 day patterns (same day of week)
+                        if days_difference == 7 or days_difference == 14:
+                            too_close = True
+                            break
                 
                     if too_close:
                         continue
                 
-                    # Check for 7 or 14 day patterns to avoid
-                    same_day_pattern = False
-                    for assigned_date in self.worker_assignments.get(worker_id, set()):
-                        days_between = abs((date - assigned_date).days)
-                        if days_between == 7 or days_between == 14:
-                            same_day_pattern = True
-                            break
-                
-                    if same_day_pattern:
-                        continue
-                
-                    # Check for incompatible workers already assigned to this date
+                    # Check for worker incompatibilities
                     incompatible_with = worker.get('incompatible_with', [])
-                    has_incompatible = False
-                
-                    if date in self.schedule:
+                    if incompatible_with:
+                        has_conflict = False
                         for incompatible_id in incompatible_with:
-                            if incompatible_id in self.schedule[date]:
-                                has_incompatible = True
+                            if incompatible_id in currently_assigned:
+                                has_conflict = True
                                 break
-                
-                    if has_incompatible:
-                        continue
+                    
+                        if has_conflict:
+                            continue
                 
                     # This worker is a good candidate
                     best_worker = worker
@@ -752,6 +754,9 @@ class Scheduler:
                     # Update the assignment count
                     worker_assignment_counts[worker_id] += 1
                 
+                    # Update currently_assigned for this date
+                    currently_assigned.append(worker_id)
+            
                     # Log the assignment
                     logging.info(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')}, post {post}")
                 else:
@@ -761,7 +766,7 @@ class Scheduler:
                 
                     while len(self.schedule[date]) <= post:
                         self.schedule[date].append(None)
-                
+                    
                     logging.debug(f"No suitable worker found for {date.strftime('%Y-%m-%d')}, post {post}")
     
         # 4. Return the number of assignments made
@@ -770,160 +775,6 @@ class Scheduler:
         logging.info(f"Simple assignment complete: {total_assigned}/{total_shifts} shifts assigned ({total_assigned/total_shifts*100:.1f}%)")
     
         return total_assigned > 0
-
-    def _assign_workers_cadence(self):
-        """
-        Assign workers to shifts using a cadence-based approach,
-        creating evenly spaced patterns of assignments.
-        """
-        logging.info("Starting cadence-based assignment method")
-    
-        # Clear any existing tracking to start fresh
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            if worker_id in self.worker_assignments:
-                self.worker_assignments[worker_id] = set()
-    
-        # Get all dates that need to be scheduled
-        all_dates = []
-        current_date = self.start_date
-        while current_date <= self.end_date:
-            all_dates.append(current_date)
-            current_date += timedelta(days=1)
-    
-        days_in_schedule = len(all_dates)
-        total_shifts = days_in_schedule * self.num_shifts
-    
-        # Initialize tracking structures if needed
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            if worker_id not in self.worker_assignments:
-                self.worker_assignments[worker_id] = set()
-            if worker_id not in self.worker_posts:
-                self.worker_posts[worker_id] = set()
-    
-        # Calculate worker targets based on availability percentages
-        total_workers = len(self.workers_data)
-        worker_targets = {}
-    
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            # Get the worker's availability percentage (default to equal distribution)
-            availability_pct = worker.get('availability_pct', 100.0) / 100.0
-        
-            # Calculate target shifts for this worker based on availability
-            target_shifts = round((total_shifts / total_workers) * availability_pct)
-            worker_targets[worker_id] = target_shifts
-        
-            logging.debug(f"Worker {worker_id} target: {target_shifts} shifts (based on {availability_pct*100}% availability)")
-    
-        # Calculate ideal cadence for each worker based on their target shifts
-        worker_cadences = {}
-        for worker_id, target in worker_targets.items():
-            if target > 0:
-                # Calculate ideal spacing between shifts
-                cadence = days_in_schedule / target if target > 0 else 0
-                worker_cadences[worker_id] = cadence
-                logging.debug(f"Worker {worker_id} cadence: {cadence:.2f} days between shifts (target: {target})")
-    
-        # First, handle all mandatory assignments
-        mandatory_assigned = 0
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            if hasattr(self, 'worker_mandatory_shifts') and worker_id in self.worker_mandatory_shifts:
-                for mandatory_date in self.worker_mandatory_shifts[worker_id]:
-                    mandatory_shift_number = 0  # Default to first shift if not specified
-                
-                    # Ensure date is within our schedule range
-                    if self.start_date <= mandatory_date <= self.end_date:
-                        # Initialize schedule entry if needed
-                        if mandatory_date not in self.schedule:
-                            self.schedule[mandatory_date] = [None] * self.num_shifts
-                    
-                        # Ensure the shift list is long enough
-                        while len(self.schedule[mandatory_date]) <= mandatory_shift_number:
-                            self.schedule[mandatory_date].append(None)
-                        
-                        # Assign the worker
-                        self.schedule[mandatory_date][mandatory_shift_number] = worker_id
-                        self.worker_assignments[worker_id].add(mandatory_date)
-                        mandatory_assigned += 1
-                        logging.info(f"Assigned mandatory shift: Worker {worker_id} on {mandatory_date.strftime('%Y-%m-%d')}")
-    
-        # Next, assign remaining shifts using cadence
-        # Track the last assigned date for each worker
-        last_assigned = {worker['id']: self.start_date - timedelta(days=30) for worker in self.workers_data}
-    
-        # For each date and shift in order
-        for date in all_dates:
-            for shift_num in range(self.num_shifts):
-                # Skip if already assigned (e.g., mandatory)
-                if date in self.schedule and len(self.schedule[date]) > shift_num and self.schedule[date][shift_num] is not None:
-                    continue
-                
-                # Ensure schedule structure exists
-                if date not in self.schedule:
-                    self.schedule[date] = [None] * self.num_shifts
-            
-                # Ensure shift list is long enough
-                while len(self.schedule[date]) <= shift_num:
-                    self.schedule[date].append(None)
-            
-                # Find the best worker to assign based on cadence
-                best_worker = None
-                best_score = -float('inf')
-            
-                for worker in self.workers_data:
-                    worker_id = worker['id']
-                
-                    # Skip workers who have reached their target
-                    current_assigned = len(self.worker_assignments.get(worker_id, set()))
-                    worker_target = worker_targets.get(worker_id, 0)
-                    if worker_target > 0 and current_assigned >= worker_target:
-                        continue
-                    
-                    # Calculate how well this assignment would match the worker's cadence
-                    days_since_last = (date - last_assigned[worker_id]).days
-                    ideal_cadence = worker_cadences.get(worker_id, 7)  # Default to weekly if no cadence
-                
-                    # Score is how close we are to the ideal cadence (higher is better)
-                    # We want to be at least at the cadence, but not too far past it
-                    if days_since_last < ideal_cadence:
-                        # Too soon - penalty based on how early we are
-                        cadence_score = -5 * (ideal_cadence - days_since_last)
-                    else:
-                        # At or past cadence - higher score the closer we are to ideal
-                        # but with diminishing penalty the further we go
-                        cadence_score = 10 - min(10, (days_since_last - ideal_cadence) / 2)
-                
-                    # Check constraints (worker availability, preferences, etc.)
-                    if self._is_allowed_assignment(worker_id, date, shift_num):
-                        constraint_score = 5
-                    else:
-                        # Heavy penalty for violating constraints
-                        constraint_score = -20
-                
-                    # Combined score
-                    score = cadence_score + constraint_score
-                
-                    # Update best if this is better
-                    if score > best_score:
-                        best_score = score
-                        best_worker = worker_id
-            
-                # Assign the best worker
-                if best_worker is not None:
-                    self.schedule[date][shift_num] = best_worker
-                    self.worker_assignments[best_worker].add(date)
-                    last_assigned[best_worker] = date
-                    logging.debug(f"Cadence assigned: Worker {best_worker} to {date.strftime('%Y-%m-%d')}, shift {shift_num}")
-    
-        # Count assigned shifts
-        filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
-        coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
-    
-        logging.info(f"Cadence assignment complete: {filled_shifts}/{total_shifts} shifts filled ({coverage:.1f}%)")
-        return filled_shifts > 0
 
     def _assign_mixed_strategy(self):
         """
