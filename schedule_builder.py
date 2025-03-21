@@ -327,7 +327,7 @@ class ScheduleBuilder:
         assignments = sorted(self.worker_assignments[worker_id])
         for prev_date in assignments:
             days_between = abs((date - prev_date).days)
-            if days_between < 2:  # Absolute minimum gap
+            if days_between < 3:  # Absolute minimum gap
                 return False
     
         # Check weekend limits
@@ -337,18 +337,18 @@ class ScheduleBuilder:
         # Check if this worker can swap these assignments
         work_percentage = worker.get('work_percentage', 100)
     
-        # Part-time workers need at least 3 days between shifts
+        # Part-time workers need at least 4 days between shifts
         if work_percentage < 100:
             for prev_date in assignments:
                 days_between = abs((date - prev_date).days)
-                if days_between < 3:
+                if days_between < 4:
                     return False
     
         # Check for consecutive week patterns
         for prev_date in assignments:
             days_between = abs((date - prev_date).days)
             # Avoid same day of week in consecutive weeks when possible
-            if days_between in [7, 14, 21] and date.weekday() == prev_date.weekday():
+            if days_between in [7, 14] and date.weekday() == prev_date.weekday():
                 return False
     
         # If we've made it this far, the worker can be assigned
