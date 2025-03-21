@@ -1470,6 +1470,10 @@ class Scheduler:
                     filled_shifts = sum(1 for date in self.schedule for shift in self.schedule[date] if shift is not None)
                     coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
                     logging.info(f"Final schedule coverage: {coverage:.2f}% ({filled_shifts}/{total_shifts} shifts filled)")
+                    
+                    # Final incompatibility verification check
+                    if filled_count > 0:
+                        self.schedule_builder._verify_no_incompatibilities()
     
                     return True
                 except Exception as e:
