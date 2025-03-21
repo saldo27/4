@@ -1509,6 +1509,88 @@ class Scheduler:
             logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
             raise SchedulerError(f"Failed to generate schedule: {str(e)}")
 
+    def validate_and_fix_final_schedule(self):
+        """
+        Final validator that scans the entire schedule and fixes any constraint violations.
+        Returns the number of fixes made.
+        """
+        logging.info("Running final schedule validation...")
+    
+        # Count issues
+        incompatibility_issues = 0
+        gap_issues = 0
+        fixes_made = 0
+    
+        # 1. Check for incompatibilities
+        for date in sorted(self.schedule.keys()):
+            # Get non-None workers assigned to this date
+            workers_assigned = [w for w in self.schedule[date] if w is not None]
+        
+            # Check each pair of workers for incompatibility
+            for i, worker1_id in enumerate(workers_assigned):
+                for worker2_id in workers_assigned[i+1:]:
+                    # Get worker data
+                    worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
+                    worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
+                
+                    if not worker1 or not worker2:
+                        continue
+                
+                    # Check incompatibility lists from both sides
+                    is_incompatible = False
+                    if 'incompatible_with' in worker1 and worker2_id in worker1['incompatible_with']:
+                        is_incompatible = True
+                    if 'incompatible_with' in worker2 and worker1_id in worker2['incompatible_with']:
+                        is_incompatible = True
+                
+                    if is_incompatible:
+                        incompatibility_issues += 1
+                        logging.warning(f"VALIDATION: Found incompatible workers {worker1_id} and {worker2_id} on {date}")
+                    
+                        # Remove one of the workers (preferably one with more assignments)
+                        w1_count = len(self.worker_assignments.get(worker1_id, set()))
+                        w2_count = len(self.worker_assignments.get(worker2_id, set()))
+                    
+                        worker_to_remove = worker1_id if w1_count >= w2_count else worker2_id
+                        post = self.schedule[date].index(worker_to_remove)
+                    
+                        # Remove the worker
+                        self.schedule[date][post] = None
+                        if worker_to_remove in self.worker_assignments:
+                            self.worker_assignments[worker_to_remove].remove(date)
+                    
+                        fixes_made += 1
+                        logging.warning(f"VALIDATION: Removed worker {worker_to_remove} from {date} to fix incompatibility")
+    
+        # 2. Check for minimum gap violations
+        for worker_id in self.worker_assignments:
+            # Get all dates this worker is assigned to
+            assignments = sorted(list(self.worker_assignments[worker_id]))
+        
+            # Check pairs of dates for gap violations
+            for i in range(len(assignments) - 1):
+                for j in range(i + 1, len(assignments)):
+                    date1 = assignments[i]
+                    date2 = assignments[j]
+                    days_between = abs((date2 - date1).days)
+                
+                    # Check for minimum 3-day gap (2 days off between shifts)
+                    if days_between < 3:
+                        gap_issues += 1
+                        logging.warning(f"VALIDATION: Found gap violation for worker {worker_id}: only {days_between} days between {date1} and {date2}")
+                    
+                        # Remove the later assignment
+                        post = self.schedule[date2].index(worker_id) if worker_id in self.schedule[date2] else -1
+                        if post >= 0:
+                            self.schedule[date2][post] = None
+                            self.worker_assignments[worker_id].remove(date2)
+                        
+                            fixes_made += 1
+                            logging.warning(f"VALIDATION: Removed worker {worker_id} from {date2} to fix gap violation")
+    
+        logging.info(f"Final validation complete: Found {incompatibility_issues} incompatibility issues and {gap_issues} gap issues. Made {fixes_made} fixes.")
+        return fixes_made
+
     def _validate_final_schedule(self):
         """
         Validate the final schedule before returning it.
