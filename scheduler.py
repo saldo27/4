@@ -1504,6 +1504,8 @@ class Scheduler:
                     self.worker_weekdays = best_worker_weekdays
                     self.worker_weekends = best_worker_weekends
                     # Don't try to restore constraint_skips here since it might be the source of the error
+
+            self.validate_and_fix_final_schedule()
         
         except Exception as e:
             logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
