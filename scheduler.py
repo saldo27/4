@@ -1659,7 +1659,7 @@ class Scheduler:
             return True
                 
         except Exception as e:
-        logging.error(f"Validation error: {str(e)}", exc_info=True)
+            logging.error(f"Validation error: {str(e)}", exc_info=True)
             return False
 
     def _calculate_post_rotation(self):
