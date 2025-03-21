@@ -1292,7 +1292,7 @@ class ScheduleBuilder:
                         violations_found += 1
                         logging.warning(f"Found incompatibility violation: {worker1_id} and {worker2_id} on {date}")
                     
-                    # Try to fix the violation by moving one of the workers
+                        # Try to fix the violation by moving one of the workers
                         # Let's try to move the second worker first
                         if self._try_reassign_worker(worker2_id, date):
                             violations_fixed += 1
