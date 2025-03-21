@@ -1653,13 +1653,14 @@ class Scheduler:
                     # Only fail if we couldn't fix the issues
                     raise SchedulerError(f"Schedule validation failed with {len(validation_issues)} issues that couldn't be fixed")
                 
-                # Add call to the new validation method
-                fixes_made = self.validate_and_fix_final_schedule()
+            # Add call to the new validation method
+            fixes_made = self.validate_and_fix_final_schedule()
         
-                return True
-            except Exception as e:
-                logging.error(f"Validation error: {str(e)}", exc_info=True)
-                return False
+            return True
+                
+        except Exception as e:
+        logging.error(f"Validation error: {str(e)}", exc_info=True)
+            return False
 
     def _calculate_post_rotation(self):
         """
