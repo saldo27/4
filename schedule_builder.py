@@ -153,7 +153,7 @@ class ScheduleBuilder:
         Args:
             worker_id: ID of the worker to check
             date: Date to check for incompatibilities
-        
+    
         Returns:
             bool: True if no incompatibilities found, False if incompatibilities exist
         """
@@ -167,9 +167,15 @@ class ScheduleBuilder:
         if not incompatible_with:
             return True
     
+        # Get workers currently assigned to this date
+        currently_assigned = []
+        if date in self.schedule:
+            currently_assigned = [w for w in self.schedule[date] if w is not None]
+    
         # Check if any incompatible workers are already assigned to this date
         for incompatible_id in incompatible_with:
-            if incompatible_id in self.schedule.get(date, []):
+            if incompatible_id in currently_assigned:
+                logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} on {date}")
                 return False
     
         return True
