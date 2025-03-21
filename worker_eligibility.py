@@ -73,7 +73,7 @@ class WorkerEligibilityTracker:
     def _check_basic_eligibility(self, worker_id, date, assigned_workers):
         """
         Quick checks for basic eligibility
-        
+    
         Args:
             worker_id: ID of the worker to check
             date: Date to check
@@ -84,12 +84,22 @@ class WorkerEligibilityTracker:
         # Check if already assigned that day
         if worker_id in assigned_workers:
             return False
-            
+        
         # Check minimum gap (2 days)
         last_worked = self.last_worked_date[worker_id]
-        if last_worked and (date - last_worked).days < 2:
-            return False
-            
+        if last_worked:
+            days_between = (date - last_worked).days
+        
+            # Basic gap check (minimum 2 days)
+            if days_between < 2:
+                return False
+        
+            # Special case: Friday-Monday pattern check (requires 3-day gap)
+            if days_between == 3:
+                if ((date.weekday() == 0 and last_worked.weekday() == 4) or
+                    (date.weekday() == 4 and last_worked.weekday() == 0)):
+                    return False
+    
         return True
     
     def _check_weekend_constraints(self, worker_id, date):
