@@ -29,9 +29,9 @@ class WelcomeScreen(Screen):
         super(WelcomeScreen, self).__init__(**kwargs)
         layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
         
-        layout.add_widget(Label(text='Welcome to Shift Scheduler'))
+        layout.add_widget(Label(text='Bienvenido'))
         
-        start_btn = Button(text='Start Scheduling', size_hint_y=None, height=50)
+        start_btn = Button(text='Comienza el reparto', size_hint_y=None, height=50)
         start_btn.bind(on_press=self.switch_to_setup)
         layout.add_widget(start_btn)
         
@@ -48,17 +48,17 @@ class SetupScreen(Screen):
         layout.add_widget(Label(text='Setup'))
     
        # Start Date
-        layout.add_widget(Label(text='Start Date (DD-MM-YYYY):'))
+        layout.add_widget(Label(text='Fecha de inicio (DD-MM-YYYY):'))
         self.start_date = TextInput(multiline=False)
         layout.add_widget(self.start_date)
     
         # End Date
-        layout.add_widget(Label(text='End Date (DD-MM-YYYY):'))
+        layout.add_widget(Label(text='Fecha final (DD-MM-YYYY):'))
         self.end_date = TextInput(multiline=False)
         layout.add_widget(self.end_date)
     
         # Holidays
-        layout.add_widget(Label(text='Holidays (DD-MM-YYYY, semicolon-separated):'))
+        layout.add_widget(Label(text='Festivos (DD-MM-YYYY, semicolon-separated):'))
         self.holidays = TextInput(
             multiline=True,
            hint_text='Example: 25-12-2025; 01-01-2026'
@@ -66,17 +66,17 @@ class SetupScreen(Screen):
         layout.add_widget(self.holidays)
     
         # Number of Workers
-        layout.add_widget(Label(text='Number of Workers:'))
+        layout.add_widget(Label(text='Número de médicos:'))
         self.num_workers = TextInput(multiline=False, input_filter='int')
         layout.add_widget(self.num_workers)
     
         # Number of Shifts per Day
-        layout.add_widget(Label(text='Number of Shifts per Day:'))
+        layout.add_widget(Label(text='Número de guardias/día:'))
         self.num_shifts = TextInput(multiline=False, input_filter='int')
         layout.add_widget(self.num_shifts)
     
         # Continue Button
-        continue_btn = Button(text='Continue', size_hint_y=None, height=50)
+        continue_btn = Button(text='Continuar', size_hint_y=None, height=50)
         continue_btn.bind(on_press=self.validate_and_continue)
         layout.add_widget(continue_btn)
     
