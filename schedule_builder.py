@@ -167,7 +167,7 @@ class ScheduleBuilder:
         if not incompatible_with:
             return True
     
-        # Get workers currently assigned to this date
+        # Get currently assigned workers for this date
         currently_assigned = []
         if date in self.schedule:
             currently_assigned = [w for w in self.schedule[date] if w is not None]
@@ -175,7 +175,7 @@ class ScheduleBuilder:
         # Check if any incompatible workers are already assigned to this date
         for incompatible_id in incompatible_with:
             if incompatible_id in currently_assigned:
-                logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} on {date}")
+                logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} already assigned on {date.strftime('%Y-%m-%d')}")
                 return False
     
         return True
@@ -297,6 +297,56 @@ class ScheduleBuilder:
                 if date not in self.worker_weekends[worker_id]:
                     self.worker_weekends[worker_id].append(date)
                     self.worker_weekends[worker_id].sort()
+
+    def _verify_no_incompatibilities(self):
+        """
+        Verify that the final schedule doesn't have any incompatibility violations
+        and fix any found violations.
+        """
+        logging.info("Performing final incompatibility verification check")
+    
+        violations_found = 0
+        violations_fixed = 0
+    
+        # Check each date for incompatible worker assignments
+        for date in sorted(self.schedule.keys()):
+            workers_today = [w for w in self.schedule[date] if w is not None]
+        
+            # Process all pairs to find incompatibilities
+            for i in range(len(workers_today)):
+                for j in range(i+1, len(workers_today)):
+                    worker1_id = workers_today[i]
+                    worker2_id = workers_today[j]
+                
+                    # Check if they are incompatible
+                    if self._are_workers_incompatible(worker1_id, worker2_id):
+                        violations_found += 1
+                        logging.warning(f"Final verification found incompatibility violation: {worker1_id} and {worker2_id} on {date.strftime('%Y-%m-%d')}")
+                    
+                        # Find their positions
+                        post1 = self.schedule[date].index(worker1_id)
+                        post2 = self.schedule[date].index(worker2_id)
+                    
+                        # Remove one of the workers (choose the one with more shifts assigned)
+                        w1_shifts = len(self.worker_assignments.get(worker1_id, set()))
+                        w2_shifts = len(self.worker_assignments.get(worker2_id, set()))
+                    
+                        # Remove the worker with more shifts or the second worker if equal
+                        if w1_shifts > w2_shifts:
+                            self.schedule[date][post1] = None
+                            self.worker_assignments[worker1_id].remove(date)
+                            self._update_worker_stats(worker1_id, date, removing=True)
+                            violations_fixed += 1
+                            logging.info(f"Removed worker {worker1_id} from {date.strftime('%Y-%m-%d')} to fix incompatibility")
+                        else:
+                            self.schedule[date][post2] = None
+                            self.worker_assignments[worker2_id].remove(date)
+                            self._update_worker_stats(worker2_id, date, removing=True)
+                            violations_fixed += 1
+                            logging.info(f"Removed worker {worker2_id} from {date.strftime('%Y-%m-%d')} to fix incompatibility")
+    
+        logging.info(f"Final verification: found {violations_found} violations, fixed {violations_fixed}")
+        return violations_fixed > 0
 
     # 4. Worker Assignment Methods
 
