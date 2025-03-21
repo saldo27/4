@@ -985,16 +985,13 @@ class Scheduler:
         Returns a list of violations found.
         """
         violations = []
-    
+        
         try:
-            # Check for minimum rest days violations and weekly pattern violations
+            # Check for minimum rest days violations, Friday-Monday patterns, and weekly patterns
             for worker in self.workers_data:
                 worker_id = worker['id']
                 if worker_id not in self.worker_assignments:
                     continue
-                
-                # Get worker's minimum rest days
-                min_rest_days = 2  # As specified by user
             
                 # Sort the worker's assignments by date
                 assigned_dates = sorted(list(self.worker_assignments[worker_id]))
@@ -1004,19 +1001,31 @@ class Scheduler:
                     for j, date2 in enumerate(assigned_dates):
                         if i >= j:  # Skip same date or already checked pairs
                             continue
-                        
+                    
                         days_between = abs((date2 - date1).days)
                     
                         # Check for insufficient rest periods (less than 2 days)
-                        if 0 < days_between < min_rest_days:
+                        if 0 < days_between < 2:
                             violations.append({
                                 'type': 'min_rest_days',
                                 'worker_id': worker_id,
                                 'date1': date1,
                                 'date2': date2,
                                 'days_between': days_between,
-                                'min_required': min_rest_days
+                                'min_required': 2
                             })
+                    
+                        # Check for Friday-Monday assignments (special case requiring 3 days)
+                        if days_between == 3:
+                            if ((date1.weekday() == 4 and date2.weekday() == 0) or 
+                                (date1.weekday() == 0 and date2.weekday() == 4)):
+                                violations.append({
+                                    'type': 'friday_monday_pattern',
+                                    'worker_id': worker_id,
+                                    'date1': date1,
+                                    'date2': date2,
+                                    'days_between': days_between
+                                })
                     
                         # Check for 7 or 14 day patterns
                         if days_between == 7 or days_between == 14:
@@ -1029,20 +1038,24 @@ class Scheduler:
                             })
         
             # Check for incompatibility violations
-            if hasattr(self, 'worker_incompatibilities'):
-                for worker_id, incompatible_workers in self.worker_incompatibilities.items():
-                    if worker_id not in self.worker_assignments:
+            for date in self.schedule.keys():
+                workers_assigned = [w for w in self.schedule.get(date, []) if w is not None]
+            
+                # Check each worker against others for incompatibility
+                for worker_id in workers_assigned:
+                    worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+                    if not worker:
                         continue
                     
-                    for date in self.worker_assignments[worker_id]:
-                        for incompatible_id in incompatible_workers:
-                            if incompatible_id in self.worker_assignments and date in self.worker_assignments[incompatible_id]:
-                                violations.append({
-                                    'type': 'incompatibility',
-                                    'worker_id': worker_id,
-                                    'incompatible_id': incompatible_id,
-                                    'date': date
-                                })
+                    incompatible_with = worker.get('incompatible_with', [])
+                    for incompatible_id in incompatible_with:
+                        if incompatible_id in workers_assigned:
+                            violations.append({
+                                'type': 'incompatibility',
+                                'worker_id': worker_id,
+                                'incompatible_id': incompatible_id,
+                                'date': date
+                            })
         
             # Log summary of violations
             if violations:
@@ -1050,14 +1063,16 @@ class Scheduler:
                 for i, v in enumerate(violations[:5]):  # Log first 5 violations
                     if v['type'] == 'min_rest_days':
                         logging.warning(f"Violation {i+1}: Worker {v['worker_id']} has only {v['days_between']} days between shifts on {v['date1']} and {v['date2']} (min required: {v['min_required']})")
+                    elif v['type'] == 'friday_monday_pattern':
+                        logging.warning(f"Violation {i+1}: Worker {v['worker_id']} has Friday-Monday assignment on {v['date1']} and {v['date2']}")
                     elif v['type'] == 'weekly_pattern':
                         logging.warning(f"Violation {i+1}: Worker {v['worker_id']} has shifts exactly {v['days_between']} days apart on {v['date1']} and {v['date2']}")
                     elif v['type'] == 'incompatibility':
                         logging.warning(f"Violation {i+1}: Incompatible workers {v['worker_id']} and {v['incompatible_id']} are both assigned on {v['date']}")
-                    
+                
                 if len(violations) > 5:
                     logging.warning(f"...and {len(violations) - 5} more violations")
-                
+            
             return violations
         except Exception as e:
             logging.error(f"Error checking schedule constraints: {str(e)}", exc_info=True)
@@ -1066,53 +1081,55 @@ class Scheduler:
     def _is_allowed_assignment(self, worker_id, date, shift_num):
         """
         Check if assigning this worker to this date/shift would violate any constraints.
-        Returns True if assignment is allowed, False otherwise.
+        Returns True if assignment is allowed, False otherwise.        
+    
+        Enforces:
+        - Minimum 2 days between shifts in general
+        - Special case: No Friday-Monday assignments (require 3 days gap)
+        - No 7 or 14 day patterns
+        - Worker incompatibility constraints
         """
         try:
             # Check if worker is available on this date
             worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
             if not worker:
                 return False
-            
-            # Check if date is within worker's work period
-            if hasattr(self, 'worker_work_periods') and worker_id in self.worker_work_periods:
-                start_period, end_period = self.worker_work_periods[worker_id]
-                if date < start_period or date > end_period:
-                    return False
         
             # Check if worker is already assigned on this date
             if worker_id in self.worker_assignments and date in self.worker_assignments[worker_id]:
                 return False
-            
-            # Check rest constraints - minimum 2 days between shifts
-            min_rest_days = 2  # As specified by user
         
-            # Check past and future assignments for this worker
+            # Check past assignments for minimum gap and patterns
             for assigned_date in self.worker_assignments.get(worker_id, set()):
                 days_difference = abs((date - assigned_date).days)
             
-                # Check minimum gap (less than 2 days)
-                if 0 < days_difference < min_rest_days:
-                    logging.debug(f"Worker {worker_id} cannot be assigned on {date} due to insufficient rest (needs {min_rest_days} days)")
+                # Basic minimum gap check (2 days)
+                if days_difference < 2:
+                    logging.debug(f"Worker {worker_id} cannot be assigned on {date} due to insufficient rest (needs at least 2 days)")
                     return False
                 
+                # Special case: Friday-Monday check (requires 3 days gap)
+                # Check if either date is Friday and the other is Monday
+                if days_difference == 3:
+                    # Check if one date is Friday (weekday 4) and the other is Monday (weekday 0)
+                    if ((assigned_date.weekday() == 4 and date.weekday() == 0) or 
+                        (assigned_date.weekday() == 0 and date.weekday() == 4)):
+                        logging.debug(f"Worker {worker_id} cannot be assigned Friday-Monday (needs at least 3 days gap)")
+                        return False
+            
                 # Check 7 or 14 day patterns (to avoid same day of week assignments)
                 if days_difference == 7 or days_difference == 14:
                     logging.debug(f"Worker {worker_id} cannot be assigned on {date} as it would create a 7 or 14 day pattern")
                     return False
         
-            # Check incompatibility constraints
-            if hasattr(self, 'worker_incompatibilities') and worker_id in self.worker_incompatibilities:
-                # Check if any incompatible workers are already scheduled for this date/shift
-                incompatible_workers = self.worker_incompatibilities[worker_id]
-            
-                # Check if this date exists in schedule
-                if date in self.schedule:
-                    # Check if any incompatible worker is assigned to this date
-                    for incompatible_id in incompatible_workers:
-                        if incompatible_id in self.worker_assignments and date in self.worker_assignments[incompatible_id]:
-                            logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} on {date}")
-                            return False
+            # Check incompatibility constraints using worker data
+            incompatible_with = worker.get('incompatible_with', [])
+            if incompatible_with:
+                # Check if any incompatible worker is already assigned to this date
+                for incompatible_id in incompatible_with:
+                    if date in self.schedule and incompatible_id in self.schedule[date]:
+                        logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} on {date}")
+                        return False
         
             # All checks passed
             return True
