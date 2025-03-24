@@ -160,6 +160,7 @@ class ScheduleBuilder:
         # Get worker data
         worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
         if not worker:
+            logging.debug(f"Worker {worker_id} not found in workers_data")
             return False
     
         # Get incompatible workers
@@ -167,9 +168,10 @@ class ScheduleBuilder:
         if not incompatible_with:
             return True
     
-        # Get currently assigned workers for this date
+        # Get workers currently assigned to this date
         currently_assigned = []
         if date in self.schedule:
+            # Extract all non-None worker IDs from the schedule for this date
             currently_assigned = [w for w in self.schedule[date] if w is not None]
     
         # Check if any incompatible workers are already assigned to this date
