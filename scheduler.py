@@ -25,10 +25,10 @@ class Scheduler:
         try:
             # Initialize date_utils FIRST, before calling any method that might need it
             self.date_utils = DateTimeUtils()
-        
+    
             # Then validate the configuration
             self._validate_config(config)
-            
+        
             # Basic setup from config
             self.config = config
             self.start_date = config['start_date']
@@ -37,13 +37,17 @@ class Scheduler:
             self.workers_data = config['workers_data']
             self.holidays = config.get('holidays', [])
         
+            # Get the new configurable parameters with defaults
+            self.gap_between_shifts = config.get('gap_between_shifts', 1)
+            self.max_consecutive_weekends = config.get('max_consecutive_weekends', 2)
+    
             # Initialize tracking dictionaries
             self.schedule = {}
             self.worker_assignments = {w['id']: set() for w in self.workers_data}
             self.worker_posts = {w['id']: set() for w in self.workers_data}
             self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
-
+            
             # Initialize worker targets
             for worker in self.workers_data:
                 if 'target_shifts' not in worker:
@@ -91,10 +95,10 @@ class Scheduler:
     def _validate_config(self, config):
         """
         Validate configuration parameters
-        
+    
         Args:
             config: Dictionary containing schedule configuration
-            
+        
         Raises:
             SchedulerError: If configuration is invalid
         """
@@ -107,7 +111,7 @@ class Scheduler:
         # Validate date range
         if not isinstance(config['start_date'], datetime) or not isinstance(config['end_date'], datetime):
             raise SchedulerError("Start date and end date must be datetime objects")
-            
+        
         if config['start_date'] > config['end_date']:
             raise SchedulerError("Start date must be before end date")
 
@@ -119,6 +123,16 @@ class Scheduler:
         if not config['workers_data'] or not isinstance(config['workers_data'], list):
             raise SchedulerError("workers_data must be a non-empty list")
 
+        # Validate gap_between_shifts if present
+        if 'gap_between_shifts' in config:
+            if not isinstance(config['gap_between_shifts'], int) or config['gap_between_shifts'] < 0:
+                raise SchedulerError("gap_between_shifts must be a non-negative integer")
+    
+        # Validate max_consecutive_weekends if present
+        if 'max_consecutive_weekends' in config:
+            if not isinstance(config['max_consecutive_weekends'], int) or config['max_consecutive_weekends'] <= 0:
+                raise SchedulerError("max_consecutive_weekends must be a positive integer")
+            
         # Validate each worker's data
         for worker in config['workers_data']:
             if not isinstance(worker, dict):
@@ -167,6 +181,8 @@ class Scheduler:
         logging.info(f"Number of shifts: {self.num_shifts}")
         logging.info(f"Number of workers: {len(self.workers_data)}")
         logging.info(f"Holidays: {[h.strftime('%Y-%m-%d') for h in self.holidays]}")
+        logging.info(f"Gap between shifts: {self.gap_between_shifts}")
+        logging.info(f"Max consecutive weekend/holiday shifts: {self.max_consecutive_weekends}")
         logging.info(f"Current datetime (Spain): {self.current_datetime}")
         logging.info(f"Current user: {self.current_user}")
 
