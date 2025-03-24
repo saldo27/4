@@ -700,40 +700,42 @@ class Scheduler:
                 # Try each worker in priority order
                 for worker in workers_by_priority:
                     worker_id = worker['id']
-            
+    
                     # Skip if worker is already assigned to this date
                     if worker_id in currently_assigned:
                         continue
-                
+        
                     # Skip if worker has reached their target
                     if worker_assignment_counts[worker_id] >= worker_targets[worker_id]:
                         continue
-                
+        
+                    # Initialize too_close outside the loop - ADD THIS LINE
+                    too_close = False
+        
                     # Inside the loop where we check minimum gap
                     for assigned_date in self.worker_assignments.get(worker_id, set()):
                         days_difference = abs((date - assigned_date).days)
-                    
-                        # We need at least gap_between_shifts days off, so (gap+1)+ days between assignments
-                        min_days_between = self.gap_between_shifts + 1
-                        if days_difference < min_days_between:
-                            too_close = True
-                            break
-                    
-                        # Special case: Friday-Monday (needs 3 days off, so 4+ days between)
-                        # This is handled by the general case above (< 3), but keeping for clarity
-                        if days_difference == 3:
-                            if ((date.weekday() == 0 and assigned_date.weekday() == 4) or 
-                                (date.weekday() == 4 and assigned_date.weekday() == 0)):
-                                too_close = True
-                                break
-                    
-                        # Check for 7 or 14 day patterns (same day of week)
-                        if days_difference == 7 or days_difference == 14:
-                            too_close = True
-                            break
-                
-                    if too_close:
-                        continue
+        
+                # We need at least gap_between_shifts days off, so (gap+1)+ days between assignments
+                min_days_between = self.gap_between_shifts + 1
+                if days_difference < min_days_between:
+                    too_close = True
+                    break
+        
+                # Special case: Friday-Monday (needs 3 days off, so 4+ days between)
+                if days_difference == 3:
+                    if ((date.weekday() == 0 and assigned_date.weekday() == 4) or 
+                        (date.weekday() == 4 and assigned_date.weekday() == 0)):
+                        too_close = True
+                        break
+        
+                # Check for 7 or 14 day patterns (same day of week)
+                if days_difference == 7 or days_difference == 14:
+                    too_close = True
+                    break
+        
+            if too_close:
+                continue
                 
                     # Check for worker incompatibilities
                     incompatible_with = worker.get('incompatible_with', [])
