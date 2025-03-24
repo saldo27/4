@@ -43,72 +43,177 @@ class WelcomeScreen(Screen):
 class SetupScreen(Screen):
     def __init__(self, **kwargs):
         super(SetupScreen, self).__init__(**kwargs)
-        self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
         
-        # Title
-        title = Label(text="Schedule Setup", font_size=24, size_hint_y=0.1)
-        self.layout.add_widget(title)
+        # Use a BoxLayout as the main container with padding
+        self.layout = BoxLayout(orientation='vertical', padding=20, spacing=15)
         
-        # Scroll view for form
+        # Title with some vertical space
+        title_layout = BoxLayout(size_hint_y=0.1, padding=(0, 10))
+        title = Label(text="Schedule Setup", font_size=24, bold=True)
+        title_layout.add_widget(title)
+        self.layout.add_widget(title_layout)
+        
+        # Use a ScrollView to make sure all content is accessible
         scroll_view = ScrollView()
-        form_layout = GridLayout(cols=2, spacing=10, padding=10, size_hint_y=None)
+        
+        # Main form layout - using more vertical space and maintaining proper spacing
+        form_layout = GridLayout(
+            cols=1,  # Changed to 1 column for better layout
+            spacing=15, 
+            padding=15, 
+            size_hint_y=None
+        )
         form_layout.bind(minimum_height=form_layout.setter('height'))
         
+        # Helper function to create a labeled input field
+        def create_labeled_input(label_text, input_widget, help_text=None):
+            field_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=70)
+            
+            # Label with left alignment
+            label = Label(
+                text=label_text,
+                halign='left',
+                valign='middle',
+                size_hint_y=0.4,
+                text_size=(500, None)  # Allow text wrapping
+            )
+            field_layout.add_widget(label)
+            
+            # Input in its own container for proper sizing
+            input_container = BoxLayout(size_hint_y=0.6)
+            input_container.add_widget(input_widget)
+            field_layout.add_widget(input_container)
+            
+            # Optional help text
+            if help_text:
+                help_label = Label(
+                    text=help_text,
+                    halign='left',
+                    valign='top',
+                    size_hint_y=0.3,
+                    text_size=(500, None),
+                    font_size='12sp',
+                    color=(0.7, 0.7, 0.7, 1)  # Light gray color
+                )
+                field_layout.height += 30  # Add space for help text
+                field_layout.add_widget(help_label)
+            
+            return field_layout
+        
+        # Create date fields
+        date_section = BoxLayout(orientation='horizontal', size_hint_y=None, height=70, spacing=10)
+        
         # Start date
-        form_layout.add_widget(Label(text='Start Date (YYYY-MM-DD):'))
-        self.start_date = TextInput(multiline=False)
-        form_layout.add_widget(self.start_date)
+        start_date_container = BoxLayout(orientation='vertical')
+        start_date_container.add_widget(Label(text='Start Date (YYYY-MM-DD):', halign='left', size_hint_y=0.4))
+        self.start_date = TextInput(multiline=False, size_hint_y=0.6)
+        start_date_container.add_widget(self.start_date)
+        date_section.add_widget(start_date_container)
         
         # End date
-        form_layout.add_widget(Label(text='End Date (YYYY-MM-DD):'))
-        self.end_date = TextInput(multiline=False)
-        form_layout.add_widget(self.end_date)
+        end_date_container = BoxLayout(orientation='vertical')
+        end_date_container.add_widget(Label(text='End Date (YYYY-MM-DD):', halign='left', size_hint_y=0.4))
+        self.end_date = TextInput(multiline=False, size_hint_y=0.6)
+        end_date_container.add_widget(self.end_date)
+        date_section.add_widget(end_date_container)
+        
+        form_layout.add_widget(date_section)
+        form_layout.add_widget(Widget(size_hint_y=None, height=10))  # Spacer
+        
+        # Number inputs section
+        numbers_section = GridLayout(cols=2, size_hint_y=None, height=160, spacing=10)
         
         # Number of workers
-        form_layout.add_widget(Label(text='Number of Workers:'))
-        self.num_workers = TextInput(multiline=False, input_filter='int')
-        form_layout.add_widget(self.num_workers)
+        workers_container = BoxLayout(orientation='vertical')
+        workers_container.add_widget(Label(text='Number of Workers:', halign='left', size_hint_y=0.4))
+        self.num_workers = TextInput(multiline=False, input_filter='int', size_hint_y=0.6)
+        workers_container.add_widget(self.num_workers)
+        numbers_section.add_widget(workers_container)
         
-        # Number of shifts per day
-        form_layout.add_widget(Label(text='Shifts per Day:'))
-        self.num_shifts = TextInput(multiline=False, input_filter='int')
-        form_layout.add_widget(self.num_shifts)
+        # Number of shifts
+        shifts_container = BoxLayout(orientation='vertical')
+        shifts_container.add_widget(Label(text='Shifts per Day:', halign='left', size_hint_y=0.4))
+        self.num_shifts = TextInput(multiline=False, input_filter='int', size_hint_y=0.6)
+        shifts_container.add_widget(self.num_shifts)
+        numbers_section.add_widget(shifts_container)
         
-        # NEW INPUT: gap between shifts
-        form_layout.add_widget(Label(text='Minimum Days Between Shifts:'))
-        self.gap_between_shifts = TextInput(multiline=False, input_filter='int', text='1')
-        form_layout.add_widget(self.gap_between_shifts)
+        # Gap between shifts
+        gap_container = BoxLayout(orientation='vertical')
+        gap_container.add_widget(Label(text='Min Days Between Shifts:', halign='left', size_hint_y=0.4))
+        self.gap_between_shifts = TextInput(multiline=False, input_filter='int', text='1', size_hint_y=0.6)
+        gap_container.add_widget(self.gap_between_shifts)
+        numbers_section.add_widget(gap_container)
         
-        # NEW INPUT: consecutive weekends/holidays allowed
-        form_layout.add_widget(Label(text='Max Consecutive Weekend/Holiday Shifts:'))
-        self.max_consecutive_weekends = TextInput(multiline=False, input_filter='int', text='2')
-        form_layout.add_widget(self.max_consecutive_weekends)
+        # Max consecutive weekends
+        weekends_container = BoxLayout(orientation='vertical')
+        weekends_container.add_widget(Label(text='Max Consecutive\nWeekend/Holiday Shifts:', halign='left', size_hint_y=0.4))
+        self.max_consecutive_weekends = TextInput(multiline=False, input_filter='int', text='2', size_hint_y=0.6)
+        weekends_container.add_widget(self.max_consecutive_weekends)
+        numbers_section.add_widget(weekends_container)
         
-        # Holidays
-        form_layout.add_widget(Label(text='Holidays (YYYY-MM-DD, comma separated):'))
-        self.holidays = TextInput(multiline=True, size_hint_y=None, height=100)
-        form_layout.add_widget(self.holidays)
+        form_layout.add_widget(numbers_section)
+        form_layout.add_widget(Widget(size_hint_y=None, height=10))  # Spacer
         
-        # Include form in scroll view
+        # Holidays - given more space with a clear label
+        holidays_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=150)
+        holidays_layout.add_widget(Label(
+            text='Holidays (YYYY-MM-DD, comma separated):',
+            halign='left',
+            valign='bottom',
+            size_hint_y=0.2
+        ))
+        
+        # TextInput with significant height for holidays
+        self.holidays = TextInput(multiline=True, size_hint_y=0.8)
+        holidays_layout.add_widget(self.holidays)
+        form_layout.add_widget(holidays_layout)
+        
+        # Add some explanation text
+        help_text = Label(
+            text="Tip: Enter holidays as dates separated by commas. Example: 2025-12-25, 2026-01-01",
+            halign='left',
+            valign='top',
+            size_hint_y=None,
+            height=30,
+            text_size=(800, None),
+            font_size='12sp',
+            color=(0.5, 0.5, 0.5, 1)  # Gray color
+        )
+        form_layout.add_widget(help_text)
+        
+        # Add form to scroll view
         scroll_view.add_widget(form_layout)
         self.layout.add_widget(scroll_view)
         
-        # Buttons
-        button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
+        # Buttons in a separate area at the bottom
+        button_section = BoxLayout(
+            orientation='horizontal', 
+            size_hint_y=0.12,
+            spacing=15,
+            padding=(0, 10)
+        )
         
-        self.save_button = Button(text='Save')
+        # Improved button styling
+        button_style = {
+            'font_size': '16sp',
+            'background_color': (0.3, 0.4, 0.8, 1)
+        }
+        
+        self.save_button = Button(text='Save Settings', **button_style)
         self.save_button.bind(on_press=self.save_config)
-        button_layout.add_widget(self.save_button)
+        button_section.add_widget(self.save_button)
         
-        self.load_button = Button(text='Load')
+        self.load_button = Button(text='Load Settings', **button_style)
         self.load_button.bind(on_press=self.load_config)
-        button_layout.add_widget(self.load_button)
+        button_section.add_widget(self.load_button)
         
-        self.next_button = Button(text='Next')
+        self.next_button = Button(text='Next →', **button_style)
         self.next_button.bind(on_press=self.next_screen)
-        button_layout.add_widget(self.next_button)
+        button_section.add_widget(self.next_button)
         
-        self.layout.add_widget(button_layout)
+        self.layout.add_widget(button_section)
+        
+        # Add the main layout to the screen
         self.add_widget(self.layout)
     
     def save_config(self, instance):
