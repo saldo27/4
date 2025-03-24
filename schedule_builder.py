@@ -28,6 +28,10 @@ class ScheduleBuilder:
         self.holidays = scheduler.holidays
         self.constraint_checker = scheduler.constraint_checker
 
+        # Add references to the configurable parameters
+        self.gap_between_shifts = scheduler.gap_between_shifts
+        self.max_consecutive_weekends = scheduler.max_consecutive_weekends
+
         # Add these lines:
         self.start_date = scheduler.start_date
         self.end_date = scheduler.end_date
@@ -40,7 +44,7 @@ class ScheduleBuilder:
         self.max_shifts_per_worker = scheduler.max_shifts_per_worker
 
         logging.info("ScheduleBuilder initialized")
-
+    
     # 2. Utility Methods
     def _parse_dates(self, date_str):
         """
@@ -209,40 +213,41 @@ class ScheduleBuilder:
     def _would_exceed_weekend_limit(self, worker_id, date):
         """
         Check if adding this date would exceed the worker's weekend limit
-    
+
         Args:
             worker_id: ID of the worker to check
             date: Date to potentially add
-        
+    
         Returns:
             bool: True if weekend limit would be exceeded, False otherwise
         """
         # Skip if not a weekend
         if not self.date_utils.is_weekend_day(date) and date not in self.holidays:
             return False
-    
+
         # Get worker data
         worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
         if not worker:
             return True
-    
+
         # Get weekend assignments for this worker
         weekend_dates = self.worker_weekends.get(worker_id, [])
-    
+
         # Calculate the maximum allowed weekend shifts based on work percentage
         work_percentage = worker.get('work_percentage', 100)
-        max_weekend_shifts = 3  # Default for full-time workers
+        max_weekend_shifts = self.max_consecutive_weekends  # Use the configurable parameter
         if work_percentage < 100:
-            max_weekend_shifts = max(1, int(3 * work_percentage / 100))
-    
+            # For part-time workers, adjust max consecutive weekends proportionally
+            max_weekend_shifts = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
+
         # Check if adding this date would exceed the limit for any 3-week period
         if date in weekend_dates:
             return False  # Already counted
-    
+
         # Add the date temporarily
         test_dates = weekend_dates + [date]
         test_dates.sort()
-    
+
         # Check for any 3-week period with too many weekend shifts
         three_weeks = timedelta(days=21)
         for i, start_date in enumerate(test_dates):
@@ -250,7 +255,7 @@ class ScheduleBuilder:
             count = sum(1 for d in test_dates[i:] if d <= end_date)
             if count > max_weekend_shifts:
                 return True
-    
+
         return False
 
     def _get_post_counts(self, worker_id):
@@ -355,60 +360,72 @@ class ScheduleBuilder:
     def _can_assign_worker(self, worker_id, date, post):
         """
         Check if a worker can be assigned to a specific date and post
-    
+
         Args:
             worker_id: ID of the worker to check
             date: The date to assign
             post: The post number to assign
-        
+    
         Returns:
             bool: True if the worker can be assigned, False otherwise
         """
         # Skip if already assigned to this date
         if worker_id in self.schedule.get(date, []):
             return False
-    
+
         # Get worker data
         worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
         if not worker:
             return False
-    
+
         # Check worker availability (days off)
         if self._is_worker_unavailable(worker_id, date):
             return False
-    
+
         # Check for incompatibilities
         if not self._check_incompatibility(worker_id, date):
             return False
-    
-        # Check minimum gap between shifts (always at least 2 days)
+
+        # Check minimum gap between shifts based on configurable parameter
         assignments = sorted(self.worker_assignments[worker_id])
+        min_days_between = self.gap_between_shifts + 1  # +1 because we need days_between > gap
+    
         for prev_date in assignments:
             days_between = abs((date - prev_date).days)
-            if days_between < 3:  # Absolute minimum gap
+            if days_between < min_days_between:  # Use configurable gap
                 return False
-    
+
+        # Special case: Friday-Monday check if gap is only 1 day
+        if self.gap_between_shifts == 1:
+            for prev_date in assignments:
+                days_between = abs((date - prev_date).days)
+                if days_between == 3:
+                    if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
+                        (date.weekday() == 4 and prev_date.weekday() == 0)):
+                        return False
+
         # Check weekend limits
         if self._would_exceed_weekend_limit(worker_id, date):
             return False
-    
+
         # Check if this worker can swap these assignments
         work_percentage = worker.get('work_percentage', 100)
-    
-        # Part-time workers need at least 4 days between shifts
+
+        # Part-time workers need more days between shifts
         if work_percentage < 100:
+            part_time_gap = max(3, self.gap_between_shifts + 2)  # At least 3 days, or gap+2
             for prev_date in assignments:
                 days_between = abs((date - prev_date).days)
-                if days_between < 4:
+                if days_between < part_time_gap:
                     return False
-    
+
         # Check for consecutive week patterns
         for prev_date in assignments:
             days_between = abs((date - prev_date).days)
             # Avoid same day of week in consecutive weeks when possible
             if days_between in [7, 14] and date.weekday() == prev_date.weekday():
                 return False
-    
+
         # If we've made it this far, the worker can be assigned
         return True
 
@@ -510,19 +527,19 @@ class ScheduleBuilder:
             assignments = sorted(list(self.worker_assignments[worker_id]))
             if assignments:
                 work_percentage = worker.get('work_percentage', 100)
-                # Minimum gap is higher for part-time workers
-                min_gap = 3 if work_percentage < 100 else 2
-            
+                # Use configurable gap parameter (minimum gap is higher for part-time workers)
+                min_gap = self.gap_between_shifts + 2 if work_percentage < 70 else self.gap_between_shifts + 1
+    
                 # Check if any previous assignment violates minimum gap
                 for prev_date in assignments:
                     days_between = abs((date - prev_date).days)
-                
+        
                     # Basic minimum gap check
                     if days_between < min_gap:
                         return float('-inf')
-                
-                    # Special rule for full-time workers: No Friday + Monday (3-day gap)
-                    if work_percentage >= 100 and relaxation_level == 0:
+        
+                    # Special rule for full-time workers with gap=1: No Friday + Monday (3-day gap)
+                    if work_percentage >= 100 and relaxation_level == 0 and self.gap_between_shifts == 1:
                         if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
                             (date.weekday() == 4 and prev_date.weekday() == 0)):
                             if days_between == 3:
@@ -1241,14 +1258,14 @@ class ScheduleBuilder:
             for worker in self.workers_data:
                 worker_id = worker['id']
                 work_percentage = worker.get('work_percentage', 100)
-            
-                # Calculate weekend limit based on work percentage
-                max_weekends = 3  # Default for full-time
+    
+                # Calculate weekend limit based on work percentage and configurable parameter
+                max_weekends = self.max_consecutive_weekends  # Use the configurable parameter
                 if work_percentage < 100:
-                    max_weekends = max(1, int(3 * work_percentage / 100))
-            
+                    max_weekends = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
+    
                 weekend_count = weekend_counts.get(worker_id, 0)
-            
+    
                 if weekend_count > max_weekends:
                     overloaded_workers.append((worker_id, weekend_count, max_weekends))
                 elif weekend_count < max_weekends:
