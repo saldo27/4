@@ -65,41 +65,6 @@ class SetupScreen(Screen):
         )
         form_layout.bind(minimum_height=form_layout.setter('height'))
         
-        # Helper function to create a labeled input field
-        def create_labeled_input(label_text, input_widget, help_text=None):
-            field_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=70)
-            
-            # Label with left alignment
-            label = Label(
-                text=label_text,
-                halign='left',
-                valign='middle',
-                size_hint_y=0.4,
-                text_size=(500, None)  # Allow text wrapping
-            )
-            field_layout.add_widget(label)
-            
-            # Input in its own container for proper sizing
-            input_container = BoxLayout(size_hint_y=0.6)
-            input_container.add_widget(input_widget)
-            field_layout.add_widget(input_container)
-            
-            # Optional help text
-            if help_text:
-                help_label = Label(
-                    text=help_text,
-                    halign='left',
-                    valign='top',
-                    size_hint_y=0.3,
-                    text_size=(500, None),
-                    font_size='12sp',
-                    color=(0.7, 0.7, 0.7, 1)  # Light gray color
-                )
-                field_layout.height += 30  # Add space for help text
-                field_layout.add_widget(help_label)
-            
-            return field_layout
-        
         # Create date fields
         date_section = BoxLayout(orientation='horizontal', size_hint_y=None, height=70, spacing=10)
         
@@ -118,7 +83,9 @@ class SetupScreen(Screen):
         date_section.add_widget(end_date_container)
         
         form_layout.add_widget(date_section)
-        form_layout.add_widget(Widget(size_hint_y=None, height=10))  # Spacer
+        
+        # Add spacing using a BoxLayout instead of Widget
+        form_layout.add_widget(BoxLayout(size_hint_y=None, height=10))
         
         # Number inputs section
         numbers_section = GridLayout(cols=2, size_hint_y=None, height=160, spacing=10)
@@ -152,7 +119,9 @@ class SetupScreen(Screen):
         numbers_section.add_widget(weekends_container)
         
         form_layout.add_widget(numbers_section)
-        form_layout.add_widget(Widget(size_hint_y=None, height=10))  # Spacer
+        
+        # Add spacing using a BoxLayout instead of Widget
+        form_layout.add_widget(BoxLayout(size_hint_y=None, height=10))
         
         # Holidays - given more space with a clear label
         holidays_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=150)
@@ -193,21 +162,16 @@ class SetupScreen(Screen):
             padding=(0, 10)
         )
         
-        # Improved button styling
-        button_style = {
-            'font_size': '16sp',
-            'background_color': (0.3, 0.4, 0.8, 1)
-        }
-        
-        self.save_button = Button(text='Save Settings', **button_style)
+        # Button styling (simplified to avoid potential issues)
+        self.save_button = Button(text='Save Settings', font_size='16sp')
         self.save_button.bind(on_press=self.save_config)
         button_section.add_widget(self.save_button)
         
-        self.load_button = Button(text='Load Settings', **button_style)
+        self.load_button = Button(text='Load Settings', font_size='16sp')
         self.load_button.bind(on_press=self.load_config)
         button_section.add_widget(self.load_button)
         
-        self.next_button = Button(text='Next →', **button_style)
+        self.next_button = Button(text='Next →', font_size='16sp')
         self.next_button.bind(on_press=self.next_screen)
         button_section.add_widget(self.next_button)
         
@@ -215,7 +179,8 @@ class SetupScreen(Screen):
         
         # Add the main layout to the screen
         self.add_widget(self.layout)
-    
+        
+    # Keep the existing methods unchanged
     def save_config(self, instance):
         try:
             start_date_str = self.start_date.text.strip()
@@ -344,7 +309,6 @@ class SetupScreen(Screen):
                      content=Label(text=message),
                      size_hint=(None, None), size=(400, 200))
         popup.open()
-        self.add_widget(layout)
 
     def parse_holidays(self, holidays_str):
         """Parse and validate holiday dates"""
