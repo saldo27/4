@@ -3,16 +3,20 @@ from datetime import datetime, timedelta
 class WorkerEligibilityTracker:
     """Helper class to track and manage worker eligibility for assignments"""
     
-    def __init__(self, workers_data, holidays):
+    def __init__(self, workers_data, holidays, gap_between_shifts=1, max_consecutive_weekends=2):
         """
         Initialize the worker eligibility tracker
     
         Args:
             workers_data: List of worker dictionaries
             holidays: List of holiday dates
+            gap_between_shifts: Minimum days between shifts (default: 1)
+            max_consecutive_weekends: Maximum consecutive weekend/holiday shifts allowed (default: 2)
         """
         self.workers_data = workers_data
         self.holidays = holidays
+        self.gap_between_shifts = gap_between_shifts
+        self.max_consecutive_weekends = max_consecutive_weekends
         self.last_worked_date = {w['id']: None for w in workers_data}
         self.total_assignments = {w['id']: 0 for w in workers_data}
         self.recent_weekends = {w['id']: [] for w in workers_data}
@@ -71,32 +75,22 @@ class WorkerEligibilityTracker:
         return eligible_workers
     
     def _check_basic_eligibility(self, worker_id, date, assigned_workers):
-        """
-        Quick checks for basic eligibility
-    
-        Args:
-            worker_id: ID of the worker to check
-            date: Date to check
-            assigned_workers: List of workers already assigned to this date
-        Returns:
-            bool: True if worker passes basic eligibility checks
-        """
         # Check if already assigned that day
         if worker_id in assigned_workers:
             return False
-        
-        # Check minimum gap (2 days)
+    
+        # Check minimum gap based on the configurable parameter
         last_worked = self.last_worked_date[worker_id]
         if last_worked:
             days_between = (date - last_worked).days
-        
-            # Basic minimum gap check - need at least 2 days off
-            if days_between < 3:
+    
+            # Basic minimum gap check - need configured gap days off
+            min_days_between = self.gap_between_shifts + 1  # +1 because we need days_between > gap
+            if days_between < min_days_between:
                 return False
-            
-            # We don't need a special Friday-Monday check since it's covered by the 3-day minimum,
-            # but we'll keep it for clarity in case requirements change
-            if days_between == 3:
+        
+            # Special case for Friday-Monday if gap is only 1 day
+            if self.gap_between_shifts == 1 and days_between == 3:
                 if ((date.weekday() == 0 and last_worked.weekday() == 4) or
                     (date.weekday() == 4 and last_worked.weekday() == 0)):
                     return False
@@ -105,7 +99,7 @@ class WorkerEligibilityTracker:
     
     def _check_weekend_constraints(self, worker_id, date):
         """
-        Check weekend-related constraints - ensuring max 3 weekend days in any 3-week period
+        Check weekend-related constraints - ensuring max consecutive weekend/holiday shifts
     
         Args:
             worker_id: ID of the worker to check
@@ -128,15 +122,15 @@ class WorkerEligibilityTracker:
         for check_date in all_weekend_dates:
             window_start = check_date - timedelta(days=10)  # 10 days before
             window_end = check_date + timedelta(days=10)    # 10 days after
-        
+    
             # Count weekend days in this window
             weekend_count = sum(
                 1 for d in all_weekend_dates
                 if window_start <= d <= window_end
-        )    
-        
-            if weekend_count > 3:
-                return False  # Exceeds limit
+            )    
+    
+            if weekend_count > self.max_consecutive_weekends:
+                return False  # Exceeds configured limit
     
         return True  # Within limit
     
