@@ -746,7 +746,7 @@ class Scheduler:
                         has_conflict = True
                         break
     
-                if has_conflict:
+            if has_conflict:
                 continue
                 
                 # This worker is a good candidate
