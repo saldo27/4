@@ -737,14 +737,14 @@ class Scheduler:
             if too_close:
                 continue
                 
-                    # Check for worker incompatibilities
-                    incompatible_with = worker.get('incompatible_with', [])
-                    if incompatible_with:
-                        has_conflict = False
-                        for incompatible_id in incompatible_with:
-                            if incompatible_id in currently_assigned:
-                                has_conflict = True
-                                break
+                # Check for worker incompatibilities
+                incompatible_with = worker.get('incompatible_with', [])
+                if incompatible_with:
+                    has_conflict = False
+                    for incompatible_id in incompatible_with:
+                        if incompatible_id in currently_assigned:
+                            has_conflict = True
+                            break
     
                         if has_conflict:
                             continue
