@@ -696,97 +696,97 @@ class Scheduler:
                 currently_assigned = []
                 if date in self.schedule:
                     currently_assigned = [w for w in self.schedule[date] if w is not None]
-        
+    
                 # Try each worker in priority order
                 for worker in workers_by_priority:
                     worker_id = worker['id']
-    
+
                     # Skip if worker is already assigned to this date
                     if worker_id in currently_assigned:
                         continue
-        
+    
                     # Skip if worker has reached their target
                     if worker_assignment_counts[worker_id] >= worker_targets[worker_id]:
                         continue
-        
-                    # Initialize too_close outside the loop - ADD THIS LINE
+    
+                    # Initialize too_close flag
                     too_close = False
-        
+    
                     # Inside the loop where we check minimum gap
                     for assigned_date in self.worker_assignments.get(worker_id, set()):
                         days_difference = abs((date - assigned_date).days)
-        
-                # We need at least gap_between_shifts days off, so (gap+1)+ days between assignments
-                min_days_between = self.gap_between_shifts + 1
-                if days_difference < min_days_between:
-                    too_close = True
-                    break
-        
-                # Special case: Friday-Monday (needs 3 days off, so 4+ days between)
-                if days_difference == 3:
-                    if ((date.weekday() == 0 and assigned_date.weekday() == 4) or 
-                        (date.weekday() == 4 and assigned_date.weekday() == 0)):
-                        too_close = True
-                        break
-        
-                # Check for 7 or 14 day patterns (same day of week)
-                if days_difference == 7 or days_difference == 14:
-                    too_close = True
-                    break
-        
-            if too_close:
-                continue
-                
-            # Check for worker incompatibilities
-            incompatible_with = worker.get('incompatible_with', [])
-            if incompatible_with:
-                has_conflict = False
-                for incompatible_id in incompatible_with:
-                    if incompatible_id in currently_assigned:
-                        has_conflict = True
-                        break
     
-                if has_conflict:
-                    continue
+                        # We need at least gap_between_shifts days off, so (gap+1)+ days between assignments
+                        min_days_between = self.gap_between_shifts + 1
+                        if days_difference < min_days_between:
+                            too_close = True
+                            break
+    
+                        # Special case: Friday-Monday (needs 3 days off, so 4+ days between)
+                        if days_difference == 3:
+                            if ((date.weekday() == 0 and assigned_date.weekday() == 4) or 
+                                (date.weekday() == 4 and assigned_date.weekday() == 0)):
+                                too_close = True
+                                break
+    
+                        # Check for 7 or 14 day patterns (same day of week)
+                        if days_difference == 7 or days_difference == 14:
+                            too_close = True
+                            break
+    
+                    if too_close:
+                        continue
+                    
+                    # Check for worker incompatibilities
+                    incompatible_with = worker.get('incompatible_with', [])
+                    if incompatible_with:
+                        has_conflict = False
+                        for incompatible_id in incompatible_with:
+                            if incompatible_id in currently_assigned:
+                                has_conflict = True
+                                break
+
+                        if has_conflict:
+                            continue
                 
-                # This worker is a good candidate
-                best_worker = worker
-                break
+                    # This worker is a good candidate
+                    best_worker = worker
+                    break
             
-            # If we found a suitable worker, assign them
-            if best_worker:
-                worker_id = best_worker['id']
+                # If we found a suitable worker, assign them
+                if best_worker:
+                    worker_id = best_worker['id']
             
-                # Make sure the schedule list exists and has the right size
-                if date not in self.schedule:
-                    self.schedule[date] = []
+                    # Make sure the schedule list exists and has the right size
+                    if date not in self.schedule:
+                        self.schedule[date] = []
                 
-                while len(self.schedule[date]) <= post:
-                    self.schedule[date].append(None)
+                    while len(self.schedule[date]) <= post:
+                        self.schedule[date].append(None)
                 
-                # Assign the worker
-                self.schedule[date][post] = worker_id
+                    # Assign the worker
+                    self.schedule[date][post] = worker_id
             
-                # Update tracking data
-                self._update_tracking_data(worker_id, date, post)
+                    # Update tracking data
+                    self._update_tracking_data(worker_id, date, post)
             
-                # Update the assignment count
-                worker_assignment_counts[worker_id] += 1
+                    # Update the assignment count
+                    worker_assignment_counts[worker_id] += 1
                 
-                # Update currently_assigned for this date
-                currently_assigned.append(worker_id)
+                    # Update currently_assigned for this date
+                    currently_assigned.append(worker_id)
             
-                # Log the assignment
-                logging.info(f"Assigned worker {worker_id} to {date.strftime('%d-%m-%Y')}, post {post}")
-            else:
-                # No suitable worker found, leave unassigned
-                if date not in self.schedule:
-                    self.schedule[date] = []
+                    # Log the assignment
+                    logging.info(f"Assigned worker {worker_id} to {date.strftime('%d-%m-%Y')}, post {post}")
+                else:
+                    # No suitable worker found, leave unassigned
+                    if date not in self.schedule:
+                        self.schedule[date] = []
                 
                     while len(self.schedule[date]) <= post:
                         self.schedule[date].append(None)
                     
-                logging.debug(f"No suitable worker found for {date.strftime('%d-%m-%Y')}, post {post}")
+                    logging.debug(f"No suitable worker found for {date.strftime('%d-%m-%Y')}, post {post}")
     
         # 4. Return the number of assignments made
         total_assigned = sum(worker_assignment_counts.values())
