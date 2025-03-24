@@ -1430,96 +1430,12 @@ class ScheduleBuilder:
     # 7. Backup and Restore Methods
 
     def _backup_best_schedule(self):
-        """Save a backup of the current best schedule"""
-        try:
-            # Debug: log what we're backing up
-            filled_count_before = sum(1 for date in self.schedule for shift in self.schedule[date] if shift is not None)
-            logging.info(f"Creating backup of schedule with {filled_count_before} filled shifts")
-        
-            # Create backups on both self and scheduler
-            # First on scheduler
-            self.scheduler.backup_schedule = {}
-            for date, shifts in self.schedule.items():
-                # Important: make sure we're copying the actual shifts, not just references
-                self.scheduler.backup_schedule[date] = [shift for shift in shifts]
-        
-            # Other scheduler backups
-            self.scheduler.backup_worker_assignments = {}
-            for worker_id, assignments in self.worker_assignments.items():
-                self.scheduler.backup_worker_assignments[worker_id] = set(assignments)
-        
-            # Add other backups that might be needed
-            self.scheduler.backup_worker_posts = {}
-            for worker_id in self.worker_assignments:
-                if worker_id in self.worker_posts:
-                    self.scheduler.backup_worker_posts[worker_id] = set(self.worker_posts[worker_id])
-                else:
-                    self.scheduler.backup_worker_posts[worker_id] = set()
-        
-            self.scheduler.backup_worker_weekdays = {}
-            for worker_id in self.worker_assignments:
-                if worker_id in self.worker_weekdays:
-                    self.scheduler.backup_worker_weekdays[worker_id] = dict(self.worker_weekdays[worker_id])
-                else:
-                    self.scheduler.backup_worker_weekdays[worker_id] = {}
-        
-            self.scheduler.backup_worker_weekends = {}
-            for worker_id in self.worker_assignments:
-                if worker_id in self.worker_weekends:
-                    self.scheduler.backup_worker_weekends[worker_id] = list(self.worker_weekends[worker_id])
-                else:
-                    self.scheduler.backup_worker_weekends[worker_id] = []
-        
-            # Now backup on self as well
-            self.backup_schedule = {}
-            for date, shifts in self.schedule.items():
-                self.backup_schedule[date] = [shift for shift in shifts]
-        
-            self.backup_worker_assignments = {}
-            for worker_id, assignments in self.worker_assignments.items():
-                self.backup_worker_assignments[worker_id] = set(assignments)
-        
-            # Verify backups were made correctly
-            filled_count_after = sum(1 for date in self.scheduler.backup_schedule 
-                                  for shift in self.scheduler.backup_schedule[date] if shift is not None)
-        
-            logging.info(f"Backed up current schedule with {filled_count_after} filled shifts")
-        except Exception as e:
-            logging.error(f"Error creating backup: {str(e)}", exc_info=True)
+        """Save a backup of the current best schedule by delegating to scheduler"""
+        return self.scheduler._backup_best_schedule()
     
     def _restore_best_schedule(self):
-        """Restore from backup of the best schedule"""
-        try:
-            if hasattr(self, 'backup_schedule') and self.backup_schedule:
-                # Use local backup first if available
-                self.schedule = {}
-                for date, shifts in self.backup_schedule.items():
-                    self.schedule[date] = shifts.copy() if shifts else []
-                
-                self.worker_assignments = {}
-                for worker_id, assignments in self.backup_worker_assignments.items():
-                    self.worker_assignments[worker_id] = assignments.copy()
-                
-                logging.info(f"Restored schedule from local backup with {sum(1 for shifts in self.schedule.values() for w in shifts if w is not None)} shifts")
-                return True
-            elif hasattr(self.scheduler, 'backup_schedule') and self.scheduler.backup_schedule:
-                # Fall back to scheduler's backup
-                self.schedule = {}
-                for date, shifts in self.scheduler.backup_schedule.items():
-                    self.schedule[date] = shifts.copy() if shifts else []
-                
-                self.worker_assignments = {}
-                for worker_id, assignments in self.scheduler.backup_worker_assignments.items():
-                    self.worker_assignments[worker_id] = assignments.copy()
-                
-                logging.info(f"Restored schedule from scheduler backup with {sum(1 for shifts in self.schedule.values() for w in shifts if w is not None)} shifts")
-                return True
-            else:
-                logging.warning("No backup schedule to restore")
-                return False
-        except Exception as e:
-            logging.error(f"Error restoring schedule: {str(e)}", exc_info=True)
-            return False
+        """Restore backup by delegating to scheduler"""
+        return self.scheduler._restore_best_schedule()
 
     def _save_current_as_best(self):
         """Save current schedule as the best"""
