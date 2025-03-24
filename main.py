@@ -70,14 +70,14 @@ class SetupScreen(Screen):
         
         # Start date
         start_date_container = BoxLayout(orientation='vertical')
-        start_date_container.add_widget(Label(text='Start Date (DD-MM-YYYY):', halign='left', size_hint_y=0.4))
+        start_date_container.add_widget(Label(text='Fecha de inicio (DD-MM-YYYY):', halign='left', size_hint_y=0.4))
         self.start_date = TextInput(multiline=False, size_hint_y=0.6)
         start_date_container.add_widget(self.start_date)
         date_section.add_widget(start_date_container)
         
         # End date
         end_date_container = BoxLayout(orientation='vertical')
-        end_date_container.add_widget(Label(text='End Date (DD-MM-YYYY):', halign='left', size_hint_y=0.4))
+        end_date_container.add_widget(Label(text='Fecha final(DD-MM-YYYY):', halign='left', size_hint_y=0.4))
         self.end_date = TextInput(multiline=False, size_hint_y=0.6)
         end_date_container.add_widget(self.end_date)
         date_section.add_widget(end_date_container)
@@ -92,28 +92,28 @@ class SetupScreen(Screen):
         
         # Number of workers
         workers_container = BoxLayout(orientation='vertical')
-        workers_container.add_widget(Label(text='Number of Workers:', halign='left', size_hint_y=0.4))
+        workers_container.add_widget(Label(text='Nº de médicos:', halign='left', size_hint_y=0.4))
         self.num_workers = TextInput(multiline=False, input_filter='int', size_hint_y=0.6)
         workers_container.add_widget(self.num_workers)
         numbers_section.add_widget(workers_container)
         
         # Number of shifts
         shifts_container = BoxLayout(orientation='vertical')
-        shifts_container.add_widget(Label(text='Shifts per Day:', halign='left', size_hint_y=0.4))
+        shifts_container.add_widget(Label(text='Guardias/día:', halign='left', size_hint_y=0.4))
         self.num_shifts = TextInput(multiline=False, input_filter='int', size_hint_y=0.6)
         shifts_container.add_widget(self.num_shifts)
         numbers_section.add_widget(shifts_container)
         
         # Gap between shifts
         gap_container = BoxLayout(orientation='vertical')
-        gap_container.add_widget(Label(text='Min Days Between Shifts:', halign='left', size_hint_y=0.4))
+        gap_container.add_widget(Label(text='Diferencia mínima entre guardias:', halign='left', size_hint_y=0.4))
         self.gap_between_shifts = TextInput(multiline=False, input_filter='int', text='1', size_hint_y=0.6)
         gap_container.add_widget(self.gap_between_shifts)
         numbers_section.add_widget(gap_container)
         
         # Max consecutive weekends
         weekends_container = BoxLayout(orientation='vertical')
-        weekends_container.add_widget(Label(text='Max Consecutive\nWeekend/Holiday Shifts:', halign='left', size_hint_y=0.4))
+        weekends_container.add_widget(Label(text='Máx Findes/Festivos consecutivos:', halign='left', size_hint_y=0.4))
         self.max_consecutive_weekends = TextInput(multiline=False, input_filter='int', text='2', size_hint_y=0.6)
         weekends_container.add_widget(self.max_consecutive_weekends)
         numbers_section.add_widget(weekends_container)
@@ -249,7 +249,7 @@ class SetupScreen(Screen):
             }
         
             # Notify user
-            self.show_message('Configuration saved successfully')
+            self.show_message('Todo correcto')
     
         except Exception as e:
             self.show_error(f"Error saving configuration: {str(e)}")
@@ -402,12 +402,12 @@ class WorkerDetailsScreen(Screen):
         self.form_layout.add_widget(self.worker_id)
 
         # Work Periods
-        self.form_layout.add_widget(Label(text='Work Periods (DD-MM-YYYY):'))
+        self.form_layout.add_widget(Label(text='Periodos de trabajo (DD-MM-YYYY):'))
         self.work_periods = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.work_periods)
 
         # Work Percentage
-        self.form_layout.add_widget(Label(text='Work Percentage:'))
+        self.form_layout.add_widget(Label(text='Porcentaje de jornada:'))
         self.work_percentage = TextInput(
             multiline=False,
             text='100',
@@ -418,18 +418,18 @@ class WorkerDetailsScreen(Screen):
         self.form_layout.add_widget(self.work_percentage)
 
         # Mandatory Days
-        self.form_layout.add_widget(Label(text='Mandatory Days:'))
+        self.form_layout.add_widget(Label(text='Guardias obligatorias:'))
         self.mandatory_days = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.mandatory_days)
 
         # Days Off
-        self.form_layout.add_widget(Label(text='Days Off:'))
+        self.form_layout.add_widget(Label(text='Días fuera:'))
         self.days_off = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.days_off)
 
         # Incompatibility Checkbox - Updated Layout
         checkbox_label = Label(
-            text='Incompatible Worker:',
+            text='Incompatible:',
             size_hint_y=None,
             height=40
         )
@@ -448,7 +448,7 @@ class WorkerDetailsScreen(Screen):
         )
         
         checkbox_text = Label(
-            text='Cannot work with other incompatible workers',
+            text='No puede coincidir con otro incompatible',
             size_hint_x=1,
             halign='left'
         )
@@ -464,17 +464,17 @@ class WorkerDetailsScreen(Screen):
         navigation_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
         
         # Previous Button
-        self.prev_btn = Button(text='Previous', size_hint_x=0.33)
+        self.prev_btn = Button(text='Previo', size_hint_x=0.33)
         self.prev_btn.bind(on_press=self.go_to_previous_worker)
         navigation_layout.add_widget(self.prev_btn)
         
         # Save Button
-        self.save_btn = Button(text='Save', size_hint_x=0.33)
+        self.save_btn = Button(text='Guardar', size_hint_x=0.33)
         self.save_btn.bind(on_press=self.save_worker_data)
         navigation_layout.add_widget(self.save_btn)
         
         # Next/Finish Button
-        self.next_btn = Button(text='Next', size_hint_x=0.33)
+        self.next_btn = Button(text='Siguiente', size_hint_x=0.33)
         self.next_btn.bind(on_press=self.go_to_next_worker)
         navigation_layout.add_widget(self.next_btn)
         
@@ -742,9 +742,9 @@ class WorkerDetailsScreen(Screen):
         self.prev_btn.disabled = (current_index == 0)
     
         if current_index == total_workers - 1:
-            self.next_btn.text = 'Finish'
+            self.next_btn.text = 'Finalizar'
         else:
-            self.next_btn.text = 'Next'
+            self.next_btn.text = 'Siguiente'
     
         # Load data for current worker index
         self.load_worker_data()
@@ -764,7 +764,7 @@ class CalendarViewScreen(Screen):
         self.month_label = Label(text='', size_hint_x=0.4)
         prev_month = Button(text='<', size_hint_x=0.2)
         next_month = Button(text='>', size_hint_x=0.2)
-        summary_btn = Button(text='Summary', size_hint_x=0.2)
+        summary_btn = Button(text='Summario', size_hint_x=0.2)
 
         prev_month.bind(on_press=self.previous_month)
         next_month.bind(on_press=self.next_month)
@@ -795,10 +795,10 @@ class CalendarViewScreen(Screen):
 
         # Export buttons
         button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
-        save_btn = Button(text='Save to JSON')
-        export_txt_btn = Button(text='Export to TXT')
-        export_pdf_btn = Button(text='Export to PDF')
-        reset_btn = Button(text='Reset Schedule')  # Changed from stats_btn
+        save_btn = Button(text='Guardar JSON')
+        export_txt_btn = Button(text='Exportar a TXT')
+        export_pdf_btn = Button(text='Exportar a PDF')
+        reset_btn = Button(text='Resetear')  # Changed from stats_btn
 
         save_btn.bind(on_press=self.save_schedule)
         export_txt_btn.bind(on_press=self.export_schedule)
