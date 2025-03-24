@@ -1113,7 +1113,7 @@ class CalendarViewScreen(Screen):
         try:
             schedule_data = {}
             for date, workers in self.schedule.items():
-                schedule_data[date.strftime('%Y-%m-%d')] = workers
+                schedule_data[date.strftime('%d-%m-%Y')] = workers
             
             with open('schedule.json', 'w') as f:
                 json.dump(schedule_data, f, indent=2)
