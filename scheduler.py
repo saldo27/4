@@ -1591,11 +1591,11 @@ class Scheduler:
                 date2 = assignments[i+1]  # Next chronological assignment
                 days_between = (date2 - date1).days
                     
-                    # Check for minimum gap based on configuration
-                    min_days_between = self.gap_between_shifts + 1
-                    if days_between < min_days_between:
-                        gap_issues += 1
-                        logging.warning(f"VALIDATION: Found gap violation for worker {worker_id}: only {days_between} days between {date1} and {date2}, minimum required: {min_days_between}")
+                # Check for minimum gap based on configuration
+                min_days_between = self.gap_between_shifts + 1
+                if days_between < min_days_between:
+                    gap_issues += 1
+                    logging.warning(f"VALIDATION: Found gap violation for worker {worker_id}: only {days_between} days between {date1} and {date2}, minimum required: {min_days_between}")
                     
                     # Remove the later assignment
                     post = self.schedule[date2].index(worker_id)
