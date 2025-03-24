@@ -284,6 +284,62 @@ class StatisticsCalculator:
             )
         }
 
+    def calculate_statistics(self):
+        """
+        Calculate comprehensive statistics for the entire schedule
+        Returns a dictionary with various statistics
+        """
+        stats = {
+            'workers': {},
+            'schedule': {},
+            'coverage': 0.0
+        }
+    
+        # Get schedule data
+        schedule = self.scheduler.schedule
+        worker_assignments = self.scheduler.worker_assignments
+    
+        # Calculate coverage
+        total_shifts = (self.scheduler.end_date - self.scheduler.start_date).days * self.scheduler.num_shifts
+        filled_shifts = sum(sum(1 for worker in shifts if worker is not None) for shifts in schedule.values())
+        coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
+        stats['coverage'] = round(coverage, 2)
+    
+        # Calculate stats for each worker
+        for worker in self.scheduler.workers_data:
+            worker_id = worker['id']
+            worker_name = worker.get('name', worker_id)
+        
+            # Get assignments for this worker
+            assignments = worker_assignments.get(worker_id, set())
+            total_shifts = len(assignments)
+        
+            # Get target shifts
+            target_shifts = worker.get('target_shifts', 0)
+        
+            # Calculate weekend shifts
+            weekend_shifts = sum(1 for date in assignments if date.weekday() >= 5 or date in self.scheduler.holidays)
+            weekday_shifts = total_shifts - weekend_shifts
+        
+            # Calculate post distribution
+            post_distribution = {}
+            for date in assignments:
+                if date in schedule and worker_id in schedule[date]:
+                    post = schedule[date].index(worker_id)
+                    post_distribution[post] = post_distribution.get(post, 0) + 1
+        
+            # Store worker stats
+            stats['workers'][worker_id] = {
+                'name': worker_name,
+                'total_shifts': total_shifts,
+                'target_shifts': target_shifts,
+                'weekend_shifts': weekend_shifts,
+                'weekday_shifts': weekday_shifts,
+                'post_distribution': post_distribution
+            }
+    
+        return stats
+
     def _calculate_worker_satisfaction(self):
         """Calculate worker satisfaction score based on preferences and constraints"""
         satisfaction_scores = []

@@ -918,30 +918,123 @@ class CalendarViewScreen(Screen):
                          size_hint=(None, None), size=(400, 200))
             popup.open()
 
-    def show_summary(scheduler):
-        """Display summary of the schedule"""
-        print("\nSchedule Summary:")
-        print("-" * 40)
-    
-        # Show existing summary statistics
-        for worker in scheduler.workers_data:
-            worker_id = worker['id']
-            total_shifts = len(scheduler.worker_assignments[worker_id])
-            weekend_shifts = len(scheduler.worker_weekends[worker_id])
-            print(f"Worker {worker_id}:")
-            print(f"  Total shifts: {total_shifts}")
-            print(f"  Weekend shifts: {weekend_shifts}")
-            print(f"  Work percentage: {worker.get('work_percentage', 100)}%")
-            print()
-    
-        # Export statistics
+    # Fix for the CalendarViewScreen Summary button
+
+    def show_summary(self):
+        """
+        Generate and show a summary of the current schedule
+        """
         try:
-            report_file = scheduler.export_stats(format='txt')
-            print(f"\nDetailed statistics have been exported to: {report_file}")
+            # Get the schedule data
+            if not hasattr(self, 'scheduler') or not self.scheduler:
+                messagebox.showerror("Error", "No schedule data available")
+                return
+        
+            # Create a summary to display and also prepare PDF data
+            stats = self.scheduler.stats.calculate_statistics()
+            summary_data = self.prepare_summary_data(stats)
+        
+            # Display summary in a dialog
+            self.display_summary_dialog(summary_data)
+        
+            # Ask if user wants a PDF
+            if messagebox.askyesno("Export PDF", "Do you want to export the summary as PDF?"):
+                self.export_summary_pdf(summary_data)
+            
         except Exception as e:
-            print(f"\nWarning: Could not export statistics: {str(e)}")
-        finally:
-            print("\nSummary display completed.")
+            logging.error(f"Failed to show summary: {str(e)}", exc_info=True)
+            messagebox.showerror("Error", f"Failed to show summary: {str(e)}")
+
+    def prepare_summary_data(self, stats):
+        """
+        Prepare summary data in a structured way for display and PDF export
+        """
+        summary_data = {
+            'workers': {},
+            'totals': {
+                'total_shifts': 0,
+                'filled_shifts': 0,
+                'weekend_shifts': 0,
+                'last_post_shifts': 0
+            }
+        }
+    
+        # Process worker statistics
+        for worker_id, worker_stats in stats.get('workers', {}).items():
+            # Safeguard against None values
+            worker_name = worker_stats.get('name', worker_id) or worker_id
+            total_shifts = worker_stats.get('total_shifts', 0) or 0
+            weekend_shifts = worker_stats.get('weekend_shifts', 0) or 0
+            weekday_shifts = worker_stats.get('weekday_shifts', 0) or 0
+            target_shifts = worker_stats.get('target_shifts', 0) or 0
+        
+            # Get post distribution (especially last post)
+            post_distribution = worker_stats.get('post_distribution', {})
+            last_post = max(post_distribution.keys()) if post_distribution else 0
+            last_post_shifts = post_distribution.get(last_post, 0) or 0
+        
+            # Store worker data
+            summary_data['workers'][worker_id] = {
+                'name': worker_name,
+                'total_shifts': total_shifts,
+                'weekend_shifts': weekend_shifts,
+                'weekday_shifts': weekday_shifts,
+                'target_shifts': target_shifts,
+                'last_post_shifts': last_post_shifts,
+                'post_distribution': post_distribution
+            }
+        
+            # Update totals
+            summary_data['totals']['total_shifts'] += total_shifts
+            summary_data['totals']['filled_shifts'] += total_shifts
+            summary_data['totals']['weekend_shifts'] += weekend_shifts
+            summary_data['totals']['last_post_shifts'] += last_post_shifts
+    
+        return summary_data
+
+    def display_summary_dialog(self, summary_data):
+        """
+        Display the summary data in a dialog window
+        """
+        # Create a new top-level window
+        summary_window = tk.Toplevel(self.master)
+        summary_window.title("Schedule Summary")
+        summary_window.geometry("800x600")
+    
+        # Create a frame with scrollbar
+        frame = tk.Frame(summary_window)
+        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+        # Create scrollable text widget
+        text = tk.Text(frame, wrap=tk.WORD, padx=10, pady=10)
+        scrollbar = tk.Scrollbar(frame, command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    
+        # Insert summary text
+        text.insert(tk.END, "SCHEDULE SUMMARY\n\n")
+        text.insert(tk.END, f"Total Workers: {len(summary_data['workers'])}\n")
+        text.insert(tk.END, f"Total Shifts: {summary_data['totals']['total_shifts']}\n")
+        text.insert(tk.END, f"Weekend Shifts: {summary_data['totals']['weekend_shifts']}\n")
+        text.insert(tk.END, f"Last Post Shifts: {summary_data['totals']['last_post_shifts']}\n\n")
+    
+        # Worker details
+        text.insert(tk.END, "WORKER DETAILS\n\n")
+    
+        # Sort workers by name
+        sorted_workers = sorted(summary_data['workers'].items(), 
+                               key=lambda x: x[1]['name'])
+    
+        for worker_id, data in sorted_workers:
+            text.insert(tk.END, f"Worker: {data['name']} ({worker_id})\n")
+            text.insert(tk.END, f"  Total Shifts: {data['total_shifts']} (Target: {data['target_shifts']})\n")
+            text.insert(tk.END, f"  Weekend Shifts: {data['weekend_shifts']}\n")
+            text.insert(tk.END, f"  Last Post Shifts: {data['last_post_shifts']}\n")
+            text.insert(tk.END, "\n")
+    
+        # Make the text widget read-only
+        text.configure(state=tk.DISABLED)
 
     def show_month_summary(self, instance):
         """Display a summary of the current month's schedule"""
@@ -1074,6 +1167,125 @@ class CalendarViewScreen(Screen):
                          content=Label(text=f'Failed to show summary: {str(e)}'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
+
+    def export_summary_pdf(self, summary_data):
+        """
+        Export the summary data to a PDF file
+        """
+        try:
+            # Try to import required libraries
+            import reportlab
+            from reportlab.lib.pagesizes import letter
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib import colors
+            from datetime import datetime
+            import os
+        
+        except ImportError:
+            messagebox.showerror("Error", "ReportLab is not installed. Please install it with: pip install reportlab")
+            return
+    
+        # Ask for location to save
+        from tkinter import filedialog
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("PDF files", "*.pdf")],
+            title="Save Summary PDF"
+        )
+    
+        if not filename:  # User canceled
+            return
+    
+        # Create the PDF document
+        doc = SimpleDocTemplate(filename, pagesize=letter)
+        styles = getSampleStyleSheet()
+        elements = []
+    
+        # Add title
+        title_style = styles['Heading1']
+        title = Paragraph("Schedule Summary", title_style)
+        elements.append(title)
+        elements.append(Spacer(1, 12))
+    
+        # Add date
+        date_style = styles['Normal']
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        date_paragraph = Paragraph(f"Generated on: {current_date}", date_style)
+        elements.append(date_paragraph)
+        elements.append(Spacer(1, 12))
+    
+        # Add summary statistics
+        stats_style = styles['Heading2']
+        stats_title = Paragraph("Overall Statistics", stats_style)
+        elements.append(stats_title)
+        elements.append(Spacer(1, 6))
+    
+        stats_data = [
+            ["Total Workers", str(len(summary_data['workers']))],
+            ["Total Shifts", str(summary_data['totals']['total_shifts'])],
+            ["Weekend Shifts", str(summary_data['totals']['weekend_shifts'])],
+            ["Last Post Shifts", str(summary_data['totals']['last_post_shifts'])]
+        ]
+    
+        stats_table = Table(stats_data, colWidths=[200, 100])
+        stats_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(stats_table)
+        elements.append(Spacer(1, 20))
+    
+        # Add worker details
+        workers_title = Paragraph("Worker Details", stats_style)
+        elements.append(workers_title)
+        elements.append(Spacer(1, 6))
+    
+        # Create table header
+        worker_data = [["Worker", "Total Shifts", "Target", "Weekend Shifts", "Last Post Shifts"]]
+    
+        # Sort workers by name
+        sorted_workers = sorted(summary_data['workers'].items(), 
+                           key=lambda x: x[1]['name'])
+    
+        # Add worker rows
+        for worker_id, data in sorted_workers:
+            worker_data.append([
+                data['name'],
+                str(data['total_shifts']),
+                str(data['target_shifts']),
+                str(data['weekend_shifts']),
+                str(data['last_post_shifts'])
+            ])
+    
+        # Create the table
+        worker_table = Table(worker_data, colWidths=[150, 80, 80, 100, 100])
+        worker_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(worker_table)
+    
+        # Build the PDF
+        doc.build(elements)
+    
+        # Show success message
+        messagebox.showinfo("Success", f"Summary exported to {filename}")
+    
+        # Try to open the PDF
+        try:
+            import subprocess, platform, os
+            if platform.system() == 'Windows':
+                os.startfile(filename)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.run(['open', filename])
+            else:  # Linux
+                subprocess.run(['xdg-open', filename])
+        except:
+            pass  # Silently fail if we can't open the PDF
+    
 
     def export_to_pdf(self, instance):
         try:
