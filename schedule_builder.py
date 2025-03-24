@@ -110,12 +110,12 @@ class ScheduleBuilder:
             return True
     
         # Debug log
-        logging.debug(f"Checking availability for worker {worker_id} on {date.strftime('%Y-%m-%d')}")
+        logging.debug(f"Checking availability for worker {worker_id} on {date.strftime('%d-%m-%Y')}")
 
         # Check work periods - if work_periods is empty, worker is available for all dates
         work_periods = worker.get('work_periods', '').strip()
         if work_periods:
-            date_str = date.strftime('%Y-%m-%d')
+            date_str = date.strftime('%d-%m-%Y')
             if 'work_dates' in worker:
                 # If we've precomputed work dates, use those
                 if date_str not in worker.get('work_dates', set()):
@@ -147,7 +147,7 @@ class ScheduleBuilder:
                     logging.debug(f"Worker {worker_id} not available - date in days off")
                     return True
 
-        logging.debug(f"Worker {worker_id} is available on {date.strftime('%Y-%m-%d')}")
+        logging.debug(f"Worker {worker_id} is available on {date.strftime('%d-%m-%Y')}")
         return False
 
     def _check_incompatibility(self, worker_id, date):
@@ -181,7 +181,7 @@ class ScheduleBuilder:
         # Check if any incompatible workers are already assigned to this date
         for incompatible_id in incompatible_with:
             if incompatible_id in currently_assigned:
-                logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} already assigned on {date.strftime('%Y-%m-%d')}")
+                logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} already assigned on {date.strftime('%d-%m-%Y')}")
                 return False
     
         return True
@@ -328,7 +328,7 @@ class ScheduleBuilder:
                     # Check if they are incompatible
                     if self._are_workers_incompatible(worker1_id, worker2_id):
                         violations_found += 1
-                        logging.warning(f"Final verification found incompatibility violation: {worker1_id} and {worker2_id} on {date.strftime('%Y-%m-%d')}")
+                        logging.warning(f"Final verification found incompatibility violation: {worker1_id} and {worker2_id} on {date.strftime('%d-%m-%Y')}")
                     
                         # Find their positions
                         post1 = self.schedule[date].index(worker1_id)
@@ -344,13 +344,13 @@ class ScheduleBuilder:
                             self.worker_assignments[worker1_id].remove(date)
                             self._update_worker_stats(worker1_id, date, removing=True)
                             violations_fixed += 1
-                            logging.info(f"Removed worker {worker1_id} from {date.strftime('%Y-%m-%d')} to fix incompatibility")
+                            logging.info(f"Removed worker {worker1_id} from {date.strftime('%d-%m-%Y')} to fix incompatibility")
                         else:
                             self.schedule[date][post2] = None
                             self.worker_assignments[worker2_id].remove(date)
                             self._update_worker_stats(worker2_id, date, removing=True)
                             violations_fixed += 1
-                            logging.info(f"Removed worker {worker2_id} from {date.strftime('%Y-%m-%d')} to fix incompatibility")
+                            logging.info(f"Removed worker {worker2_id} from {date.strftime('%d-%m-%Y')} to fix incompatibility")
     
         logging.info(f"Final verification: found {violations_found} violations, fixed {violations_fixed}")
         return violations_fixed > 0
@@ -758,7 +758,7 @@ class ScheduleBuilder:
     
     def _assign_day_shifts_with_relaxation(self, date, attempt_number=0, relaxation_level=0):
         """Assign shifts for a given date with optional constraint relaxation"""
-        logging.debug(f"Assigning shifts for {date.strftime('%Y-%m-%d')} (relaxation level: {relaxation_level})")
+        logging.debug(f"Assigning shifts for {date.strftime('%d-%m-%Y')} (relaxation level: {relaxation_level})")
     
         if date not in self.schedule:
             self.schedule[date] = []
@@ -766,7 +766,7 @@ class ScheduleBuilder:
         remaining_shifts = self.num_shifts - len(self.schedule[date])
     
         # Debug log to see how many shifts need to be assigned
-        logging.debug(f"Need to assign {remaining_shifts} shifts for {date.strftime('%Y-%m-%d')}")
+        logging.debug(f"Need to assign {remaining_shifts} shifts for {date.strftime('%d-%m-%Y')}")
 
         for post in range(len(self.schedule[date]), self.num_shifts):
             # Try each relaxation level until we succeed or run out of options
@@ -774,7 +774,7 @@ class ScheduleBuilder:
                 candidates = self._get_candidates(date, post, relax_level)
             
                 # Debug log to see how many candidates were found
-                logging.debug(f"Found {len(candidates)} candidates for {date.strftime('%Y-%m-%d')}, post {post}, relax level {relax_level}")
+                logging.debug(f"Found {len(candidates)} candidates for {date.strftime('%d-%m-%Y')}, post {post}, relax level {relax_level}")
             
                 if candidates:
                     # Log each candidate for debugging
@@ -800,7 +800,7 @@ class ScheduleBuilder:
                     self.worker_assignments[worker_id].add(date)
                     self.scheduler._update_tracking_data(worker_id, date, post)
                 
-                    logging.info(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')}, post {post}")
+                    logging.info(f"Assigned worker {worker_id} to {date.strftime('%d-%m-%Y')}, post {post}")
                     break  # Success at this relaxation level
             else:
                 # If we've tried all relaxation levels and still failed, leave shift unfilled
@@ -818,13 +818,13 @@ class ScheduleBuilder:
         """
         candidates = []
     
-        logging.debug(f"Looking for candidates for {date.strftime('%Y-%m-%d')}, post {post}")
+        logging.debug(f"Looking for candidates for {date.strftime('%d-%m-%Y')}, post {post}")
     
         for worker in self.workers_data:
             worker_id = worker['id']
         
             # Debug log for each worker check
-            logging.debug(f"Checking worker {worker_id} for {date.strftime('%Y-%m-%d')}")
+            logging.debug(f"Checking worker {worker_id} for {date.strftime('%d-%m-%Y')}")
         
             # Skip if max shifts reached
             if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
@@ -833,7 +833,7 @@ class ScheduleBuilder:
 
             # Skip if already assigned to this date
             if worker_id in self.schedule.get(date, []):
-                logging.debug(f"Worker {worker_id} skipped - already assigned to {date.strftime('%Y-%m-%d')}")
+                logging.debug(f"Worker {worker_id} skipped - already assigned to {date.strftime('%d-%m-%Y')}")
                 continue
         
             # CRITICAL FIX: We'll relax all constraints for the first assignments
@@ -1040,7 +1040,7 @@ class ScheduleBuilder:
                         self.data_manager._update_tracking_data(worker_id, date, post)
                 
                         changes_made += 1
-                        logging.info(f"Balanced workload: Moved shift on {date.strftime('%Y-%m-%d')} post {post} "
+                        logging.info(f"Balanced workload: Moved shift on {date.strftime('%d-%m-%Y')} post {post} "
                                     f"from worker {over_worker_id} to worker {under_worker_id}")
                 
                         # Update counts
@@ -1197,8 +1197,8 @@ class ScheduleBuilder:
                             self.worker_assignments[worker_id].add(other_date)
                             self.data_manager._update_tracking_data(worker_id, date, post)
                         
-                            logging.info(f"Improved post rotation: Moved worker {worker_id} from {date.strftime('%Y-%m-%d')} "
-                                        f"post {over_post} to {other_date.strftime('%Y-%m-%d')} post {under_post}")
+                            logging.info(f"Improved post rotation: Moved worker {worker_id} from {date.strftime('%d-%m-%Y')} "
+                                        f"post {over_post} to {other_date.strftime('%d-%m-%Y')} post {under_post}")
                         
                             fixes_made += 1
                             break
@@ -1317,7 +1317,7 @@ class ScheduleBuilder:
                             weekend_counts[under_worker_id] += 1
                         
                             changes_made += 1
-                            logging.info(f"Improved weekend distribution: Moved weekend shift on {weekend_date.strftime('%Y-%m-%d')} "
+                            logging.info(f"Improved weekend distribution: Moved weekend shift on {weekend_date.strftime('%d-%m-%Y')} "
                                         f"from worker {over_worker_id} to worker {under_worker_id}")
                         
                             # Update worker lists
