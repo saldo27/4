@@ -80,7 +80,9 @@ class Scheduler:
             self.schedule_builder = ScheduleBuilder(self)
             self.eligibility_tracker = WorkerEligibilityTracker(
                 self.workers_data,
-                self.holidays
+                self.holidays,
+                self.gap_between_shifts,
+                self.max_consecutive_weekends
             )
 
             # Calculate targets before proceeding
@@ -657,7 +659,6 @@ class Scheduler:
         """
         Simple method to directly assign workers to shifts based on targets and ensuring
         all constraints are properly respected:
-        - Minimum 2 days off between shifts (3+ days between assignments)
         - Special Friday-Monday constraint
         - 7/14 day pattern avoidance
         - Worker incompatibility checking
@@ -708,13 +709,13 @@ class Scheduler:
                     if worker_assignment_counts[worker_id] >= worker_targets[worker_id]:
                         continue
                 
-                    # IMPORTANT: Check for minimum gap of 2 days off (3+ days between assignments)
-                    too_close = False
+                    # Inside the loop where we check minimum gap
                     for assigned_date in self.worker_assignments.get(worker_id, set()):
                         days_difference = abs((date - assigned_date).days)
                     
-                        # We need at least 2 days off, so 3+ days between assignments
-                        if days_difference < 3:  # THIS IS THE KEY CHANGE
+                        # We need at least gap_between_shifts days off, so (gap+1)+ days between assignments
+                        min_days_between = self.gap_between_shifts + 1
+                        if days_difference < min_days_between:
                             too_close = True
                             break
                     
@@ -906,15 +907,15 @@ class Scheduler:
                     
                         days_between = abs((date2 - date1).days)
                     
-                        # Check for insufficient rest periods (less than 2 days)
-                        if 0 < days_between < 2:
+                        # When checking for insufficient rest periods
+                        if 0 < days_between < self.gap_between_shifts + 1:
                             violations.append({
                                 'type': 'min_rest_days',
                                 'worker_id': worker_id,
                                 'date1': date1,
                                 'date2': date2,
                                 'days_between': days_between,
-                                'min_required': 2
+                                'min_required': self.gap_between_shifts
                             })
                     
                         # Check for Friday-Monday assignments (special case requiring 3 days)
@@ -986,7 +987,6 @@ class Scheduler:
         Returns True if assignment is allowed, False otherwise.        
     
         Enforces:
-        - Minimum 2 days between shifts in general
         - Special case: No Friday-Monday assignments (require 3 days gap)
         - No 7 or 14 day patterns
         - Worker incompatibility constraints
@@ -1005,19 +1005,23 @@ class Scheduler:
             for assigned_date in self.worker_assignments.get(worker_id, set()):
                 days_difference = abs((date - assigned_date).days)
         
-                # Basic minimum gap check (2 days)
-                if days_difference < 3:  # Changed to 3 for minimum 3-day gap
-                    logging.debug(f"Worker {worker_id} cannot be assigned on {date} due to insufficient rest (needs at least 3 days)")
-                    return False
-                
-                # Special case: Friday-Monday check (requires 3 days gap)
-                # Check if either date is Friday and the other is Monday
-                if days_difference == 3:
-                    # Check if one date is Friday (weekday 4) and the other is Monday (weekday 0)
-                    if ((assigned_date.weekday() == 4 and date.weekday() == 0) or 
-                        (assigned_date.weekday() == 0 and date.weekday() == 4)):
-                        logging.debug(f"Worker {worker_id} cannot be assigned Friday-Monday (needs at least 3 days gap)")
+                # Check past assignments for minimum gap and patterns
+                for assigned_date in self.worker_assignments.get(worker_id, set()):
+                    days_difference = abs((date - assigned_date).days)
+    
+                    # Basic minimum gap check based on configurable parameter
+                    min_days_between = self.gap_between_shifts + 1  # +1 because we need days_difference > gap
+                    if days_difference < min_days_between:
+                        logging.debug(f"Worker {worker_id} cannot be assigned on {date} due to insufficient rest (needs at least {min_days_between} days)")
                         return False
+        
+                    # Special case for Friday-Monday if gap is only 1 day
+                    if self.gap_between_shifts == 1 and days_difference == 3:
+                        # Check if one date is Friday (weekday 4) and the other is Monday (weekday 0)
+                        if ((assigned_date.weekday() == 4 and date.weekday() == 0) or 
+                            (assigned_date.weekday() == 0 and date.weekday() == 4)):
+                            logging.debug(f"Worker {worker_id} cannot be assigned Friday-Monday (needs at least {self.gap_between_shifts + 2} days gap)")
+                            return False
             
                 # Check 7 or 14 day patterns (to avoid same day of week assignments)
                 if days_difference == 7 or days_difference == 14:
@@ -1576,7 +1580,7 @@ class Scheduler:
                         fixes_made += 1
                         logging.warning(f"VALIDATION: Removed worker {worker_to_remove} from {date} to fix incompatibility")
 
-        # 2. Check for minimum gap violations (minimum 3-day gap)
+        # 2. Check for minimum gap violations
         for worker_id in self.worker_assignments:
             # Get all dates this worker is assigned to
             assignments = sorted(list(self.worker_assignments[worker_id]))
@@ -1586,12 +1590,13 @@ class Scheduler:
                 date1 = assignments[i]
                 date2 = assignments[i+1]  # Next chronological assignment
                 days_between = (date2 - date1).days
-            
-                # Check for minimum 3-day gap (always require 3+ days between shifts)
-                if days_between < 3:
-                    gap_issues += 1
-                    logging.warning(f"VALIDATION: Found gap violation for worker {worker_id}: only {days_between} days between {date1} and {date2}")
-                
+                    
+                    # Check for minimum gap based on configuration
+                    min_days_between = self.gap_between_shifts + 1
+                    if days_between < min_days_between:
+                        gap_issues += 1
+                        logging.warning(f"VALIDATION: Found gap violation for worker {worker_id}: only {days_between} days between {date1} and {date2}, minimum required: {min_days_between}")
+                    
                     # Remove the later assignment
                     post = self.schedule[date2].index(worker_id)
                     self.schedule[date2][post] = None
