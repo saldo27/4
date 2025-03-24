@@ -200,7 +200,7 @@ class WorkerEligibilityTracker:
             self.mark_data_dirty()
         
             # Log the update
-            logging.debug(f"Updated tracking data for {worker_id} on {date.strftime('%Y-%m-%d')}, post {post}")
+            logging.debug(f"Updated tracking data for {worker_id} on {date.strftime('%d-%m-%Y')}, post {post}")
         
         except Exception as e:
             logging.error(f"Error in _update_tracking_data for worker {worker_id}: {str(e)}", exc_info=True)
@@ -264,7 +264,7 @@ class WorkerEligibilityTracker:
             self.mark_data_dirty()
         
             # Log the update
-            logging.debug(f"Removed tracking data for {worker_id} from {date.strftime('%Y-%m-%d')}, post {post}")
+            logging.debug(f"Removed tracking data for {worker_id} from {date.strftime('%d-%m-%Y')}, post {post}")
         
         except Exception as e:
             logging.error(f"Error in _remove_tracking_data for worker {worker_id}: {str(e)}", exc_info=True)
