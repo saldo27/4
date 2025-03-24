@@ -980,18 +980,18 @@ class Scheduler:
             worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
             if not worker:
                 return False
-        
+    
             # Check if worker is already assigned on this date
             if worker_id in self.worker_assignments and date in self.worker_assignments[worker_id]:
                 return False
-        
+    
             # Check past assignments for minimum gap and patterns
             for assigned_date in self.worker_assignments.get(worker_id, set()):
                 days_difference = abs((date - assigned_date).days)
-            
+        
                 # Basic minimum gap check (2 days)
-                if days_difference < 2:
-                    logging.debug(f"Worker {worker_id} cannot be assigned on {date} due to insufficient rest (needs at least 2 days)")
+                if days_difference < 3:  # Changed to 3 for minimum 3-day gap
+                    logging.debug(f"Worker {worker_id} cannot be assigned on {date} due to insufficient rest (needs at least 3 days)")
                     return False
                 
                 # Special case: Friday-Monday check (requires 3 days gap)
@@ -1017,6 +1017,10 @@ class Scheduler:
                         logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} on {date}")
                         return False
         
+            # Use the schedule_builder's incompatibility check method
+            if not self.schedule_builder._check_incompatibility(worker_id, date):
+                return False
+    
             # All checks passed
             return True
         except Exception as e:
@@ -1505,8 +1509,11 @@ class Scheduler:
                     self.worker_weekends = best_worker_weekends
                     # Don't try to restore constraint_skips here since it might be the source of the error
 
-            # Final validation to ensure all constraints are met
-            self.validate_and_fix_final_schedule()
+            # Final incompatibility verification check
+            if filled_count > 0:
+                self.schedule_builder._verify_no_incompatibilities()
+
+            return True
         
         except Exception as e:
             logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
@@ -1522,6 +1529,7 @@ class Scheduler:
         # Count issues
         incompatibility_issues = 0
         gap_issues = 0
+        other_issues = 0
         fixes_made = 0
     
         # 1. Check for incompatibilities
@@ -1532,21 +1540,8 @@ class Scheduler:
             # Check each pair of workers for incompatibility
             for i, worker1_id in enumerate(workers_assigned):
                 for worker2_id in workers_assigned[i+1:]:
-                    # Get worker data
-                    worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
-                    worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
-                
-                    if not worker1 or not worker2:
-                        continue
-                
-                    # Check incompatibility lists from both sides
-                    is_incompatible = False
-                    if 'incompatible_with' in worker1 and worker2_id in worker1['incompatible_with']:
-                        is_incompatible = True
-                    if 'incompatible_with' in worker2 and worker1_id in worker2['incompatible_with']:
-                        is_incompatible = True
-                
-                    if is_incompatible:
+                    # Check if workers are incompatible using the schedule_builder method
+                    if self.schedule_builder._are_workers_incompatible(worker1_id, worker2_id):
                         incompatibility_issues += 1
                         logging.warning(f"VALIDATION: Found incompatible workers {worker1_id} and {worker2_id} on {date}")
                     
@@ -1564,34 +1559,36 @@ class Scheduler:
                     
                         fixes_made += 1
                         logging.warning(f"VALIDATION: Removed worker {worker_to_remove} from {date} to fix incompatibility")
-    
-        # 2. Check for minimum gap violations
+
+        # 2. Check for minimum gap violations (minimum 3-day gap)
         for worker_id in self.worker_assignments:
             # Get all dates this worker is assigned to
             assignments = sorted(list(self.worker_assignments[worker_id]))
         
             # Check pairs of dates for gap violations
             for i in range(len(assignments) - 1):
-                for j in range(i + 1, len(assignments)):
-                    date1 = assignments[i]
-                    date2 = assignments[j]
-                    days_between = abs((date2 - date1).days)
+                date1 = assignments[i]
+                date2 = assignments[i+1]  # Next chronological assignment
+                days_between = (date2 - date1).days
+            
+                # Check for minimum 3-day gap (always require 3+ days between shifts)
+                if days_between < 3:
+                    gap_issues += 1
+                    logging.warning(f"VALIDATION: Found gap violation for worker {worker_id}: only {days_between} days between {date1} and {date2}")
                 
-                    # Check for minimum 3-day gap (2 days off between shifts)
-                    if days_between < 3:
-                        gap_issues += 1
-                        logging.warning(f"VALIDATION: Found gap violation for worker {worker_id}: only {days_between} days between {date1} and {date2}")
-                    
-                        # Remove the later assignment
-                        post = self.schedule[date2].index(worker_id) if worker_id in self.schedule[date2] else -1
-                        if post >= 0:
-                            self.schedule[date2][post] = None
-                            self.worker_assignments[worker_id].remove(date2)
-                        
-                            fixes_made += 1
-                            logging.warning(f"VALIDATION: Removed worker {worker_id} from {date2} to fix gap violation")
+                    # Remove the later assignment
+                    post = self.schedule[date2].index(worker_id)
+                    self.schedule[date2][post] = None
+                    self.worker_assignments[worker_id].remove(date2)
+                
+                    fixes_made += 1
+                    logging.warning(f"VALIDATION: Removed worker {worker_id} from {date2} to fix gap violation")
     
-        logging.info(f"Final validation complete: Found {incompatibility_issues} incompatibility issues and {gap_issues} gap issues. Made {fixes_made} fixes.")
+        # 3. Run the reconcile method to ensure data consistency
+        if self._reconcile_schedule_tracking():
+            other_issues += 1
+    
+        logging.info(f"Final validation complete: Found {incompatibility_issues} incompatibility issues, {gap_issues} gap issues, and {other_issues} other issues. Made {fixes_made} fixes.")
         return fixes_made
 
     def _validate_final_schedule(self):
@@ -1600,64 +1597,16 @@ class Scheduler:
         Returns True if valid, False if issues found.
         """
         try:
-            validation_issues = []
-        
             # Attempt to reconcile tracking first
             self._reconcile_schedule_tracking()
         
-            # Now validate the reconciled schedule
-            # Check for tracking consistency
-            for worker_id, assignments in self.worker_assignments.items():
-                for date in assignments:
-                    # Check if this date exists in schedule
-                    if date not in self.schedule:
-                        validation_issues.append(f"Tracking inconsistency: Worker {worker_id} is tracked for {date} but date not in schedule")
-                        continue
-                    
-                    # Check if worker is actually assigned on this date
-                    worker_found = False
-                    for shift_idx, shift_worker in enumerate(self.schedule[date]):
-                        if shift_worker == worker_id:
-                            worker_found = True
-                            break
-                        
-                    if not worker_found:
-                        validation_issues.append(f"Tracking inconsistency: Worker {worker_id} is tracked for {date} but not in schedule")
-        
-            # Check for untracked assignments
-            for date, shifts in self.schedule.items():
-                for shift_idx, worker_id in enumerate(shifts):
-                    if worker_id is not None:
-                        # Ensure worker tracking exists
-                        if worker_id not in self.worker_assignments:
-                            validation_issues.append(f"Missing tracking: Worker {worker_id} is in schedule on {date} but not tracked")
-                        # Check if this date is in the worker's tracking
-                        elif date not in self.worker_assignments[worker_id]:
-                            validation_issues.append(f"Missing tracking: Worker {worker_id} is scheduled on {date} but date not tracked")
-        
-            # Report validation issues
-            if validation_issues:
-                # Log first 10 issues in detail
-                for i, issue in enumerate(validation_issues[:10]):
-                    logging.error(f"[Validation issue] {issue}")
-                
-                if len(validation_issues) > 10:
-                    logging.error(f"... and {len(validation_issues) - 10} more issues")
-                
-                # Instead of failing, fix the issues automatically
-                logging.warning(f"Found {len(validation_issues)} validation issues - attempting automatic fix")
-                if self._reconcile_schedule_tracking():
-                    logging.info("Validation issues fixed automatically")
-                    return True
-                else:
-                    # Only fail if we couldn't fix the issues
-                    raise SchedulerError(f"Schedule validation failed with {len(validation_issues)} issues that couldn't be fixed")
-                
-            # Add call to the new validation method
+            # Run the enhanced validation
             fixes_made = self.validate_and_fix_final_schedule()
         
+            if fixes_made > 0:
+                logging.info(f"Validation fixed {fixes_made} issues")
+        
             return True
-                
         except Exception as e:
             logging.error(f"Validation error: {str(e)}", exc_info=True)
             return False
