@@ -1865,7 +1865,7 @@ class Scheduler:
         Returns:
             str: Name of the generated file
         """
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime('%d%m%Y_%H%M%S')
         filename = f'schedule_{timestamp}.{format}'
         
         if format == 'txt':
@@ -1912,7 +1912,7 @@ class Scheduler:
                 'stats': stats,
                 'metrics': metrics,
                 'coverage': coverage,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'timestamp': datetime.now().strftime('%d-%m-%Y %H:%M:%S'),
                 'validator': self.current_user
             }
             
