@@ -1042,250 +1042,315 @@ class CalendarViewScreen(Screen):
             if not self.current_date:
                 return
             
-            # Create the content layout
-            content = BoxLayout(orientation='vertical', padding=10, spacing=5)
+            app = App.get_running_app()
         
-            # Month header
-            month_label = Label(
-                text=f"Summary for {self.current_date.strftime('%B %Y')}",
-                size_hint_y=None,
-                height=40,
-                bold=True
-            )
-            content.add_widget(month_label)
+            # Get schedule data
+            schedule = app.schedule_config.get('schedule', {})
+            workers_data = app.schedule_config.get('workers_data', [])
+            num_shifts = app.schedule_config.get('num_shifts', 0)
+            start_date = app.schedule_config.get('start_date')
+            end_date = app.schedule_config.get('end_date')
         
-            # Calculate statistics
+            # Calculate basic statistics for this month
             month_stats = {
                 'total_shifts': 0,
                 'workers': {},
                 'weekend_shifts': 0,
-                'holiday_shifts': 0
+                'last_post_shifts': 0,
+                'posts': {i: 0 for i in range(num_shifts)}
             }
         
-            # Collect data for the current month
-            for date, workers in self.schedule.items():
+            # Get data for the current month
+            for date, workers in schedule.items():
                 if date.year == self.current_date.year and date.month == self.current_date.month:
                     month_stats['total_shifts'] += len(workers)
-                
-                    # Count worker shifts
-                    for worker in workers:
-                        if worker not in month_stats['workers']:
-                            month_stats['workers'][worker] = {
+                    
+                    # Count per worker
+                    for i, worker_id in enumerate(workers):
+                        if worker_id not in month_stats['workers']:
+                            month_stats['workers'][worker_id] = {
                                 'total': 0,
-                                'weekends': 0,
-                                'holidays': 0
+                                'weekends': 0, 
+                                'last_post': 0
                             }
-                        month_stats['workers'][worker]['total'] += 1
+                    
+                        month_stats['workers'][worker_id]['total'] += 1
+                    
+                        # Count post distribution
+                        if i < num_shifts:
+                            month_stats['posts'][i] += 1
+                        
+                            # Count last post assignments
+                            if i == num_shifts - 1:
+                                month_stats['last_post_shifts'] += 1
+                                month_stats['workers'][worker_id]['last_post'] += 1
                     
                         # Count weekend shifts
-                        if date.weekday() >= 5:
+                        if date.weekday() >= 5:  # Saturday or Sunday
                             month_stats['weekend_shifts'] += 1
-                            month_stats['workers'][worker]['weekends'] += 1
-                    
-                        # Count holiday shifts
-                        app = App.get_running_app()
-                        if date in app.schedule_config.get('holidays', []):
-                            month_stats['holiday_shifts'] += 1
-                            month_stats['workers'][worker]['holidays'] += 1
+                            month_stats['workers'][worker_id]['weekends'] += 1
         
-            # Create scrollable view for statistics
-            scroll = ScrollView(size_hint_y=None, height=300)
-            stats_layout = GridLayout(
-                cols=1,
-                spacing=5,
-                size_hint_y=None,
-                padding=5
-            )
-            stats_layout.bind(minimum_height=stats_layout.setter('height'))
-        
-            # Add general statistics
-            stats_layout.add_widget(Label(
-                text=f"Total Shifts: {month_stats['total_shifts']}",
-                size_hint_y=None,
-                height=30
-            ))
-            stats_layout.add_widget(Label(
-                text=f"Weekend Shifts: {month_stats['weekend_shifts']}",
-                size_hint_y=None,
-                height=30
-            ))
-            stats_layout.add_widget(Label(
-                text=f"Holiday Shifts: {month_stats['holiday_shifts']}",
-                size_hint_y=None,
-                height=30
-            ))
-        
-            # Add separator
-            stats_layout.add_widget(Label(
-                text="Worker Details:",
-                size_hint_y=None,
-                height=40,
-                bold=True
-            ))
-        
-            # Add per-worker statistics
-            for worker, stats in sorted(month_stats['workers'].items()):
-                worker_stats = (
-                    f"Worker {worker}:\n"
-                    f"  Total: {stats['total']}\n"
-                    f"  Weekends: {stats['weekends']}\n"
-                    f"  Holidays: {stats['holidays']}"
-                )
-                stats_layout.add_widget(Label(
-                    text=worker_stats,
-                    size_hint_y=None,
-                    height=100,
-                    halign='left'
-                ))
-        
-            scroll.add_widget(stats_layout)
-            content.add_widget(scroll)
-        
-            # Add close button
-            close_button = Button(
-                text='Close',
-                size_hint_y=None,
-                height=40
-            )
-            content.add_widget(close_button)
-        
-            # Create and show popup
-            popup = Popup(
-                title='Monthly Summary',
-                content=content,
-                size_hint=(None, None),
-                size=(400, 500)
-            )
+            # Create a PDF report
+            if self.show_summary_dialog(month_stats):
+                self.export_summary_pdf(month_stats)
             
-            # Bind close button
-            close_button.bind(on_press=popup.dismiss)
-        
-            popup.open()
-        
         except Exception as e:
             popup = Popup(title='Error',
                          content=Label(text=f'Failed to show summary: {str(e)}'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
+            logging.error(f"Summary error: {str(e)}", exc_info=True)
 
-    def export_summary_pdf(self, summary_data):
+    def show_summary_dialog(self, month_stats):
         """
-        Export the summary data to a PDF file
+        Display the summary dialog and ask if user wants to export PDF
+        Returns True if user wants PDF
         """
-        try:
-            # Try to import required libraries
-            import reportlab
-            from reportlab.lib.pagesizes import letter
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib import colors
-            from datetime import datetime
-            import os
-        
-        except ImportError:
-            messagebox.showerror("Error", "ReportLab is not installed. Please install it with: pip install reportlab")
-            return
+        # Create the content layout
+        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
     
-        # Ask for location to save
-        from tkinter import filedialog
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".pdf",
-            filetypes=[("PDF files", "*.pdf")],
-            title="Save Summary PDF"
+        # Summary scroll view
+        scroll = ScrollView(size_hint=(1, 0.8))
+        summary_layout = GridLayout(
+            cols=1, 
+            spacing=5, 
+            size_hint_y=None
         )
+        summary_layout.bind(minimum_height=summary_layout.setter('height'))
     
-        if not filename:  # User canceled
-            return
+        # Month title
+        month_title = Label(
+            text=f"Summary for {self.current_date.strftime('%B %Y')}",
+            size_hint_y=None,
+            height=40,
+            bold=True
+        )
+        summary_layout.add_widget(month_title)
     
-        # Create the PDF document
-        doc = SimpleDocTemplate(filename, pagesize=letter)
-        styles = getSampleStyleSheet()
-        elements = []
+        # General stats
+        total_shifts = Label(
+            text=f"Total Shifts: {month_stats['total_shifts']}",
+            size_hint_y=None,
+            height=30
+        )
+        summary_layout.add_widget(total_shifts)
     
-        # Add title
-        title_style = styles['Heading1']
-        title = Paragraph("Schedule Summary", title_style)
-        elements.append(title)
-        elements.append(Spacer(1, 12))
+        weekend_shifts = Label(
+            text=f"Weekend Shifts: {month_stats['weekend_shifts']}",
+            size_hint_y=None,
+            height=30
+        )
+        summary_layout.add_widget(weekend_shifts)
     
-        # Add date
-        date_style = styles['Normal']
-        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        date_paragraph = Paragraph(f"Generated on: {current_date}", date_style)
-        elements.append(date_paragraph)
-        elements.append(Spacer(1, 12))
+        last_post_shifts = Label(
+            text=f"Last Post Shifts: {month_stats['last_post_shifts']}",
+            size_hint_y=None,
+            height=30
+        )
+        summary_layout.add_widget(last_post_shifts)
     
-        # Add summary statistics
-        stats_style = styles['Heading2']
-        stats_title = Paragraph("Overall Statistics", stats_style)
-        elements.append(stats_title)
-        elements.append(Spacer(1, 6))
-    
-        stats_data = [
-            ["Total Workers", str(len(summary_data['workers']))],
-            ["Total Shifts", str(summary_data['totals']['total_shifts'])],
-            ["Weekend Shifts", str(summary_data['totals']['weekend_shifts'])],
-            ["Last Post Shifts", str(summary_data['totals']['last_post_shifts'])]
-        ]
-    
-        stats_table = Table(stats_data, colWidths=[200, 100])
-        stats_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
-        elements.append(stats_table)
-        elements.append(Spacer(1, 20))
+        # Worker details header
+        worker_header = Label(
+            text="\nWorker Details:",
+            size_hint_y=None,
+            height=40,
+            bold=True
+        )
+        summary_layout.add_widget(worker_header)
     
         # Add worker details
-        workers_title = Paragraph("Worker Details", stats_style)
-        elements.append(workers_title)
-        elements.append(Spacer(1, 6))
+        for worker_id, stats in sorted(month_stats['workers'].items()):
+            worker_info = Label(
+                text=f"Worker {worker_id}:\n" +
+                     f"  Total Shifts: {stats['total']}\n" +
+                     f"  Weekend Shifts: {stats['weekends']}\n" +
+                     f"  Last Post Shifts: {stats['last_post']}",
+                size_hint_y=None,
+                height=120,
+                halign='left'
+            )
+            worker_info.bind(size=worker_info.setter('text_size'))
+            summary_layout.add_widget(worker_info)
     
-        # Create table header
-        worker_data = [["Worker", "Total Shifts", "Target", "Weekend Shifts", "Last Post Shifts"]]
+        scroll.add_widget(summary_layout)
+        content.add_widget(scroll)
     
-        # Sort workers by name
-        sorted_workers = sorted(summary_data['workers'].items(), 
-                           key=lambda x: x[1]['name'])
+        # Button layout
+        button_layout = BoxLayout(
+            orientation='horizontal', 
+            size_hint_y=0.2,
+            spacing=10
+        )
     
-        # Add worker rows
-        for worker_id, data in sorted_workers:
-            worker_data.append([
-                data['name'],
-                str(data['total_shifts']),
-                str(data['target_shifts']),
-                str(data['weekend_shifts']),
-                str(data['last_post_shifts'])
-            ])
+        pdf_button = Button(text='Export PDF')
+        close_button = Button(text='Close')
     
-        # Create the table
-        worker_table = Table(worker_data, colWidths=[150, 80, 80, 100, 100])
-        worker_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
-        elements.append(worker_table)
+        button_layout.add_widget(pdf_button)
+        button_layout.add_widget(close_button)
+        content.add_widget(button_layout)
     
-        # Build the PDF
-        doc.build(elements)
+        # Create popup
+        popup = Popup(
+            title='Monthly Summary',
+            content=content,
+            size_hint=(0.8, 0.9),
+            auto_dismiss=False
+        )
     
-        # Show success message
-        messagebox.showinfo("Success", f"Summary exported to {filename}")
+        # Store user's choice
+        user_wants_pdf = [False]
     
-        # Try to open the PDF
+        def on_pdf(instance):
+            user_wants_pdf[0] = True
+            popup.dismiss()
+        
+        def on_close(instance):
+            popup.dismiss()
+    
+        pdf_button.bind(on_press=on_pdf)
+        close_button.bind(on_press=on_close)
+    
+        # Show popup and wait for it to close
+        popup.open()
+    
+        # Return user's choice
+        return user_wants_pdf[0]
+
+    def export_summary_pdf(self, month_stats):
+        """Export the summary as a PDF file"""
         try:
-            import subprocess, platform, os
-            if platform.system() == 'Windows':
-                os.startfile(filename)
-            elif platform.system() == 'Darwin':  # macOS
-                subprocess.run(['open', filename])
-            else:  # Linux
-                subprocess.run(['xdg-open', filename])
-        except:
-            pass  # Silently fail if we can't open the PDF
-    
+            # Check if reportlab is available
+            try:
+                from reportlab.lib.pagesizes import letter
+                from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+                from reportlab.lib.styles import getSampleStyleSheet
+                from reportlab.lib import colors
+                import tempfile
+                import os
+            except ImportError:
+                # Show error popup
+                popup = Popup(
+                    title='Error',
+                    content=Label(text='ReportLab is not installed. Please install it with: pip install reportlab'),
+                    size_hint=(None, None),
+                    size=(400, 200)
+                )
+                popup.open()
+                return
+        
+            # Create a temporary file name for the PDF
+            app = App.get_running_app()
+            month_name = self.current_date.strftime('%B_%Y')
+            filename = f"schedule_summary_{month_name}.pdf"
+        
+            # Create PDF document
+            doc = SimpleDocTemplate(filename, pagesize=letter)
+            styles = getSampleStyleSheet()
+            elements = []
+        
+            # Add title
+            title_style = styles['Heading1']
+            title = Paragraph(f"Schedule Summary - {month_name}", title_style)
+            elements.append(title)
+            elements.append(Spacer(1, 12))
+        
+            # Add generation info
+            date_style = styles['Normal']
+            current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            date_paragraph = Paragraph(f"Generated on: {current_date}", date_style)
+            elements.append(date_paragraph)
+            elements.append(Spacer(1, 6))
+        
+            user_paragraph = Paragraph(f"Generated by: {app.current_user}", date_style)
+            elements.append(user_paragraph)
+            elements.append(Spacer(1, 20))
+        
+            # Add overall statistics
+            stats_style = styles['Heading2']
+            stats_title = Paragraph("Overall Statistics", stats_style)
+            elements.append(stats_title)
+            elements.append(Spacer(1, 6))
+        
+            stats_data = [
+                ["Total Workers", str(len(month_stats['workers']))],
+                ["Total Shifts", str(month_stats['total_shifts'])],
+                ["Weekend Shifts", str(month_stats['weekend_shifts'])],
+                ["Last Post Shifts", str(month_stats['last_post_shifts'])]
+            ]
+        
+            stats_table = Table(stats_data, colWidths=[200, 100])
+            stats_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(stats_table)
+            elements.append(Spacer(1, 20))
+        
+            # Add post distribution
+            post_style = styles['Heading2']
+            post_title = Paragraph("Post Distribution", post_style)
+            elements.append(post_title)
+            elements.append(Spacer(1, 6))
+        
+            post_data = [["Post", "Shifts"]]
+            for post, count in month_stats['posts'].items():
+                post_data.append([f"Post {post+1}", str(count)])
+        
+            post_table = Table(post_data, colWidths=[200, 100])
+            post_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(post_table)
+            elements.append(Spacer(1, 20))
+        
+            # Add worker details
+            worker_style = styles['Heading2']
+            worker_title = Paragraph("Worker Details", worker_style)
+            elements.append(worker_title)
+            elements.append(Spacer(1, 6))
+        
+            worker_data = [["Worker", "Total Shifts", "Weekend Shifts", "Last Post Shifts"]]
+            for worker_id, stats in sorted(month_stats['workers'].items()):
+                worker_data.append([
+                    f"Worker {worker_id}",
+                    str(stats['total']),
+                    str(stats['weekends']),
+                    str(stats['last_post'])
+                ])
+        
+            worker_table = Table(worker_data)
+            worker_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(worker_table)
+        
+            # Build the PDF
+            doc.build(elements)
+            
+            # Show success message
+            popup = Popup(
+                title='Success',
+                content=Label(text=f'Summary exported to {filename}'),
+                size_hint=(None, None),
+                size=(400, 200)
+            )
+            popup.open()
+        
+        except Exception as e:
+            # Show error popup
+            popup = Popup(
+                title='Error',
+                content=Label(text=f'Failed to export PDF: {str(e)}'),
+                size_hint=(None, None),
+                size=(400, 200)
+            )
+            popup.open()
+            logging.error(f"PDF export error: {str(e)}", exc_info=True) 
 
     def export_to_pdf(self, instance):
         try:
