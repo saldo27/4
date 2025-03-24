@@ -560,18 +560,18 @@ class CalendarViewScreen(Screen):
         button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
         save_btn = Button(text='Save to JSON')
         export_txt_btn = Button(text='Export to TXT')
-        export_pdf_btn = Button(text='Export to PDF')  # New button
-        stats_btn = Button(text='Worker Stats')
+        export_pdf_btn = Button(text='Export to PDF')  
+        reset_btn = Button(text='Reset Schedule')  # Replace stats_btn with reset_btn
 
         save_btn.bind(on_press=self.save_schedule)
         export_txt_btn.bind(on_press=self.export_schedule)
-        export_pdf_btn.bind(on_press=self.export_to_pdf)  # New binding
-        stats_btn.bind(on_press=self.show_worker_stats)
+        export_pdf_btn.bind(on_press=self.export_to_pdf)
+        reset_btn.bind(on_press=self.confirm_reset_schedule)  # New binding
 
         button_layout.add_widget(save_btn)
         button_layout.add_widget(export_txt_btn)
-        button_layout.add_widget(export_pdf_btn)  # Add new button
-        button_layout.add_widget(stats_btn)
+        button_layout.add_widget(export_pdf_btn)
+        button_layout.add_widget(reset_btn)  # Add reset button
         self.layout.add_widget(button_layout)
     
         # Year navigation
@@ -1529,6 +1529,103 @@ class CalendarViewScreen(Screen):
                 size=(400, 200)
             )
             popup.open()
+
+def confirm_reset_schedule(self, instance):
+    """Show confirmation dialog before resetting schedule"""
+    content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+    
+    # Warning message
+    content.add_widget(Label(
+        text='Are you sure you want to reset the schedule?\n'
+             'This will clear all assignments and return to setup.',
+        halign='center'
+    ))
+    
+    # Button layout
+    button_layout = BoxLayout(
+        orientation='horizontal', 
+        size_hint_y=None,
+        height=40,
+        spacing=10
+    )
+    
+    # Confirm and cancel buttons
+    confirm_btn = Button(text='Yes, Reset')
+    cancel_btn = Button(text='Cancel')
+    
+    button_layout.add_widget(confirm_btn)
+    button_layout.add_widget(cancel_btn)
+    content.add_widget(button_layout)
+    
+    # Create popup
+    popup = Popup(
+        title='Confirm Reset',
+        content=content,
+        size_hint=(None, None),
+        size=(400, 200),
+        auto_dismiss=False
+    )
+    
+    # Define button actions
+    confirm_btn.bind(on_press=lambda x: self.reset_schedule(popup))
+    cancel_btn.bind(on_press=popup.dismiss)
+    
+    popup.open()
+
+    def reset_schedule(self, popup):
+        """Reset the schedule and return to setup screen"""
+        try:
+            app = App.get_running_app()
+        
+            # Keep some basic settings from the current configuration
+            basic_settings = {
+                'start_date': app.schedule_config.get('start_date'),
+                'end_date': app.schedule_config.get('end_date'),
+                'holidays': app.schedule_config.get('holidays', []),
+                'num_workers': app.schedule_config.get('num_workers', 0),
+                'num_shifts': app.schedule_config.get('num_shifts', 0)
+            }
+        
+            # Reset config to just the basic settings
+            app.schedule_config = basic_settings
+        
+            # Clear out the workers_data and schedule
+            app.schedule_config['workers_data'] = []
+            app.schedule_config['schedule'] = {}
+            app.schedule_config['current_worker_index'] = 0
+        
+            # Dismiss the popup
+            popup.dismiss()
+        
+            # Show success message
+            success = Popup(
+                title='Success',
+                content=Label(text='Schedule has been reset.\nReturning to setup...'),
+                size_hint=(None, None),
+                size=(400, 200)
+            )
+            success.open()
+        
+            # Schedule a callback to close the popup and navigate
+            def navigate_to_setup(dt):
+                success.dismiss()
+                self.manager.current = 'worker_details'  # Go to worker details screen
+                
+            from kivy.clock import Clock
+            Clock.schedule_once(navigate_to_setup, 2)  # Wait 2 seconds
+        
+        except Exception as e:
+            # Show error
+            error_popup = Popup(
+                title='Error',
+                content=Label(text=f'Failed to reset: {str(e)}'),
+                size_hint=(None, None),
+                size=(400, 200)
+            )
+            error_popup.open()
+        
+            # Dismiss the confirmation popup
+            popup.dismiss()
               
 class ShiftManagerApp(App):
     def __init__(self, **kwargs):
