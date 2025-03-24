@@ -518,50 +518,52 @@ class WorkerDetailsScreen(Screen):
         logging.info(f"Entered WorkerDetailsScreen: Worker {current_index + 1}/{total_workers}")
 
 class CalendarViewScreen(Screen):
+    # Replace in your CalendarViewScreen class:
+
     def __init__(self, **kwargs):
         super(CalendarViewScreen, self).__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical', padding=10, spacing=5)
-    
+
         # Header with title and navigation
         header = BoxLayout(orientation='horizontal', size_hint_y=0.1)
         self.month_label = Label(text='', size_hint_x=0.4)
         prev_month = Button(text='<', size_hint_x=0.2)
         next_month = Button(text='>', size_hint_x=0.2)
         summary_btn = Button(text='Summary', size_hint_x=0.2)
-    
+
         prev_month.bind(on_press=self.previous_month)
         next_month.bind(on_press=self.next_month)
         summary_btn.bind(on_press=self.show_month_summary)
-    
+
         header.add_widget(prev_month)
         header.add_widget(self.month_label)
         header.add_widget(next_month)
         header.add_widget(summary_btn)
         self.layout.add_widget(header)
-    
+
         # Days of week header
         days_header = GridLayout(cols=7, size_hint_y=0.1)
-        for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']:
+        for day in ['Lun', 'Mar', 'Mx', 'Jue', 'Vn', 'Sab', 'Dom']:
             days_header.add_widget(Label(text=day))
         self.layout.add_widget(days_header)
-    
+
         # Calendar grid
         self.calendar_grid = GridLayout(cols=7, size_hint_y=0.7)
         self.layout.add_widget(self.calendar_grid)
-    
+
         # Scroll view for details
         details_scroll = ScrollView(size_hint_y=0.3)
         self.details_layout = GridLayout(cols=1, size_hint_y=None)
         self.details_layout.bind(minimum_height=self.details_layout.setter('height'))
         details_scroll.add_widget(self.details_layout)
         self.layout.add_widget(details_scroll)
-    
+
         # Export buttons
         button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
         save_btn = Button(text='Save to JSON')
         export_txt_btn = Button(text='Export to TXT')
-        export_pdf_btn = Button(text='Export to PDF')  
-        reset_btn = Button(text='Reset Schedule')  # Replace stats_btn with reset_btn
+        export_pdf_btn = Button(text='Export to PDF')
+        reset_btn = Button(text='Reset Schedule')  # Changed from stats_btn
 
         save_btn.bind(on_press=self.save_schedule)
         export_txt_btn.bind(on_press=self.export_schedule)
@@ -571,28 +573,28 @@ class CalendarViewScreen(Screen):
         button_layout.add_widget(save_btn)
         button_layout.add_widget(export_txt_btn)
         button_layout.add_widget(export_pdf_btn)
-        button_layout.add_widget(reset_btn)  # Add reset button
+        button_layout.add_widget(reset_btn)  # Changed from stats_btn
         self.layout.add_widget(button_layout)
-    
+
         # Year navigation
         year_nav = BoxLayout(orientation='horizontal', size_hint_y=0.1)
         prev_year = Button(text='<<', size_hint_x=0.2)
         next_year = Button(text='>>', size_hint_x=0.2)
         self.year_label = Label(text='', size_hint_x=0.6)
-    
+
         prev_year.bind(on_press=self.previous_year)
         next_year.bind(on_press=self.next_year)
-    
+
         year_nav.add_widget(prev_year)
         year_nav.add_widget(self.year_label)
         year_nav.add_widget(next_year)
         self.layout.add_widget(year_nav)
-    
+
         # Add Today button
         today_btn = Button(text='Today', size_hint_x=0.2)
         today_btn.bind(on_press=self.go_to_today)
         header.add_widget(today_btn)
-    
+
         self.add_widget(self.layout)
         self.current_date = None
         self.schedule = {}
@@ -631,9 +633,9 @@ class CalendarViewScreen(Screen):
         for worker, data in sorted(stats.items()):
             worker_stats = (
                 f"Worker {worker}:\n"
-                f"  Total Shifts: {data['total_shifts']}\n"
-                f"  Weekend Shifts: {data['weekends']}\n"
-                f"  Holiday Shifts: {data['holidays']}\n"
+                f"  Total Shifts: {data['nº de guardias']}\n"
+                f"  Weekend Shifts: {data['Findes']}\n"
+                f"  Holiday Shifts: {data['Festivos']}\n"
             )
             content.add_widget(Label(text=worker_stats))
     
@@ -1530,47 +1532,48 @@ class CalendarViewScreen(Screen):
             )
             popup.open()
 
-def confirm_reset_schedule(self, instance):
-    """Show confirmation dialog before resetting schedule"""
-    content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+    def confirm_reset_schedule(self, instance):
+        """Show confirmation dialog before resetting schedule"""
+        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
     
-    # Warning message
-    content.add_widget(Label(
-        text='Are you sure you want to reset the schedule?\n'
-             'This will clear all assignments and return to setup.',
-        halign='center'
-    ))
+        # Warning message
+        message = Label(
+            text='Are you sure you want to reset the schedule?\n'
+                 'This will clear all assignments and return to setup.',
+            halign='center'
+        )
+        content.add_widget(message)
     
-    # Button layout
-    button_layout = BoxLayout(
-        orientation='horizontal', 
-        size_hint_y=None,
-        height=40,
-        spacing=10
-    )
+        # Button layout
+        button_layout = BoxLayout(
+            orientation='horizontal', 
+            size_hint_y=None,
+            height=40,
+            spacing=10
+        )
     
-    # Confirm and cancel buttons
-    confirm_btn = Button(text='Yes, Reset')
-    cancel_btn = Button(text='Cancel')
+        # Confirm and cancel buttons
+        confirm_btn = Button(text='Yes, Reset')
+        cancel_btn = Button(text='Cancel')
     
-    button_layout.add_widget(confirm_btn)
-    button_layout.add_widget(cancel_btn)
-    content.add_widget(button_layout)
+        button_layout.add_widget(confirm_btn)
+        button_layout.add_widget(cancel_btn)
+        content.add_widget(button_layout)
     
-    # Create popup
-    popup = Popup(
-        title='Confirm Reset',
-        content=content,
-        size_hint=(None, None),
-        size=(400, 200),
-        auto_dismiss=False
-    )
+        # Create popup
+        popup = Popup(
+            title='Confirm Reset',
+            content=content,
+            size_hint=(None, None),
+            size=(400, 200),
+            auto_dismiss=False
+        )
     
-    # Define button actions
-    confirm_btn.bind(on_press=lambda x: self.reset_schedule(popup))
-    cancel_btn.bind(on_press=popup.dismiss)
+        # Define button actions
+        confirm_btn.bind(on_press=lambda x: self.reset_schedule(popup))
+        cancel_btn.bind(on_press=popup.dismiss)
     
-    popup.open()
+        popup.open()
 
     def reset_schedule(self, popup):
         """Reset the schedule and return to setup screen"""
@@ -1600,19 +1603,15 @@ def confirm_reset_schedule(self, instance):
             # Show success message
             success = Popup(
                 title='Success',
-                content=Label(text='Schedule has been reset.\nReturning to setup...'),
+                content=Label(text='Schedule has been reset.\nReturning to worker details...'),
                 size_hint=(None, None),
                 size=(400, 200)
             )
             success.open()
         
             # Schedule a callback to close the popup and navigate
-            def navigate_to_setup(dt):
-                success.dismiss()
-                self.manager.current = 'worker_details'  # Go to worker details screen
-                
             from kivy.clock import Clock
-            Clock.schedule_once(navigate_to_setup, 2)  # Wait 2 seconds
+            Clock.schedule_once(lambda dt: self.navigate_after_reset(success), 2)
         
         except Exception as e:
             # Show error
@@ -1626,6 +1625,11 @@ def confirm_reset_schedule(self, instance):
         
             # Dismiss the confirmation popup
             popup.dismiss()
+
+    def navigate_after_reset(self, popup):
+        """Navigate to worker details after reset"""
+        popup.dismiss()
+        self.manager.current = 'worker_details'
               
 class ShiftManagerApp(App):
     def __init__(self, **kwargs):
