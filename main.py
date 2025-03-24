@@ -70,14 +70,14 @@ class SetupScreen(Screen):
         
         # Start date
         start_date_container = BoxLayout(orientation='vertical')
-        start_date_container.add_widget(Label(text='Start Date (YYYY-MM-DD):', halign='left', size_hint_y=0.4))
+        start_date_container.add_widget(Label(text='Start Date (DD-MM-YYYY):', halign='left', size_hint_y=0.4))
         self.start_date = TextInput(multiline=False, size_hint_y=0.6)
         start_date_container.add_widget(self.start_date)
         date_section.add_widget(start_date_container)
         
         # End date
         end_date_container = BoxLayout(orientation='vertical')
-        end_date_container.add_widget(Label(text='End Date (YYYY-MM-DD):', halign='left', size_hint_y=0.4))
+        end_date_container.add_widget(Label(text='End Date (DD-MM-YYYY):', halign='left', size_hint_y=0.4))
         self.end_date = TextInput(multiline=False, size_hint_y=0.6)
         end_date_container.add_widget(self.end_date)
         date_section.add_widget(end_date_container)
@@ -178,14 +178,13 @@ class SetupScreen(Screen):
         self.layout.add_widget(button_section)
         
         # Add the main layout to the screen
-        self.add_widget(self.layout)
-        
-    # Keep the existing methods unchanged
+        self.add_widget(self.layout)      
+
     def save_config(self, instance):
         try:
             start_date_str = self.start_date.text.strip()
             end_date_str = self.end_date.text.strip()
-            
+        
             # Validate dates - using DD-MM-YYYY format
             try:
                 # Parse using DD-MM-YYYY format
@@ -196,27 +195,27 @@ class SetupScreen(Screen):
             except ValueError as e:
                 self.show_error(f"Invalid date format: {str(e)}\nUse DD-MM-YYYY format")
                 return
-            
+        
             # Validate numeric inputs
             try:
                 num_workers = int(self.num_workers.text)
                 num_shifts = int(self.num_shifts.text)
                 gap_between_shifts = int(self.gap_between_shifts.text)
                 max_consecutive_weekends = int(self.max_consecutive_weekends.text)
-                
+            
                 if num_workers <= 0 or num_shifts <= 0:
                     raise ValueError("Number of workers and shifts must be positive")
-                
+            
                 if gap_between_shifts < 0:
                     raise ValueError("Minimum days between shifts cannot be negative")
-                
+            
                 if max_consecutive_weekends <= 0:
                     raise ValueError("Maximum consecutive weekend shifts must be positive")
-                    
+                
             except ValueError as e:
                 self.show_error(f"Invalid numeric input: {str(e)}")
                 return
-            
+        
             # Parse holidays - also using DD-MM-YYYY format
             holidays_list = []
             if self.holidays.text.strip():
@@ -228,30 +227,30 @@ class SetupScreen(Screen):
                     except ValueError:
                         self.show_error(f"Invalid holiday date format: {holiday_str}\nUse DD-MM-YYYY format")
                         return
-
+        
             # Convert date objects to datetime objects with time set to midnight
             start_datetime = datetime.combine(start_date, datetime.min.time())
             end_datetime = datetime.combine(end_date, datetime.min.time())
             holidays_datetime = [datetime.combine(holiday, datetime.min.time()) for holiday in holidays_list]
-            
+        
             # Save configuration to app
             app = App.get_running_app()
             app.schedule_config = {
-                'start_date': start_date,
-                'end_date': end_date,
+                'start_date': start_datetime,  # Now we're saving datetime objects, not date objects
+                'end_date': end_datetime,      # Now we're saving datetime objects, not date objects
                 'num_workers': num_workers,
                 'num_shifts': num_shifts,
                 'gap_between_shifts': gap_between_shifts,
                 'max_consecutive_weekends': max_consecutive_weekends,
-                'holidays': holidays_list,
+                'holidays': holidays_datetime,  # Now we're saving datetime objects, not date objects
                 'workers_data': [],
                 'schedule': {},
                 'current_worker_index': 0
             }
-            
+        
             # Notify user
             self.show_message('Configuration saved successfully')
-        
+    
         except Exception as e:
             self.show_error(f"Error saving configuration: {str(e)}")
 
