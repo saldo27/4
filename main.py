@@ -43,43 +43,202 @@ class WelcomeScreen(Screen):
 class SetupScreen(Screen):
     def __init__(self, **kwargs):
         super(SetupScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-    
-        layout.add_widget(Label(text='Setup'))
-    
-       # Start Date
-        layout.add_widget(Label(text='Fecha de inicio (DD-MM-YYYY):'))
+        self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        
+        # Title
+        title = Label(text="Schedule Setup", font_size=24, size_hint_y=0.1)
+        self.layout.add_widget(title)
+        
+        # Scroll view for form
+        scroll_view = ScrollView()
+        form_layout = GridLayout(cols=2, spacing=10, padding=10, size_hint_y=None)
+        form_layout.bind(minimum_height=form_layout.setter('height'))
+        
+        # Start date
+        form_layout.add_widget(Label(text='Start Date (YYYY-MM-DD):'))
         self.start_date = TextInput(multiline=False)
-        layout.add_widget(self.start_date)
-    
-        # End Date
-        layout.add_widget(Label(text='Fecha final (DD-MM-YYYY):'))
+        form_layout.add_widget(self.start_date)
+        
+        # End date
+        form_layout.add_widget(Label(text='End Date (YYYY-MM-DD):'))
         self.end_date = TextInput(multiline=False)
-        layout.add_widget(self.end_date)
-    
-        # Holidays
-        layout.add_widget(Label(text='Festivos (DD-MM-YYYY, semicolon-separated):'))
-        self.holidays = TextInput(
-            multiline=True,
-           hint_text='Example: 25-12-2025; 01-01-2026'
-        )
-        layout.add_widget(self.holidays)
-    
-        # Number of Workers
-        layout.add_widget(Label(text='Número de médicos:'))
+        form_layout.add_widget(self.end_date)
+        
+        # Number of workers
+        form_layout.add_widget(Label(text='Number of Workers:'))
         self.num_workers = TextInput(multiline=False, input_filter='int')
-        layout.add_widget(self.num_workers)
-    
-        # Number of Shifts per Day
-        layout.add_widget(Label(text='Número de guardias/día:'))
+        form_layout.add_widget(self.num_workers)
+        
+        # Number of shifts per day
+        form_layout.add_widget(Label(text='Shifts per Day:'))
         self.num_shifts = TextInput(multiline=False, input_filter='int')
-        layout.add_widget(self.num_shifts)
+        form_layout.add_widget(self.num_shifts)
+        
+        # NEW INPUT: gap between shifts
+        form_layout.add_widget(Label(text='Minimum Days Between Shifts:'))
+        self.gap_between_shifts = TextInput(multiline=False, input_filter='int', text='1')
+        form_layout.add_widget(self.gap_between_shifts)
+        
+        # NEW INPUT: consecutive weekends/holidays allowed
+        form_layout.add_widget(Label(text='Max Consecutive Weekend/Holiday Shifts:'))
+        self.max_consecutive_weekends = TextInput(multiline=False, input_filter='int', text='2')
+        form_layout.add_widget(self.max_consecutive_weekends)
+        
+        # Holidays
+        form_layout.add_widget(Label(text='Holidays (YYYY-MM-DD, comma separated):'))
+        self.holidays = TextInput(multiline=True, size_hint_y=None, height=100)
+        form_layout.add_widget(self.holidays)
+        
+        # Include form in scroll view
+        scroll_view.add_widget(form_layout)
+        self.layout.add_widget(scroll_view)
+        
+        # Buttons
+        button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
+        
+        self.save_button = Button(text='Save')
+        self.save_button.bind(on_press=self.save_config)
+        button_layout.add_widget(self.save_button)
+        
+        self.load_button = Button(text='Load')
+        self.load_button.bind(on_press=self.load_config)
+        button_layout.add_widget(self.load_button)
+        
+        self.next_button = Button(text='Next')
+        self.next_button.bind(on_press=self.next_screen)
+        button_layout.add_widget(self.next_button)
+        
+        self.layout.add_widget(button_layout)
+        self.add_widget(self.layout)
     
-        # Continue Button
-        continue_btn = Button(text='Continuar', size_hint_y=None, height=50)
-        continue_btn.bind(on_press=self.validate_and_continue)
-        layout.add_widget(continue_btn)
+    def save_config(self, instance):
+        try:
+            start_date_str = self.start_date.text.strip()
+            end_date_str = self.end_date.text.strip()
+            
+            # Validate dates
+            try:
+                start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                if start_date > end_date:
+                    raise ValueError("Start date must be before end date")
+            except ValueError as e:
+                self.show_error(f"Invalid date format: {str(e)}")
+                return
+            
+            # Validate numeric inputs
+            try:
+                num_workers = int(self.num_workers.text)
+                num_shifts = int(self.num_shifts.text)
+                gap_between_shifts = int(self.gap_between_shifts.text)
+                max_consecutive_weekends = int(self.max_consecutive_weekends.text)
+                
+                if num_workers <= 0 or num_shifts <= 0:
+                    raise ValueError("Number of workers and shifts must be positive")
+                
+                if gap_between_shifts < 0:
+                    raise ValueError("Minimum days between shifts cannot be negative")
+                
+                if max_consecutive_weekends <= 0:
+                    raise ValueError("Maximum consecutive weekend shifts must be positive")
+                    
+            except ValueError as e:
+                self.show_error(f"Invalid numeric input: {str(e)}")
+                return
+            
+            # Parse holidays
+            holidays_list = []
+            if self.holidays.text.strip():
+                for holiday_str in self.holidays.text.strip().split(','):
+                    try:
+                        holiday_date = datetime.strptime(holiday_str.strip(), "%Y-%m-%d").date()
+                        holidays_list.append(holiday_date)
+                    except ValueError:
+                        self.show_error(f"Invalid holiday date format: {holiday_str}")
+                        return
+            
+            # Save configuration to app
+            app = App.get_running_app()
+            app.schedule_config = {
+                'start_date': start_date,
+                'end_date': end_date,
+                'num_workers': num_workers,
+                'num_shifts': num_shifts,
+                'gap_between_shifts': gap_between_shifts,
+                'max_consecutive_weekends': max_consecutive_weekends,
+                'holidays': holidays_list,
+                'workers_data': [],
+                'schedule': {},
+                'current_worker_index': 0
+            }
+            
+            # Notify user
+            self.show_message('Configuration saved successfully')
+        
+        except Exception as e:
+            self.show_error(f"Error saving configuration: {str(e)}")
+
+    def load_config(self, instance):
+        try:
+            app = App.get_running_app()
+            
+            # Set input fields from configuration
+            if hasattr(app, 'schedule_config') and app.schedule_config:
+                if 'start_date' in app.schedule_config:
+                    self.start_date.text = app.schedule_config['start_date'].strftime("%Y-%m-%d")
+                
+                if 'end_date' in app.schedule_config:
+                    self.end_date.text = app.schedule_config['end_date'].strftime("%Y-%m-%d")
+                
+                if 'num_workers' in app.schedule_config:
+                    self.num_workers.text = str(app.schedule_config['num_workers'])
+                
+                if 'num_shifts' in app.schedule_config:
+                    self.num_shifts.text = str(app.schedule_config['num_shifts'])
+                
+                # Load new settings if they exist, otherwise use defaults
+                if 'gap_between_shifts' in app.schedule_config:
+                    self.gap_between_shifts.text = str(app.schedule_config['gap_between_shifts'])
+                else:
+                    self.gap_between_shifts.text = "1"  # Default value
+                
+                if 'max_consecutive_weekends' in app.schedule_config:
+                    self.max_consecutive_weekends.text = str(app.schedule_config['max_consecutive_weekends'])
+                else:
+                    self.max_consecutive_weekends.text = "2"  # Default value
+                
+                if 'holidays' in app.schedule_config and app.schedule_config['holidays']:
+                    holidays_str = ", ".join([d.strftime("%Y-%m-%d") for d in app.schedule_config['holidays']])
+                    self.holidays.text = holidays_str
+                
+                self.show_message('Configuration loaded successfully')
+            else:
+                self.show_message('No saved configuration found')
+                
+        except Exception as e:
+            self.show_error(f"Error loading configuration: {str(e)}")
     
+    def next_screen(self, instance):
+        # Validate and save configuration first
+        self.save_config(None)
+        
+        app = App.get_running_app()
+        if hasattr(app, 'schedule_config') and app.schedule_config:
+            self.manager.current = 'worker_details'
+        else:
+            self.show_error('Please complete and save the configuration first')
+    
+    def show_error(self, message):
+        popup = Popup(title='Error',
+                     content=Label(text=message),
+                     size_hint=(None, None), size=(400, 200))
+        popup.open()
+    
+    def show_message(self, message):
+        popup = Popup(title='Information',
+                     content=Label(text=message),
+                     size_hint=(None, None), size=(400, 200))
+        popup.open()
         self.add_widget(layout)
 
     def parse_holidays(self, holidays_str):
