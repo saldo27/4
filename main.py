@@ -126,7 +126,7 @@ class SetupScreen(Screen):
         # Holidays - given more space with a clear label
         holidays_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=150)
         holidays_layout.add_widget(Label(
-            text='Holidays (YYYY-MM-DD, comma separated):',
+            text='Festivos (DD-MM-YYYY, separado por coma):',
             halign='left',
             valign='bottom',
             size_hint_y=0.2
@@ -139,7 +139,7 @@ class SetupScreen(Screen):
         
         # Add some explanation text
         help_text = Label(
-            text="Tip: Enter holidays as dates separated by commas. Example: 2025-12-25, 2026-01-01",
+            text="Tip: Introduce Festivos separados por comas. Ej: 25-12-2025, 01-06-2026",
             halign='left',
             valign='top',
             size_hint_y=None,
@@ -186,14 +186,15 @@ class SetupScreen(Screen):
             start_date_str = self.start_date.text.strip()
             end_date_str = self.end_date.text.strip()
             
-            # Validate dates
+            # Validate dates - using DD-MM-YYYY format
             try:
-                start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-                end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                # Parse using DD-MM-YYYY format
+                start_date = datetime.strptime(start_date_str, "%d-%m-%Y").date()
+                end_date = datetime.strptime(end_date_str, "%d-%m-%Y").date()
                 if start_date > end_date:
                     raise ValueError("Start date must be before end date")
             except ValueError as e:
-                self.show_error(f"Invalid date format: {str(e)}")
+                self.show_error(f"Invalid date format: {str(e)}\nUse DD-MM-YYYY format")
                 return
             
             # Validate numeric inputs
@@ -216,16 +217,22 @@ class SetupScreen(Screen):
                 self.show_error(f"Invalid numeric input: {str(e)}")
                 return
             
-            # Parse holidays
+            # Parse holidays - also using DD-MM-YYYY format
             holidays_list = []
             if self.holidays.text.strip():
                 for holiday_str in self.holidays.text.strip().split(','):
                     try:
-                        holiday_date = datetime.strptime(holiday_str.strip(), "%Y-%m-%d").date()
+                        # Parse using DD-MM-YYYY format
+                        holiday_date = datetime.strptime(holiday_str.strip(), "%d-%m-%Y").date()
                         holidays_list.append(holiday_date)
                     except ValueError:
-                        self.show_error(f"Invalid holiday date format: {holiday_str}")
+                        self.show_error(f"Invalid holiday date format: {holiday_str}\nUse DD-MM-YYYY format")
                         return
+
+            # Convert date objects to datetime objects with time set to midnight
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.min.time())
+            holidays_datetime = [datetime.combine(holiday, datetime.min.time()) for holiday in holidays_list]
             
             # Save configuration to app
             app = App.get_running_app()
@@ -251,14 +258,14 @@ class SetupScreen(Screen):
     def load_config(self, instance):
         try:
             app = App.get_running_app()
-            
+        
             # Set input fields from configuration
             if hasattr(app, 'schedule_config') and app.schedule_config:
                 if 'start_date' in app.schedule_config:
-                    self.start_date.text = app.schedule_config['start_date'].strftime("%Y-%m-%d")
-                
+                    self.start_date.text = app.schedule_config['start_date'].strftime("%d-%m-%Y")
+            
                 if 'end_date' in app.schedule_config:
-                    self.end_date.text = app.schedule_config['end_date'].strftime("%Y-%m-%d")
+                    self.end_date.text = app.schedule_config['end_date'].strftime("%d-%m-%Y")
                 
                 if 'num_workers' in app.schedule_config:
                     self.num_workers.text = str(app.schedule_config['num_workers'])
@@ -278,7 +285,8 @@ class SetupScreen(Screen):
                     self.max_consecutive_weekends.text = "2"  # Default value
                 
                 if 'holidays' in app.schedule_config and app.schedule_config['holidays']:
-                    holidays_str = ", ".join([d.strftime("%Y-%m-%d") for d in app.schedule_config['holidays']])
+                    # Format holidays in DD-MM-YYYY format
+                    holidays_str = ", ".join([d.strftime("%d-%m-%Y") for d in app.schedule_config['holidays']])
                     self.holidays.text = holidays_str
                 
                 self.show_message('Configuration loaded successfully')
