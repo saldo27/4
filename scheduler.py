@@ -182,7 +182,7 @@ class Scheduler:
         logging.info(f"End date: {self.end_date}")
         logging.info(f"Number of shifts: {self.num_shifts}")
         logging.info(f"Number of workers: {len(self.workers_data)}")
-        logging.info(f"Holidays: {[h.strftime('%Y-%m-%d') for h in self.holidays]}")
+        logging.info(f"Holidays: {[h.strftime('%d-%m-%Y') for h in self.holidays]}")
         logging.info(f"Gap between shifts: {self.gap_between_shifts}")
         logging.info(f"Max consecutive weekend/holiday shifts: {self.max_consecutive_weekends}")
         logging.info(f"Current datetime (Spain): {self.current_datetime}")
@@ -570,7 +570,7 @@ class Scheduler:
             # Set the worker at the specific shift
             self.schedule[date][shift_idx] = worker_id
         
-            logging.debug(f"Updated tracking data for worker {worker_id} on {date.strftime('%Y-%m-%d')}, shift {shift_idx}")
+            logging.debug(f"Updated tracking data for worker {worker_id} on {date.strftime('%d-%m-%Y')}, shift {shift_idx}")
         
         except Exception as e:
             logging.error(f"Error updating tracking data for worker {worker_id}: {str(e)}", exc_info=True)
@@ -645,7 +645,7 @@ class Scheduler:
             if sample_size > 0:
                 sample_dates = list(self.schedule.keys())[:sample_size]
                 for date in sample_dates:
-                    logging.debug(f"Sample date {date.strftime('%Y-%m-%d')}: {self.schedule[date]}")
+                    logging.debug(f"Sample date {date.strftime('%d-%m-%Y')}: {self.schedule[date]}")
         
             # Calculate percentage
             if total_shifts > 0:
@@ -775,7 +775,7 @@ class Scheduler:
                     currently_assigned.append(worker_id)
             
                     # Log the assignment
-                    logging.info(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')}, post {post}")
+                    logging.info(f"Assigned worker {worker_id} to {date.strftime('%d-%m-%Y')}, post {post}")
                 else:
                     # No suitable worker found, leave unassigned
                     if date not in self.schedule:
@@ -784,7 +784,7 @@ class Scheduler:
                     while len(self.schedule[date]) <= post:
                         self.schedule[date].append(None)
                     
-                    logging.debug(f"No suitable worker found for {date.strftime('%Y-%m-%d')}, post {post}")
+                    logging.debug(f"No suitable worker found for {date.strftime('%d-%m-%Y')}, post {post}")
     
         # 4. Return the number of assignments made
         total_assigned = sum(worker_assignment_counts.values())
