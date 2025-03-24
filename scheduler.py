@@ -746,8 +746,8 @@ class Scheduler:
                         has_conflict = True
                         break
     
-            if has_conflict:
-                continue
+                if has_conflict:
+                    continue
                 
                 # This worker is a good candidate
                 best_worker = worker
@@ -784,7 +784,7 @@ class Scheduler:
                     self.schedule[date] = []
                 
                     while len(self.schedule[date]) <= post:
-                    self.schedule[date].append(None)
+                        self.schedule[date].append(None)
                     
                 logging.debug(f"No suitable worker found for {date.strftime('%d-%m-%Y')}, post {post}")
     
