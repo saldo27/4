@@ -1445,7 +1445,7 @@ class CalendarViewScreen(Screen):
     popup.open()
 
     # Return user's choice
-    return user_wants_pdf[0])
+    return user_wants_pdf[0]
 
     def prepare_month_statistics(self, month_stats):
         """
