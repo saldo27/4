@@ -1438,14 +1438,14 @@ class CalendarViewScreen(Screen):
     def on_close(instance):
         popup.dismiss()
 
-    pdf_button.bind(on_press=on_pdf)
-    close_button.bind(on_press=on_close)
+        pdf_button.bind(on_press=on_pdf)
+        close_button.bind(on_press=on_close)
 
-    # Show popup and wait for it to close
-    popup.open()
+        # Show popup and wait for it to close
+        popup.open()
 
-    # Return user's choice
-    return user_wants_pdf[0]
+        # Return user's choice
+        return user_wants_pdf[0]
 
     def prepare_month_statistics(self, month_stats):
         """
