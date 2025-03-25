@@ -1157,30 +1157,59 @@ class CalendarViewScreen(Screen):
 
     # Fix for the CalendarViewScreen Summary button
 
-    def show_summary(self):
+    ddef show_summary(self):
         """
         Generate and show a summary of the current schedule
         """
         try:
             # Get the schedule data
-            if not hasattr(self, 'scheduler') or not self.scheduler:
-                messagebox.showerror("Error", "No schedule data available")
+            app = App.get_running_app()
+            if not app.schedule_config or not app.schedule_config.get('schedule'):
+                popup = Popup(
+                    title='Error',
+                    content=Label(text="No schedule data available"),
+                    size_hint=(None, None), 
+                    size=(400, 200)
+                )
+                popup.open()
                 return
-        
+    
             # Create a summary to display and also prepare PDF data
-            stats = self.scheduler.stats.calculate_statistics()
-            summary_data = self.prepare_summary_data(stats)
+            month_stats = {
+                'total_shifts': 0,
+                'workers': {},
+                'weekend_shifts': 0,
+                'last_post_shifts': 0,
+                'posts': {i: 0 for i in range(app.schedule_config.get('num_shifts', 0))},
+                'worker_shifts': {}  # Dictionary to store shifts by worker
+            }
         
-            # Display summary in a dialog
-            self.display_summary_dialog(summary_data)
+            # Calculate statistics for the current month
+            self.prepare_month_statistics(month_stats)
+    
+            # Display summary in a dialog and ask if user wants PDF
+            if self.display_summary_dialog(month_stats):
+                try:
+                    self.export_summary_pdf(month_stats)
+                except Exception as e:
+                    logging.error(f"Failed to export summary PDF: {str(e)}", exc_info=True)
+                    error_popup = Popup(
+                        title='Error',
+                        content=Label(text=f"Failed to export PDF: {str(e)}"),
+                        size_hint=(None, None), 
+                        size=(400, 200)
+                    )
+                    error_popup.open()
         
-            # Ask if user wants a PDF
-            if messagebox.askyesno("Export PDF", "Do you want to export the summary as PDF?"):
-                self.export_summary_pdf(summary_data)
-            
         except Exception as e:
             logging.error(f"Failed to show summary: {str(e)}", exc_info=True)
-            messagebox.showerror("Error", f"Failed to show summary: {str(e)}")
+            popup = Popup(
+                title='Error',
+                content=Label(text=f"Failed to show summary: {str(e)}"),
+                size_hint=(None, None), 
+                size=(400, 200)
+            )
+            popup.open()
 
     def prepare_summary_data(self, stats):
         """
@@ -1229,49 +1258,255 @@ class CalendarViewScreen(Screen):
     
         return summary_data
 
-    def display_summary_dialog(self, summary_data):
+    def display_summary_dialog(self, month_stats):
         """
-        Display the summary data in a dialog window
+        Display the detailed summary dialog with shift listings and ask if user wants to export PDF
+        Returns True if user wants PDF
         """
-        # Create a new top-level window
-        summary_window = tk.Toplevel(self.master)
-        summary_window.title("Schedule Summary")
-        summary_window.geometry("800x600")
+        # Create the content layout
+        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+
+        # Summary scroll view
+        scroll = ScrollView(size_hint=(1, 0.8))
+        summary_layout = GridLayout(
+            cols=1, 
+            spacing=10, 
+            size_hint_y=None,
+            padding=[10, 10]
+        )
+        summary_layout.bind(minimum_height=summary_layout.setter('height'))
+
+        # Month title
+        month_title = Label(
+            text=f"Summary for {self.current_date.strftime('%B %Y')}",
+            size_hint_y=None,
+            height=40,
+            bold=True
+        )
+        summary_layout.add_widget(month_title)
+
+        # General stats
+        stats_box = BoxLayout(
+            orientation='vertical',
+            size_hint_y=None,
+            height=120,
+            padding=[5, 5]
+        )
+
+        stats_box.add_widget(Label(
+            text=f"Total Workers: {len(month_stats['workers'])}",
+            size_hint_y=None,
+            height=30,
+            halign='left'
+        ))
+
+        stats_box.add_widget(Label(
+            text=f"Total Shifts: {month_stats['total_shifts']}",
+            size_hint_y=None,
+            height=30,
+            halign='left'
+        ))
+
+        stats_box.add_widget(Label(
+            text=f"Weekend Shifts: {month_stats['weekend_shifts']}",
+            size_hint_y=None,
+            height=30,
+            halign='left'
+        ))
+
+        stats_box.add_widget(Label(
+            text=f"Last Post Shifts: {month_stats['last_post_shifts']}",
+            size_hint_y=None,
+            height=30,
+            halign='left'
+        ))
+
+        summary_layout.add_widget(stats_box)
+
+        # Worker details header
+        worker_header = Label(
+            text="Worker Details:",
+            size_hint_y=None,
+            height=40,
+            bold=True
+        )
+        summary_layout.add_widget(worker_header)
+
+        # Add worker details with shift listings
+        for worker_id, stats in sorted(month_stats['workers'].items()):
+            # Create a container for each worker
+            worker_box = BoxLayout(
+                orientation='vertical',
+                size_hint_y=None,
+                padding=[5, 10],
+                spacing=5
+            )
     
-        # Create a frame with scrollbar
-        frame = tk.Frame(summary_window)
-        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            # Calculate height based on number of shifts (min 120px, 30px per shift)
+            worker_shifts = month_stats['worker_shifts'].get(worker_id, [])
+            height = max(120, 60 + (len(worker_shifts) * 30))
+            worker_box.height = height
     
-        # Create scrollable text widget
-        text = tk.Text(frame, wrap=tk.WORD, padx=10, pady=10)
-        scrollbar = tk.Scrollbar(frame, command=text.yview)
-        text.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            # Worker summary
+            worker_box.add_widget(Label(
+                text=f"Worker {worker_id}:",
+                size_hint_y=None,
+                height=30,
+                bold=True,
+                halign='left'
+            ))
     
-        # Insert summary text
-        text.insert(tk.END, "SCHEDULE SUMMARY\n\n")
-        text.insert(tk.END, f"Total Workers: {len(summary_data['workers'])}\n")
-        text.insert(tk.END, f"Total Shifts: {summary_data['totals']['total_shifts']}\n")
-        text.insert(tk.END, f"Weekend Shifts: {summary_data['totals']['weekend_shifts']}\n")
-        text.insert(tk.END, f"Last Post Shifts: {summary_data['totals']['last_post_shifts']}\n\n")
+            worker_box.add_widget(Label(
+                text=f"Total: {stats['total']} | Weekends: {stats['weekends']} | Last Post: {stats['last_post']}",
+                size_hint_y=None,
+                height=30,
+                halign='left'
+            ))
     
-        # Worker details
-        text.insert(tk.END, "WORKER DETAILS\n\n")
+            # List of shifts header
+            worker_box.add_widget(Label(
+                text="Assigned Shifts:",
+                size_hint_y=None,
+                height=30,
+                halign='left'
+            ))
     
-        # Sort workers by name
-        sorted_workers = sorted(summary_data['workers'].items(), 
-                               key=lambda x: x[1]['name'])
+            # Display each shift
+            for shift in sorted(worker_shifts, key=lambda x: x['date']):
+                date_str = shift['date'].strftime('%d-%m-%Y')
+                post_str = f"Post {shift['post']}"
+                day_type = ""
+                if shift['is_holiday']:
+                    day_type = " [HOLIDAY]"
+                elif shift['is_weekend']:
+                    day_type = " [WEEKEND]"
+            
+                shift_label = Label(
+                    text=f"• {date_str} ({shift['day']}){day_type}: {post_str}",
+                    size_hint_y=None,
+                    height=30,
+                    halign='left'
+                )
+                shift_label.bind(size=shift_label.setter('text_size'))
+                worker_box.add_widget(shift_label)
+            
+            # Add separator
+            separator = BoxLayout(
+                size_hint_y=None,
+                height=1
+            )
+            with separator.canvas:
+                Color(0.7, 0.7, 0.7, 1)  # Light gray
+                Rectangle(pos=separator.pos, size=separator.size)
+        
+            # Add worker box and separator to layout
+            summary_layout.add_widget(worker_box)
+            summary_layout.add_widget(separator)
+
+        scroll.add_widget(summary_layout)
+        content.add_widget(scroll)
+
+        # Button layout
+        button_layout = BoxLayout(
+            orientation='horizontal', 
+            size_hint_y=0.1,
+            spacing=10
+        )
+
+        pdf_button = Button(text='Export PDF')
+        close_button = Button(text='Close')
+
+        button_layout.add_widget(pdf_button)
+        button_layout.add_widget(close_button)
+        content.add_widget(button_layout)
+
+        # Create popup
+        popup = Popup(
+            title='Monthly Summary',
+            content=content,
+            size_hint=(0.9, 0.9),
+            auto_dismiss=False
+        )
+
+        # Store user's choice
+        user_wants_pdf = [False]
+
+    def on_pdf(instance):
+        user_wants_pdf[0] = True
+        popup.dismiss()
     
-        for worker_id, data in sorted_workers:
-            text.insert(tk.END, f"Worker: {data['name']} ({worker_id})\n")
-            text.insert(tk.END, f"  Total Shifts: {data['total_shifts']} (Target: {data['target_shifts']})\n")
-            text.insert(tk.END, f"  Weekend Shifts: {data['weekend_shifts']}\n")
-            text.insert(tk.END, f"  Last Post Shifts: {data['last_post_shifts']}\n")
-            text.insert(tk.END, "\n")
-    
-        # Make the text widget read-only
-        text.configure(state=tk.DISABLED)
+    def on_close(instance):
+        popup.dismiss()
+
+    pdf_button.bind(on_press=on_pdf)
+    close_button.bind(on_press=on_close)
+
+    # Show popup and wait for it to close
+    popup.open()
+
+    # Return user's choice
+    return user_wants_pdf[0])
+
+    def prepare_month_statistics(self, month_stats):
+        """
+        Calculate statistics for the current month and store them in the provided month_stats dictionary
+        """
+        if not self.current_date:
+            return
+        
+        app = App.get_running_app()
+
+        # Get schedule data
+        schedule = app.schedule_config.get('schedule', {})
+        workers_data = app.schedule_config.get('workers_data', [])
+        num_shifts = app.schedule_config.get('num_shifts', 0)
+
+        # Get data for the current month
+        for date, workers in schedule.items():
+            if date.year == self.current_date.year and date.month == self.current_date.month:
+                month_stats['total_shifts'] += len(workers)
+            
+                # Count per worker
+                for i, worker_id in enumerate(workers):
+                    if worker_id is None:
+                        continue
+                    
+                    if worker_id not in month_stats['workers']:
+                        month_stats['workers'][worker_id] = {
+                            'total': 0,
+                            'weekends': 0, 
+                            'last_post': 0
+                        }
+            
+                    if worker_id not in month_stats['worker_shifts']:
+                        month_stats['worker_shifts'][worker_id] = []
+                        
+                    # Add this shift to worker's shifts list
+                    month_stats['worker_shifts'][worker_id].append({
+                        'date': date,
+                        'day': date.strftime('%A'),
+                        'post': i + 1,
+                        'is_weekend': date.weekday() >= 5,
+                        'is_holiday': date in app.schedule_config.get('holidays', [])
+                    })
+            
+                    month_stats['workers'][worker_id]['total'] += 1
+            
+                    # Count post distribution
+                    if i < num_shifts:
+                        month_stats['posts'][i] += 1
+                    
+                        # Count last post assignments
+                        if i == num_shifts - 1:
+                            month_stats['last_post_shifts'] += 1
+                            month_stats['workers'][worker_id]['last_post'] += 1
+            
+                    # Count weekend shifts
+                    if date.weekday() >= 5:  # Saturday or Sunday
+                        month_stats['weekend_shifts'] += 1
+                        month_stats['workers'][worker_id]['weekends'] += 1
+
+        return month_stats
 
     def show_month_summary(self, instance):
         """Display a summary of the current month's schedule"""
@@ -1280,82 +1515,24 @@ class CalendarViewScreen(Screen):
                 return
             
             app = App.get_running_app()
-        
-            # Get schedule data
-            schedule = app.schedule_config.get('schedule', {})
-            workers_data = app.schedule_config.get('workers_data', [])
-            num_shifts = app.schedule_config.get('num_shifts', 0)
-        
+    
             # Calculate basic statistics for this month
             month_stats = {
                 'total_shifts': 0,
                 'workers': {},
                 'weekend_shifts': 0,
                 'last_post_shifts': 0,
-                'posts': {i: 0 for i in range(num_shifts)},
+                'posts': {i: 0 for i in range(app.schedule_config.get('num_shifts', 0))},
                 'worker_shifts': {}  # Dictionary to store shifts by worker
             }
+    
+            # Calculate statistics
+            self.prepare_month_statistics(month_stats)
         
-            # Get data for the current month
-            for date, workers in schedule.items():
-                if date.year == self.current_date.year and date.month == self.current_date.month:
-                    month_stats['total_shifts'] += len(workers)
-                
-                    # Count per worker
-                    for i, worker_id in enumerate(workers):
-                        if worker_id is None:
-                            continue
-                        
-                        if worker_id not in month_stats['workers']:
-                            month_stats['workers'][worker_id] = {
-                                'total': 0,
-                                'weekends': 0, 
-                                'last_post': 0
-                            }
-                    
-                        if worker_id not in month_stats['worker_shifts']:
-                            month_stats['worker_shifts'][worker_id] = []
-                            
-                        # Add this shift to worker's shifts list
-                        month_stats['worker_shifts'][worker_id].append({
-                            'date': date,
-                            'day': date.strftime('%A'),
-                            'post': i + 1,
-                            'is_weekend': date.weekday() >= 5,
-                            'is_holiday': date in app.schedule_config.get('holidays', [])
-                        })
-                    
-                        month_stats['workers'][worker_id]['total'] += 1
-                    
-                        # Count post distribution
-                        if i < num_shifts:
-                            month_stats['posts'][i] += 1
-                        
-                            # Count last post assignments
-                            if i == num_shifts - 1:
-                                month_stats['last_post_shifts'] += 1
-                                month_stats['workers'][worker_id]['last_post'] += 1
-                    
-                        # Count weekend shifts
-                        if date.weekday() >= 5:  # Saturday or Sunday
-                            month_stats['weekend_shifts'] += 1
-                            month_stats['workers'][worker_id]['weekends'] += 1
-            
-            # Create a PDF report
-            user_wants_pdf = self.display_summary_dialog(month_stats)
-            if user_wants_pdf:
-                try:
-                    self.export_summary_pdf(month_stats)
-                except Exception as e:
-                    logging.error(f"PDF export error: {str(e)}", exc_info=True)
-                    popup = Popup(
-                        title='Error',
-                        content=Label(text=f'Failed to export PDF: {str(e)}'),
-                        size_hint=(None, None),
-                        size=(400, 200)
-                    )
-                    popup.open()
-            
+            # Display summary dialog and check if user wants PDF
+            if self.display_summary_dialog(month_stats):
+                self.export_summary_pdf(month_stats)
+        
         except Exception as e:
             popup = Popup(title='Error',
                          content=Label(text=f'Failed to show summary: {str(e)}'),
