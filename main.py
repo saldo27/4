@@ -1342,8 +1342,19 @@ class CalendarViewScreen(Screen):
                             month_stats['workers'][worker_id]['weekends'] += 1
             
             # Create a PDF report
-            if self.display_summary_dialog(month_stats):
-                self.export_summary_pdf(month_stats)
+            user_wants_pdf = self.display_summary_dialog(month_stats)
+            if user_wants_pdf:
+                try:
+                    self.export_summary_pdf(month_stats)
+                except Exception as e:
+                    logging.error(f"PDF export error: {str(e)}", exc_info=True)
+                    popup = Popup(
+                        title='Error',
+                        content=Label(text=f'Failed to export PDF: {str(e)}'),
+                        size_hint=(None, None),
+                        size=(400, 200)
+                    )
+                    popup.open()
             
         except Exception as e:
             popup = Popup(title='Error',
