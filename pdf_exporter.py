@@ -1,5 +1,5 @@
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4, landscape, letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -15,14 +15,13 @@ class PDFExporter:
         self.holidays = schedule_config.get('holidays', [])
         self.styles = getSampleStyleSheet()
 
-    # Add this new method to your PDFExporter class in pdf_exporter.py
-
     def export_monthly_summary(self, year, month, month_stats, filename=None):
         """Export detailed monthly summary with worker shift listings to PDF"""
         if not filename:
             month_name = datetime(year, month, 1).strftime('%B_%Y')
             filename = f'schedule_summary_{month_name}.pdf'
         
+        # Ensure we're using the correct page size constant
         doc = SimpleDocTemplate(
             filename,
             pagesize=letter,
@@ -59,12 +58,23 @@ class PDFExporter:
         story.append(stats_title)
         story.append(Spacer(1, 6))
     
-        stats_data = [
-            ["Total Workers", str(len(month_stats['workers']))],
-            ["Total Shifts", str(month_stats['total_shifts'])],
-            ["Weekend Shifts", str(month_stats['weekend_shifts'])],
-            ["Last Post Shifts", str(month_stats['last_post_shifts'])]
-        ]
+        # Check if month_stats has the expected structure
+        if not isinstance(month_stats, dict):
+            logging.error(f"Invalid month_stats format: {type(month_stats)}")
+            stats_data = [["No valid statistics data available"]]
+        else:
+            # Safely extract statistics
+            workers_count = len(month_stats.get('workers', {}))
+            total_shifts = month_stats.get('total_shifts', 0)
+            weekend_shifts = month_stats.get('weekend_shifts', 0)
+            last_post_shifts = month_stats.get('last_post_shifts', 0)
+            
+            stats_data = [
+                ["Total Workers", str(workers_count)],
+                ["Total Shifts", str(total_shifts)],
+                ["Weekend Shifts", str(weekend_shifts)],
+                ["Last Post Shifts", str(last_post_shifts)]
+            ]
     
         stats_table = Table(stats_data, colWidths=[200, 100])
         stats_table.setStyle(TableStyle([
@@ -74,23 +84,29 @@ class PDFExporter:
         story.append(stats_table)
         story.append(Spacer(1, 20))
     
-        # Add post distribution
-        post_title = Paragraph("Post Distribution", self.styles['Heading2'])
-        story.append(post_title)
-        story.append(Spacer(1, 6))
-    
-        post_data = [["Post", "Shifts"]]
-        for post, count in month_stats['posts'].items():
-            post_data.append([f"Post {post+1}", str(count)])
-    
-        post_table = Table(post_data, colWidths=[200, 100])
-        post_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
-        story.append(post_table)
-        story.append(Spacer(1, 20))
+        # Add post distribution if available
+        if 'posts' in month_stats:
+            post_title = Paragraph("Post Distribution", self.styles['Heading2'])
+            story.append(post_title)
+            story.append(Spacer(1, 6))
+        
+            post_data = [["Post", "Shifts"]]
+            for post, count in month_stats.get('posts', {}).items():
+                # Make sure post is treated as integer for proper indexing
+                try:
+                    post_index = int(post)
+                    post_data.append([f"Post {post_index+1}", str(count)])
+                except (ValueError, TypeError):
+                    post_data.append([f"Post {post}", str(count)])
+        
+            post_table = Table(post_data, colWidths=[200, 100])
+            post_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            story.append(post_table)
+            story.append(Spacer(1, 20))
     
         # Add worker details with shift listings
         worker_title = Paragraph("Worker Details", self.styles['Heading2'])
@@ -98,16 +114,16 @@ class PDFExporter:
         story.append(Spacer(1, 12))
     
         # Add detailed worker information with shift lists
-        for worker_id, stats in sorted(month_stats['workers'].items()):
+        for worker_id, stats in sorted(month_stats.get('workers', {}).items()):
             # Worker header
             worker_header = Paragraph(f"Worker {worker_id}", self.styles['Heading3'])
             story.append(worker_header)
         
-            # Worker summary
+            # Worker summary - handle cases where old and new stats format might differ
             worker_summary_data = [
-                ["Total Shifts", str(stats['total'])],
-                ["Weekend Shifts", str(stats['weekends'])],
-                ["Last Post Shifts", str(stats['last_post'])]
+                ["Total Shifts", str(stats.get('total', 0))],
+                ["Weekend Shifts", str(stats.get('weekends', 0))],
+                ["Last Post Shifts", str(stats.get('last_post', 0))]
             ]
         
             summary_table = Table(worker_summary_data, colWidths=[120, 80])
@@ -122,34 +138,54 @@ class PDFExporter:
             shift_header = Paragraph("Assigned Shifts:", self.styles['Normal'])
             story.append(shift_header)
         
-            # Get worker shifts
-            worker_shifts = month_stats['worker_shifts'].get(worker_id, [])
+            # Get worker shifts with error handling
+            worker_shifts = month_stats.get('worker_shifts', {}).get(worker_id, [])
         
             if worker_shifts:
-                # Create shift table
-                shift_data = [["Date", "Day", "Post", "Type"]]
+                try:
+                    # Create shift table
+                    shift_data = [["Date", "Day", "Post", "Type"]]
+                    
+                    for shift in sorted(worker_shifts, key=lambda x: x.get('date', datetime.max)):
+                        # Handle missing date - skip invalid entries
+                        if 'date' not in shift:
+                            continue
+                            
+                        date_obj = shift.get('date')
+                        if not isinstance(date_obj, datetime):
+                            # Try to convert to datetime if it's a string
+                            try:
+                                date_obj = datetime.strptime(str(date_obj), '%Y-%m-%d')
+                            except:
+                                continue
+                        
+                        date_str = date_obj.strftime('%d-%m-%Y')
+                        day_str = shift.get('day', date_obj.strftime('%a'))
+                        post_str = f"Post {shift.get('post', 'N/A')}"
+                    
+                        day_type = "Regular"
+                        if shift.get('is_holiday', False):
+                            day_type = "HOLIDAY"
+                        elif shift.get('is_weekend', False):
+                            day_type = "WEEKEND"
+                    
+                        shift_data.append([date_str, day_str, post_str, day_type])
                 
-                for shift in sorted(worker_shifts, key=lambda x: x['date']):
-                    date_str = shift['date'].strftime('%d-%m-%Y')
-                    day_str = shift['day']
-                    post_str = f"Post {shift['post']}"
-                
-                    day_type = "Regular"
-                    if shift['is_holiday']:
-                        day_type = "HOLIDAY"
-                    elif shift['is_weekend']:
-                        day_type = "WEEKEND"
-                
-                    shift_data.append([date_str, day_str, post_str, day_type])
-            
-                shift_table = Table(shift_data, colWidths=[100, 80, 60, 80])
-                shift_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ]))
-            
-                story.append(shift_table)
+                    # Only create table if we have data beyond the header
+                    if len(shift_data) > 1:
+                        shift_table = Table(shift_data, colWidths=[100, 80, 60, 80])
+                        shift_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ]))
+                        story.append(shift_table)
+                    else:
+                        story.append(Paragraph("No valid shifts data", self.styles['Normal']))
+                        
+                except Exception as e:
+                    logging.error(f"Error processing shifts for worker {worker_id}: {str(e)}")
+                    story.append(Paragraph(f"Error processing shifts: {str(e)}", self.styles['Normal']))
             else:
                 story.append(Paragraph("No shifts assigned", self.styles['Normal']))
         
@@ -157,8 +193,13 @@ class PDFExporter:
             story.append(Spacer(1, 20))
     
         # Build the PDF
-        doc.build(story)
-        return filename
+        try:
+            doc.build(story)
+            logging.info(f"Successfully created PDF: {filename}")
+            return filename
+        except Exception as e:
+            logging.error(f"Failed to create PDF: {str(e)}")
+            raise
         
     def export_monthly_calendar(self, year, month, filename=None):
         """Export monthly calendar view to PDF"""
@@ -206,7 +247,8 @@ class PDFExporter:
                     # Add scheduled workers
                     if date in self.schedule:
                         for i, worker_id in enumerate(self.schedule[date]):
-                            cell_content.append(f'S{i+1}: {worker_id}')
+                            if worker_id is not None:  # Check for None values
+                                cell_content.append(f'S{i+1}: {worker_id}')
                     
                     # Mark holidays
                     if date in self.holidays:
@@ -282,8 +324,12 @@ class PDFExporter:
             post_counts = {i: 0 for i in range(self.num_shifts)}
             for date in assignments:
                 if date in self.schedule:
-                    post = self.schedule[date].index(worker_id)
-                    post_counts[post] += 1
+                    try:
+                        post = self.schedule[date].index(worker_id)
+                        post_counts[post] += 1
+                    except ValueError:
+                        # Skip if worker_id isn't in the list
+                        pass
             
             # Calculate weekday distribution
             weekday_counts = {i: 0 for i in range(7)}
@@ -304,7 +350,7 @@ class PDFExporter:
                 f"Weekend Shifts: {weekend_shifts}",
                 f"Holiday Shifts: {holiday_shifts}",
                 "\nPost Distribution:",
-                *[f"  Post {post}: {count}" for post, count in post_counts.items()],
+                *[f"  Post {post+1}: {count}" for post, count in post_counts.items()],
                 "\nWeekday Distribution:",
                 "  Mon Tue Wed Thu Fri Sat Sun",
                 "  " + " ".join(f"{weekday_counts[i]:3d}" for i in range(7))
