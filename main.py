@@ -1431,12 +1431,13 @@ class CalendarViewScreen(Screen):
         # Store user's choice
         user_wants_pdf = [False]
 
-    def on_pdf(instance):
-        user_wants_pdf[0] = True
-        popup.dismiss()
+        # Define the callback functions with proper indentation
+        def on_pdf(instance):
+            user_wants_pdf[0] = True
+            popup.dismiss()
     
-    def on_close(instance):
-        popup.dismiss()
+        def on_close(instance):
+            popup.dismiss()
 
         pdf_button.bind(on_press=on_pdf)
         close_button.bind(on_press=on_close)
