@@ -1157,7 +1157,7 @@ class CalendarViewScreen(Screen):
 
     # Fix for the CalendarViewScreen Summary button
 
-    ddef show_summary(self):
+    def show_summary(self):
         """
         Generate and show a summary of the current schedule
         """
