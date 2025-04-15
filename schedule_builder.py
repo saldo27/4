@@ -1150,7 +1150,7 @@ class ScheduleBuilder:
                         self.worker_assignments[under_worker_id].add(date)
                 
                         # Update tracking data
-                        self.scheduler._update_tracking_data(under_worker_id, date_to_swap, post)
+                        self.scheduler._update_tracking_data(under_worker_id, date, post)
                 
                         changes_made += 1
                         logging.info(f"Balanced workload: Moved shift on {date.strftime('%d-%m-%Y')} post {post} "
