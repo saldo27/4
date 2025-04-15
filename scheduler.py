@@ -192,7 +192,7 @@ class Scheduler:
         """Reset all schedule data"""
         self.schedule = {}
         self.worker_assignments = {w['id']: set() for w in self.workers_data}
-        self.worker_posts = {w['id']: set() for w in self.workers_data}
+        self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
         self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
         self.worker_weekends = {w['id']: [] for w in self.workers_data}
         self.constraint_skips = {
