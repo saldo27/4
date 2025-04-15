@@ -1420,7 +1420,7 @@ class ScheduleBuilder:
                             self.worker_assignments[under_worker_id].add(weekend_date)
                         
                             # Remove the weekend tracking for the over-loaded worker
-                            self.scheduler._update_tracking_data(over_worker_id, date_to_swap, post, removing=True)
+                            self.scheduler._update_tracking_data(over_worker_id, weekend_date, post, removing=True)
 
                             # Update tracking data for the under-loaded worker
                             self.scheduler._update_tracking_data(under_worker_id, weekend_date, post)
