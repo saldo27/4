@@ -1536,6 +1536,18 @@ class Scheduler:
                 self.schedule_builder._verify_no_incompatibilities()
 
             return True
+
+            max_improvement_iterations = 10 # Safety limit
+            for i in range(max_improvement_iterations):
+                logging.info(f"--- Starting Global Improvement Iteration {i+1}/{max_improvement_iterations} ---")
+                # Call the builder's improvement function
+                made_improvement = self.schedule_builder._apply_targeted_improvements(attempt_number=i)
+
+                if not made_improvement:
+                    logging.info(f"No improvements made in iteration {i+1}. Stopping improvement loop.")
+                    break # Exit loop if no changes were made in a full pass
+                elif i == max_improvement_iterations - 1:
+                    logging.warning("Reached maximum improvement iterations.")
         
         except Exception as e:
             logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
