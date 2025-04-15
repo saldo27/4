@@ -344,29 +344,7 @@ class DataManager:
                     # Add missing assignment
                     self.worker_assignments[worker_id].add(date)
                     logging.warning(f"Fixed inconsistency: Added date {date} to worker {worker_id}'s assignments")
-
-    def _update_tracking_data(self, worker_id, date, post):
-        """
-        Update tracking data for a worker assignment
     
-        Args:
-            worker_id: ID of the worker
-            date: Date of assignment
-            post: Post number
-        """
-        # Update post tracking
-        self.worker_posts[worker_id].add(post)
-    
-        # Update weekday tracking
-        effective_weekday = self._get_effective_weekday(date)
-        self.worker_weekdays[worker_id][effective_weekday] += 1
-
-        # Update weekend tracking if applicable
-        if self._is_weekend_day(date):
-            weekend_start = self._get_weekend_start(date)
-            if weekend_start not in self.worker_weekends[worker_id]:
-                self.worker_weekends[worker_id].append(weekend_start)
-
     def _update_worker_stats(self, worker_id, date, removing=False):
         """
         Update worker statistics for assignment or removal
