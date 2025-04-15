@@ -520,60 +520,121 @@ class Scheduler:
         logging.info("Data integrity check completed")
         return True
 
-    def _update_tracking_data(self, worker_id, date, shift_idx):
+    def _update_tracking_data(self, worker_id, date, post, removing=False):
         """
-        Update tracking data structures when a worker is assigned to a shift
+        Update all tracking dictionaries when a worker is assigned OR removed.
+        Handles worker_posts, worker_weekdays, and worker_weekends.
+        Note: worker_assignments modification is handled directly in the calling
+        functions (_try_fill_empty_shifts, _balance_workloads, etc.) for atomicity.
 
         Args:
-            worker_id: ID of the worker being assigned
-            date: Date of assignment
-            shift_idx: Index of the shift being assigned (0-indexed)
+            worker_id: ID of the worker. Can be None if removing a placeholder.
+            date: The datetime.date object of the assignment/removal.
+            post: The post number (integer) of the assignment/removal.
+            removing (bool): If True, decrement stats/remove entries; otherwise, increment/add.
+                             Defaults to False.
         """
-        try:
-            # Update worker assignments
-            if worker_id not in self.worker_assignments:
-                self.worker_assignments[worker_id] = set()
-            self.worker_assignments[worker_id].add(date)
-    
-            # Update post tracking
-            if worker_id not in self.worker_posts:
-                self.worker_posts[worker_id] = set()
-            self.worker_posts[worker_id].add(shift_idx)
-    
-            # Update weekday counts
-            if worker_id not in self.worker_weekdays:
-                self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
-            weekday = date.weekday()
-            self.worker_weekdays[worker_id][weekday] += 1
-    
-            # Update weekend tracking
-            if worker_id not in self.worker_weekends:
-                self.worker_weekends[worker_id] = []
-            is_weekend = date.weekday() >= 4 or date in self.holidays  # Friday, Saturday, Sunday or holiday
-            if is_weekend:
-                if date not in self.worker_weekends[worker_id]:
-                    self.worker_weekends[worker_id].append(date)
-                self.worker_weekends[worker_id].sort()  # Keep sorted
-    
-            # Update the worker eligibility tracker if it exists
-            if hasattr(self, 'eligibility_tracker'):
-                self.eligibility_tracker.update_worker_status(worker_id, date)
-            
-            # Update the main schedule
-            if date not in self.schedule:
-                self.schedule[date] = [None] * self.num_shifts
-            
-            # Fill any gaps in the schedule list
-            while len(self.schedule[date]) <= shift_idx:
-                self.schedule[date].append(None)
-            
-            # Set the worker at the specific shift
-            self.schedule[date][shift_idx] = worker_id
-        
-            logging.debug(f"Updated tracking data for worker {worker_id} on {date.strftime('%d-%m-%Y')}, shift {shift_idx}")
-        
-        except Exception as e:
-            logging.error(f"Error updating tracking data for worker {worker_id}: {str(e)}", exc_info=True)
+        # Safety check if a None assignment is somehow passed during removal
+        if worker_id is None:
+            logging.debug(f"Skipping tracking update for None worker on {date.strftime('%Y-%m-%d')}, post {post}, removing={removing}")
+            return
+
+        logging.debug(f"Updating tracking data for worker {worker_id} on {date.strftime('%Y-%m-%d')}, post {post}, removing={removing}")
+
+        # Determine the increment/decrement value for counts
+        change = -1 if removing else 1
+
+        # --- Update worker_posts ---
+        # Assumes self.worker_posts is {worker_id: {post_index: count}}
+        if worker_id in self.worker_posts:
+            current_post_count = self.worker_posts[worker_id].get(post, 0)
+            new_post_count = max(0, current_post_count + change) # Ensure count doesn't go below 0
+            self.worker_posts[worker_id][post] = new_post_count
+            logging.debug(f"Worker {worker_id} post {post} count updated to {new_post_count}")
+        elif not removing: # Only initialize if adding and worker dict doesn't exist
+            # Initialize post counts for this worker if they are being added for the first time
+            self.worker_posts[worker_id] = {p: 0 for p in range(self.num_shifts)}
+            self.worker_posts[worker_id][post] = 1 # Set initial count to 1
+            logging.debug(f"Initialized post counts for worker {worker_id}; post {post} set to 1")
+        else:
+             # Worker not found during removal, log a warning
+             logging.warning(f"Tried to update post counts for non-existent worker {worker_id} during removal.")
+
+
+        # --- Update worker_weekdays ---
+        # Assumes self.worker_weekdays is {worker_id: {weekday_index: count}}
+        weekday = date.weekday() # Monday is 0 and Sunday is 6
+        if worker_id in self.worker_weekdays:
+            current_weekday_count = self.worker_weekdays[worker_id].get(weekday, 0)
+            new_weekday_count = max(0, current_weekday_count + change) # Ensure count doesn't go below 0
+            self.worker_weekdays[worker_id][weekday] = new_weekday_count
+            logging.debug(f"Worker {worker_id} weekday {weekday} count updated to {new_weekday_count}")
+        elif not removing: # Only initialize if adding and worker dict doesn't exist
+            # Initialize weekday counts for this worker
+            self.worker_weekdays[worker_id] = {wd: 0 for wd in range(7)}
+            self.worker_weekdays[worker_id][weekday] = 1 # Set initial count to 1
+            logging.debug(f"Initialized weekday counts for worker {worker_id}; weekday {weekday} set to 1")
+        else:
+            # Worker not found during removal, log a warning
+            logging.warning(f"Tried to update weekday counts for non-existent worker {worker_id} during removal.")
+
+
+        # --- Update worker_weekends ---
+        # Assumes self.worker_weekends is {worker_id: [date1, date2, ...]}
+        # Check if the date is a weekend (Sat/Sun) or a defined holiday
+        # Ensure self.holidays is a list or set of datetime.date objects
+        # Ensure self.date_utils exists and has is_holiday method if using holidays
+        is_weekend_day = date.weekday() >= 5 # Saturday (5) or Sunday (6)
+        is_holiday_day = hasattr(self, 'date_utils') and hasattr(self.date_utils, 'is_holiday') and self.date_utils.is_holiday(date)
+        # Alternatively, if date_utils not available/reliable:
+        # is_holiday_day = date in self.holidays
+
+        is_tracked_as_weekend = is_weekend_day or is_holiday_day
+
+        if is_tracked_as_weekend:
+            if worker_id in self.worker_weekends:
+                if removing:
+                    # Try to remove the date if it exists in the list
+                    if date in self.worker_weekends[worker_id]:
+                        try:
+                            self.worker_weekends[worker_id].remove(date)
+                            logging.debug(f"Removed weekend/holiday date {date.strftime('%Y-%m-%d')} for worker {worker_id}")
+                        except ValueError:
+                            # Should not happen due to 'if date in ...' check, but belt-and-suspenders
+                            logging.error(f"Internal error: Date {date.strftime('%Y-%m-%d')} was in worker {worker_id}'s weekend list but remove failed.")
+                    else:
+                        logging.warning(f"Tried to remove weekend/holiday date {date.strftime('%Y-%m-%d')} for worker {worker_id}, but it was not in their list.")
+                else: # Adding
+                    # Add the date only if it's not already present
+                    if date not in self.worker_weekends[worker_id]:
+                        self.worker_weekends[worker_id].append(date)
+                        self.worker_weekends[worker_id].sort() # Keep the list sorted
+                        logging.debug(f"Added weekend/holiday date {date.strftime('%Y-%m-%d')} for worker {worker_id}")
+                    else:
+                        # Date already exists, likely due to multiple shifts on the same weekend day or re-processing
+                        logging.debug(f"Weekend/holiday date {date.strftime('%Y-%m-%d')} already present for worker {worker_id}, not adding again.")
+
+            elif not removing: # Initialize if adding and worker dict doesn't exist
+                # Initialize weekend list for this worker
+                self.worker_weekends[worker_id] = [date]
+                logging.debug(f"Initialized weekend/holiday list for worker {worker_id} with date {date.strftime('%Y-%m-%d')}")
+            else:
+                 # Worker not found during removal, log a warning
+                 logging.warning(f"Tried to update weekend/holiday list for non-existent worker {worker_id} during removal.")
+
+        # --- Update Constraint Skips (Optional) ---
+        # If removing an assignment could potentially resolve a previously logged constraint skip,
+        # you might add logic here to remove entries from self.constraint_skips.
+        # However, this is complex and often not necessary unless you explicitly need to track
+        # the *current* number of active violations. Usually, skips are logged historically.
+        # Example (conceptual):
+        # if removing and worker_id in self.constraint_skips:
+        #     # Check if removing 'date' resolves a 'gap' skip involving 'date'
+        #     # Check if removing 'date' resolves an 'incompatibility' skip involving 'date'
+        #     pass # Add specific logic if needed
+
+        logging.debug(f"Finished updating tracking data for worker {worker_id}")
+
     
     def _get_date_range(self, start_date, end_date):
         """
