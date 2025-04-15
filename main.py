@@ -1408,7 +1408,7 @@ class CalendarViewScreen(Screen):
 
         # Button layout
         button_layout = BoxLayout(
-            orientation='horizontal', 
+            orientation='horizontal',
             size_hint_y=0.1,
             spacing=10
         )
@@ -1429,25 +1429,35 @@ class CalendarViewScreen(Screen):
         )
 
         # Store user's choice
-        user_wants_pdf = [False]
+        user_wants_pdf = [False] # Using a list to allow modification within nested function
 
         # Define the callback functions with proper indentation
         def on_pdf(instance):
+            print("DEBUG: on_pdf callback triggered!") # <<< ADDED
             user_wants_pdf[0] = True
+            print(f"DEBUG: user_wants_pdf set to: {user_wants_pdf[0]}") # <<< ADDED
             popup.dismiss()
-    
-        def on_close(instance):
-            popup.dismiss()
+            print("DEBUG: Popup dismissed from on_pdf") # <<< ADDED
 
+        def on_close(instance):
+            print("DEBUG: on_close callback triggered!") # <<< ADDED
+            user_wants_pdf[0] = False # Ensure it's False if closed manually
+            print(f"DEBUG: user_wants_pdf set to: {user_wants_pdf[0]}") # <<< ADDED
+            popup.dismiss()
+            print("DEBUG: Popup dismissed from on_close") # <<< ADDED
+
+
+        print("DEBUG: Binding buttons...") # <<< ADDED
         pdf_button.bind(on_press=on_pdf)
         close_button.bind(on_press=on_close)
+        print("DEBUG: Buttons bound.") # <<< ADDED
 
         # Show popup and wait for it to close
+        print("DEBUG: Opening popup...") # <<< ADDED
         popup.open()
+        print("DEBUG: Popup should be open now.") # <<< ADDED
 
-        # Return user's choice
-        return user_wants_pdf[0]
-
+    
     def prepare_month_statistics(self, month_stats):
         """
         Calculate statistics for the current month and store them in the provided month_stats dictionary
