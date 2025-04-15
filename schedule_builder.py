@@ -857,10 +857,10 @@ class ScheduleBuilder:
 
     def _try_fill_empty_shifts(self):
         """
-        Try to fill empty shifts while STRICTLY enforcing all mandatory constraints:
-        - Minimum 2-day gap between shifts
-        - Maximum 3 weekend shifts in any 3-week period
-        - No overriding of mandatory shifts
+        Try to fill empty shifts.
+        First, attempt direct assignment using strict constraints.
+        If that fails, attempt to find a valid swap involving another worker's shift.
+        Strictly enforces all mandatory constraints during swaps.
         """
         empty_shifts = []
 
@@ -869,60 +869,173 @@ class ScheduleBuilder:
             for post, worker in enumerate(workers):
                 if worker is None:
                     empty_shifts.append((date, post))
-    
+
         if not empty_shifts:
-            return False
-    
+            return False  # No empty shifts to fill
+
         logging.info(f"Attempting to fill {len(empty_shifts)} empty shifts")
 
         # Sort empty shifts by date (earlier dates first)
         empty_shifts.sort(key=lambda x: x[0])
-    
-        shifts_filled = 0
-    
-        # Try to fill each empty shift
+
+        shifts_filled_count = 0
+        made_change_in_pass = False # Flag to track if any change was made in this call
+
+        # --- Pass 1: Direct Assignment ---
+        remaining_empty_shifts = []
         for date, post in empty_shifts:
-            # Get candidates that satisfy ALL constraints (no relaxation)
-            candidates = []
-    
-            for worker in self.workers_data:
-                worker_id = worker['id']
-        
-                # Skip if already assigned to this date
-                if worker_id in self.schedule[date]:
-                    continue
-        
-                # Check if worker can be assigned (with strict constraints)
-                if self._can_assign_worker(worker_id, date, post):
-                    # Calculate score for this assignment
-                    score = self._calculate_worker_score(worker, date, post, relaxation_level=0)
-                    if score > float('-inf'):
-                        candidates.append((worker, score))
-    
-            if candidates:
-                # Sort candidates by score (highest first)
-                candidates.sort(key=lambda x: x[1], reverse=True)
-        
-                # Select the best candidate
-                best_worker = candidates[0][0]
-                worker_id = best_worker['id']
-        
-                # Assign the worker
-                self.schedule[date][post] = worker_id
-                self.worker_assignments[worker_id].add(date)
-                self.data_manager._update_tracking_data(worker_id, date, post)
-        
-                logging.info(f"Filled empty shift on {date} post {post} with worker {worker_id}")
-                shifts_filled += 1
-            
-                # Make sure to update the scheduler's main schedule too
-                self.scheduler.schedule = self.schedule.copy()
-    
-        # Save the current schedule as best AFTER all updates
-        self._save_current_as_best()
-    
-        logging.info(f"Filled {shifts_filled} of {len(empty_shifts)} empty shifts")
-        return shifts_filled > 0
+            # Ensure the slot is still empty (might have been filled by a swap earlier)
+            if date in self.schedule and len(self.schedule[date]) > post and self.schedule[date][post] is None:
+                candidates = []
+                for worker in self.workers_data:
+                    worker_id = worker['id']
+                    # Skip if already assigned to this date IN A DIFFERENT POST
+                    if worker_id in [w for i, w in enumerate(self.schedule[date]) if i != post and w is not None]:
+                         continue
+                    # Check if worker can be assigned (with strict constraints, relaxation_level=0)
+                    if self._can_assign_worker(worker_id, date, post):
+                        score = self._calculate_worker_score(worker, date, post, relaxation_level=0)
+                        if score > float('-inf'):
+                            candidates.append((worker, score))
+
+                if candidates:
+                    candidates.sort(key=lambda x: x[1], reverse=True)
+                    best_worker = candidates[0][0]
+                    worker_id = best_worker['id']
+
+                    # Assign the worker
+                    self.schedule[date][post] = worker_id
+                    self.worker_assignments[worker_id].add(date)
+                    # Use the main scheduler's update method
+                    self.scheduler._update_tracking_data(worker_id, date, post)
+
+                    logging.info(f"[Direct Fill] Filled empty shift on {date.strftime('%Y-%m-%d')} post {post} with worker {worker_id}")
+                    shifts_filled_count += 1
+                    made_change_in_pass = True
+                else:
+                    remaining_empty_shifts.append((date, post)) # Keep for swap attempt
+            elif date in self.schedule and len(self.schedule[date]) > post and self.schedule[date][post] is not None:
+                 # Slot was already filled, likely by a previous swap in this same function call
+                 pass # Do nothing, it's filled
+            else:
+                 # Should not happen if schedule structure is correct, but add safety
+                 logging.warning(f"Could not access schedule slot for {date.strftime('%Y-%m-%d')} post {post} during direct fill attempt.")
+                 remaining_empty_shifts.append((date, post)) # Keep for swap attempt
+
+
+        # --- Pass 2: Swap Attempt ---
+        if not remaining_empty_shifts:
+             logging.info(f"Filled {shifts_filled_count} shifts directly. No remaining empty shifts.")
+             # Update the main scheduler's schedule reference BEFORE returning
+             self.scheduler.schedule = self.schedule.copy()
+             self._save_current_as_best() # Save progress if direct fills happened
+             return made_change_in_pass
+
+        logging.info(f"Filled {shifts_filled_count} shifts directly. Attempting swaps for {len(remaining_empty_shifts)} remaining empty shifts.")
+
+        for date, post in remaining_empty_shifts:
+             # Ensure the slot is *still* empty before attempting swap
+             if not (date in self.schedule and len(self.schedule[date]) > post and self.schedule[date][post] is None):
+                 continue # Skip if it got filled somehow
+
+             swap_found = False
+             # Iterate through all workers to see if they could potentially take this empty shift via a swap
+             potential_swap_workers = [w for w in self.workers_data if w['id'] not in self.schedule.get(date, [])]
+             random.shuffle(potential_swap_workers) # Avoid bias
+
+             for worker_W in potential_swap_workers:
+                 worker_W_id = worker_W['id']
+
+                 # Simulate removing W's assignments one by one to see if that makes (date, post) valid for W
+                 original_assignments_W = sorted(list(self.worker_assignments.get(worker_W_id, set())))
+
+                 for conflict_date in original_assignments_W:
+                     # Temporarily remove this assignment to check if W becomes valid for the empty slot
+                     self.worker_assignments[worker_W_id].remove(conflict_date)
+
+                     # Check if worker W can NOW take the empty slot (date, post)
+                     can_W_take_empty_slot = self._can_assign_worker(worker_W_id, date, post)
+
+                     # Restore the assignment before proceeding
+                     self.worker_assignments[worker_W_id].add(conflict_date) # Add back immediately
+
+                     if not can_W_take_empty_slot:
+                         continue # This conflict_date wasn't the blocker, or W is still invalid
+
+                     # If W *could* take the empty slot by giving up conflict_date,
+                     # find the post W occupies on conflict_date
+                     try:
+                         conflict_post = self.schedule[conflict_date].index(worker_W_id)
+                     except (ValueError, IndexError, KeyError):
+                         logging.warning(f"Worker {worker_W_id} has assignment for {conflict_date} but not found in schedule. Skipping swap check.")
+                         continue # Data inconsistency
+
+                     # Now, find a worker X who can take W's original shift (conflict_date, conflict_post)
+                     worker_X_id = self._find_swap_candidate(worker_W_id, conflict_date, conflict_post)
+
+                     if worker_X_id:
+                         # --- Perform the Swap ---
+                         logging.info(f"[Swap Fill] Found swap: W={worker_W_id}, X={worker_X_id}, EmptySlot=({date.strftime('%Y-%m-%d')},{post}), ConflictSlot=({conflict_date.strftime('%Y-%m-%d')},{conflict_post})")
+
+                         # 1. Assign W to the originally empty slot (date, post)
+                         self.schedule[date][post] = worker_W_id
+                         self.worker_assignments[worker_W_id].add(date)
+                         self.scheduler._update_tracking_data(worker_W_id, date, post) # Update stats for new assignment
+
+                         # 2. Remove W from their conflicting slot (conflict_date, conflict_post)
+                         self.schedule[conflict_date][conflict_post] = None # Temporarily empty
+                         self.worker_assignments[worker_W_id].remove(conflict_date)
+                         self.scheduler._update_tracking_data(worker_W_id, conflict_date, conflict_post, removing=True) # Update stats for removal
+
+                         # 3. Assign X to W's old slot (conflict_date, conflict_post)
+                         self.schedule[conflict_date][conflict_post] = worker_X_id
+                         self.worker_assignments[worker_X_id].add(conflict_date)
+                         self.scheduler._update_tracking_data(worker_X_id, conflict_date, conflict_post) # Update stats for X
+
+                         shifts_filled_count += 1
+                         made_change_in_pass = True
+                         swap_found = True
+                         break # Stop searching for workers W for this empty slot
+
+                 if swap_found:
+                     break # Move to the next empty slot
+
+             if not swap_found:
+                  logging.debug(f"Could not find direct fill or swap for empty shift on {date.strftime('%Y-%m-%d')} post {post}")
+
+
+        logging.info(f"Finished attempting swaps. Total shifts filled in this run: {shifts_filled_count}")
+
+        # Update the main scheduler's schedule reference AFTER all updates
+        self.scheduler.schedule = self.schedule.copy()
+        if made_change_in_pass:
+            self._save_current_as_best() # Save progress if swaps happened
+
+        return made_change_in_pass # Return True if any shift was filled (direct or swap)
+
+    def _find_swap_candidate(self, worker_W_id, conflict_date, conflict_post):
+        """
+        Finds a worker (X) who can take the shift at (conflict_date, conflict_post),
+        ensuring they are not worker_W_id and not already assigned on that date.
+        Uses strict constraints (_can_assign_worker).
+        """
+        potential_X_workers = [
+            w for w in self.workers_data
+            if w['id'] != worker_W_id and w['id'] not in self.schedule.get(conflict_date, [])
+        ]
+        random.shuffle(potential_X_workers) # Avoid bias
+
+        for worker_X in potential_X_workers:
+            worker_X_id = worker_X['id']
+            # Check if X can strictly take W's old slot
+            if self._can_assign_worker(worker_X_id, conflict_date, conflict_post):
+                 # Optionally, add scoring here to pick the 'best' X if multiple candidates exist
+                 # For simplicity, we take the first valid one found.
+                 logging.debug(f"Found valid swap candidate X={worker_X_id} for W={worker_W_id}'s slot ({conflict_date.strftime('%Y-%m-%d')},{conflict_post})")
+                 return worker_X_id
+
+        logging.debug(f"No suitable swap candidate X found for W={worker_W_id}'s slot ({conflict_date.strftime('%Y-%m-%d')},{conflict_post})")
+        return None
     
     def _balance_workloads(self):
         """
@@ -1424,25 +1537,51 @@ class ScheduleBuilder:
 
     def _apply_targeted_improvements(self, attempt_number):
         """
-        Apply targeted improvements to the schedule
-    
-        This method looks for specific issues in the current best schedule
-        and tries to fix them through strategic reassignments
+        Apply targeted improvements to the schedule. Runs multiple improvement steps.
+        Returns True if ANY improvement step made a change, False otherwise.
         """
-        # Set a seed for this improvement attempt
         random.seed(1000 + attempt_number)
-    
-        # 1. Try to fill empty shifts by relaxing some constraints
-        self._try_fill_empty_shifts()
-    
+        any_change_made = False
+
+        logging.info(f"--- Starting Improvement Attempt {attempt_number} ---")
+
+        # 1. Try to fill empty shifts (using direct fill and swaps)
+        if self._try_fill_empty_shifts():
+            logging.info(f"Attempt {attempt_number}: Filled some empty shifts.")
+            any_change_made = True
+            # Re-verify integrity after potentially complex swaps
+            self._verify_assignment_consistency()
+
         # 2. Try to improve post rotation by swapping assignments
-        self._improve_post_rotation()
-    
+        if self._improve_post_rotation():
+            logging.info(f"Attempt {attempt_number}: Improved post rotation.")
+            any_change_made = True
+            self._verify_assignment_consistency()
+
+
         # 3. Try to improve weekend distribution
-        self._improve_weekend_distribution()
-    
+        if self._improve_weekend_distribution():
+            logging.info(f"Attempt {attempt_number}: Improved weekend distribution.")
+            any_change_made = True
+            self._verify_assignment_consistency()
+
+
         # 4. Try to balance workload distribution
-        self._balance_workloads()
+        if self._balance_workloads():
+            logging.info(f"Attempt {attempt_number}: Balanced workloads.")
+            any_change_made = True
+            self._verify_assignment_consistency()
+
+        # 5. Final Incompatibility Check (Important after swaps/reassignments)
+        # It might be better to run this *last* to clean up any issues created by other steps.
+        if self._verify_no_incompatibilities(): # Assuming this tries to fix them
+             logging.info(f"Attempt {attempt_number}: Fixed incompatibility violations.")
+             any_change_made = True
+             # No need to verify consistency again, as this function should handle it
+
+
+        logging.info(f"--- Finished Improvement Attempt {attempt_number}. Changes made: {any_change_made} ---")
+        return any_change_made # Return True if any step made a change
 
     # 7. Backup and Restore Methods
 
