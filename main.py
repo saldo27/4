@@ -1532,7 +1532,9 @@ class CalendarViewScreen(Screen):
         
             # Display summary dialog and check if user wants PDF
             if self.display_summary_dialog(month_stats):
-                self.export_summary_pdf(month_stats)
+                # *** MODIFIED CALL HERE ***
+                # Pass year and month from self.current_date
+                self.export_summary_pdf(self.current_date.year, self.current_date.month, month_stats) 
         
         except Exception as e:
             popup = Popup(title='Error',
