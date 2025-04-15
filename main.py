@@ -62,9 +62,9 @@ class PasswordScreen(Screen):
         entered_password = self.password_input.text
         if entered_password == correct_password:
             self.error_label.text = '' # Clear error
-            self.manager.current = 'welcome' # Transition to the main app
+            self.manager.current = 'Hola!' # Transition to the main app
         else:
-            self.error_label.text = 'Incorrect Password'
+            self.error_label.text = 'Incorrecto'
             self.password_input.text = '' # Clear input field
 
 
@@ -170,7 +170,7 @@ class SetupScreen(Screen):
         # Holidays - given more space with a clear label
         holidays_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=150)
         holidays_layout.add_widget(Label(
-            text='Festivos (DD-MM-YYYY, separado por coma):',
+            text='Festivos (DD-MM-YYYY, separados por comas):',
             halign='left',
             valign='bottom',
             size_hint_y=0.2
@@ -207,15 +207,15 @@ class SetupScreen(Screen):
         )
         
         # Button styling (simplified to avoid potential issues)
-        self.save_button = Button(text='Save Settings', font_size='16sp')
+        self.save_button = Button(text='Guardar', font_size='16sp')
         self.save_button.bind(on_press=self.save_config)
         button_section.add_widget(self.save_button)
         
-        self.load_button = Button(text='Load Settings', font_size='16sp')
+        self.load_button = Button(text='Cargar', font_size='16sp')
         self.load_button.bind(on_press=self.load_config)
         button_section.add_widget(self.load_button)
         
-        self.next_button = Button(text='Next →', font_size='16sp')
+        self.next_button = Button(text='Sigue →', font_size='16sp')
         self.next_button.bind(on_press=self.next_screen)
         button_section.add_widget(self.next_button)
         
