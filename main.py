@@ -24,6 +24,50 @@ logging.basicConfig(
     ]
 )
 
+class PasswordScreen(Screen):
+    def __init__(self, **kwargs):
+        super(PasswordScreen, self).__init__(**kwargs)
+        layout = BoxLayout(orientation='vertical', padding=50, spacing=20)
+
+        layout.add_widget(Label(text='Enter Password:', size_hint_y=None, height=40))
+
+        self.password_input = TextInput(
+            multiline=False,
+            password=True,  # Hides the entered characters
+            size_hint_y=None,
+            height=40,
+            halign='center',
+            font_size=20
+        )
+        layout.add_widget(self.password_input)
+
+        self.error_label = Label(text='', color=(1, 0, 0, 1), size_hint_y=None, height=30) # For error messages
+        layout.add_widget(self.error_label)
+
+        submit_btn = Button(text='Login', size_hint_y=None, height=50)
+        submit_btn.bind(on_press=self.check_password)
+        layout.add_widget(submit_btn)
+
+        # Add some spacing at the bottom
+        layout.add_widget(BoxLayout(size_hint_y=0.4))
+
+        self.add_widget(layout)
+
+    def check_password(self, instance):
+        # --- IMPORTANT: Store your password securely! ---
+        # Hardcoding is okay for testing, but not for production.
+        # Consider environment variables or a more secure method.
+        correct_password = "this" # CHANGE THIS
+
+        entered_password = self.password_input.text
+        if entered_password == correct_password:
+            self.error_label.text = '' # Clear error
+            self.manager.current = 'welcome' # Transition to the main app
+        else:
+            self.error_label.text = 'Incorrect Password'
+            self.password_input.text = '' # Clear input field
+
+
 class WelcomeScreen(Screen):
     def __init__(self, **kwargs):
         super(WelcomeScreen, self).__init__(**kwargs)
