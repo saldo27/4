@@ -225,7 +225,7 @@ class SetupScreen(Screen):
                         holiday_date = datetime.strptime(holiday_str.strip(), "%d-%m-%Y").date()
                         holidays_list.append(holiday_date)
                     except ValueError:
-                        self.show_error(f"Invalid holiday date format: {holiday_str}\nUse DD-MM-YYYY format")
+                        self.show_error(f"Formato de fecha no válido: {holiday_str}\nUse DD-MM-YYYY format")
                         return
         
             # Convert date objects to datetime objects with time set to midnight
@@ -249,7 +249,7 @@ class SetupScreen(Screen):
             }
         
             # Notify user
-            self.show_message('Todo correcto')
+            self.show_message('Introduce los datos de los médicos')
     
         except Exception as e:
             self.show_error(f"Error saving configuration: {str(e)}")
@@ -1725,7 +1725,8 @@ class CalendarViewScreen(Screen):
         return user_wants_pdf[0]
 
     def export_summary_pdf(self, month_stats):
-        """Export a detailed summary with shift listings as a PDF file"""
+        print("DEBUG: export_summary_pdf called!") # <--- ADD THIS LINE
+        logging.info("Attempting to export summary PDF...") # <--- ALSO GOOD TO ADD
         try:
             app = App.get_running_app()
         
