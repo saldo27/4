@@ -1,3 +1,6 @@
+from kivy.app import App 
+from kivy.uix.popup import Popup
+from kivy.uix.label import Label
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape, letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -15,12 +18,15 @@ class PDFExporter:
         self.holidays = schedule_config.get('holidays', [])
         self.styles = getSampleStyleSheet()
 
-    def export_summary_pdf(self, month_stats):
+    def export_summary_pdf(self, year, month, month_stats): 
         """Export a detailed summary with shift listings as a PDF file"""
+        # Initialize filename here before the try block
+        filename = f"summary_{datetime(year, month, 1).strftime('%B_%Y')}.pdf" 
         try:
-            app = App.get_running_app()
-            month_name = self.current_date.strftime('%B_%Y')
-            filename = f"summary_{month_name}.pdf"
+            # Remove: app = App.get_running_app() # Not needed here if Popup/Label are imported
+            # Use year and month passed as arguments
+            month_name = datetime(year, month, 1).strftime('%B_%Y')
+            # filename = f"summary_{month_name}.pdf" # Moved filename creation outside try
         
             # Get the necessary data from reportlab
             from reportlab.lib import colors
@@ -137,7 +143,7 @@ class PDFExporter:
             # Build the PDF
             doc.build(story)
         
-            # Show success message
+            # Show success message (Uses Popup/Label, now imported)
             popup = Popup(
                 title='Success',
                 content=Label(text=f'Summary exported to {filename}'),
@@ -146,6 +152,9 @@ class PDFExporter:
             )
             popup.open()
             logging.info(f"Successfully created PDF: {filename}")
+            
+            # Return filename on success
+            return filename 
         
         except Exception as e:
             # Log the error with full traceback for debugging
