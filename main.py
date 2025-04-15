@@ -71,6 +71,7 @@ class PasswordScreen(Screen):
 class WelcomeScreen(Screen):
     def __init__(self, **kwargs):
         super(WelcomeScreen, self).__init__(**kwargs)
+        print("DEBUG: PasswordScreen __init__ called!") # <<< ADD THIS LINE
         layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
         
         layout.add_widget(Label(text='Bienvenido'))
@@ -2012,11 +2013,20 @@ class ShiftManagerApp(App):
         # We'll set the datetime when creating the Scheduler instance
 
     def build(self):
+        print("DEBUG: ShiftManagerApp build method started.") # <<< ADD THIS LINE
         sm = ScreenManager()
+        # --- Add PasswordScreen FIRST ---
+        sm.add_widget(PasswordScreen(name='password'))
+        # --- Add other screens AFTER ---
         sm.add_widget(WelcomeScreen(name='welcome'))
         sm.add_widget(SetupScreen(name='setup'))
         sm.add_widget(WorkerDetailsScreen(name='worker_details'))
         sm.add_widget(CalendarViewScreen(name='calendar_view'))
+
+        # Print the list of screens in the manager
+        print(f"DEBUG: Screens in manager: {[s.name for s in sm.screens]}") # <<< ADD THIS LINE
+        # Print the default current screen
+        print(f"DEBUG: Default current screen: {sm.current}") # <<< ADD THIS LINE
         return sm
 
 if __name__ == '__main__':
