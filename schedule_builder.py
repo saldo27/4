@@ -1150,7 +1150,7 @@ class ScheduleBuilder:
                         self.worker_assignments[under_worker_id].add(date)
                 
                         # Update tracking data
-                        self.scheduler._update_tracking_data(under_worker_id, weekend_date, post)
+                        self.scheduler._update_tracking_data(under_worker_id, date_to_swap, post)
                 
                         changes_made += 1
                         logging.info(f"Balanced workload: Moved shift on {date.strftime('%d-%m-%Y')} post {post} "
@@ -1420,7 +1420,7 @@ class ScheduleBuilder:
                             self.worker_assignments[under_worker_id].add(weekend_date)
                         
                             # Remove the weekend tracking for the over-loaded worker
-                            self._update_worker_stats(over_worker_id, weekend_date, removing=True)
+                            self.scheduler._update_tracking_data(over_worker_id, date_to_swap, post, removing=True)
 
                             # Update tracking data for the under-loaded worker
                             self.scheduler._update_tracking_data(under_worker_id, weekend_date, post)
