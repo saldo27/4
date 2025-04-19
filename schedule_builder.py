@@ -91,8 +91,36 @@ class ScheduleBuilder:
                     self.worker_assignments[worker_id].remove(date)
                     logging.warning(f"Fixed inconsistency: Worker {worker_id} was tracked for {date} but not in schedule")
 
-    # 3. Worker Constraint Check Methods   
-    
+    # 3. Worker Constraint Check Methods
+
+    def _is_mandatory(self, worker_id, date):
+        """Checks if a given date is mandatory for the worker."""
+        # Find the worker data from the scheduler's list
+        worker = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
+        if not worker:
+            logging.warning(f"_is_mandatory check failed: Worker {worker_id} not found.")
+            return False # Worker not found, cannot be mandatory
+
+        mandatory_days_str = worker.get('mandatory_days', '')
+        if not mandatory_days_str:
+            return False # No mandatory days defined
+
+        # Use the utility to parse dates, handle potential errors
+        try:
+            # Access date_utils via the scheduler reference
+            mandatory_dates = self.scheduler.date_utils.parse_dates(mandatory_days_str)
+            is_mand = date in mandatory_dates
+            # Add debug log
+            # logging.debug(f"Checking mandatory for {worker_id} on {date.strftime('%Y-%m-%d')}: Result={is_mand} (List: {mandatory_dates})")
+            return is_mand
+        except ValueError:
+             # Log error if parsing fails, treat as not mandatory for safety
+             logging.error(f"Could not parse mandatory_days for worker {worker_id}: '{mandatory_days_str}'")
+             return False
+        except AttributeError:
+             # Handle case where date_utils might not be initialized yet (shouldn't happen here, but safety)
+             logging.error("date_utils not available in scheduler during _is_mandatory check.")
+             return False    
     def _is_worker_unavailable(self, worker_id, date):
         """
         Check if a worker is unavailable on a specific date
