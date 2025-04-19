@@ -27,6 +27,7 @@ class ScheduleBuilder:
         self.num_shifts = scheduler.num_shifts
         self.holidays = scheduler.holidays
         self.constraint_checker = scheduler.constraint_checker
+        self.best_schedule_data = None # Initialize the attribute to store the best state found
 
         # Add references to the configurable parameters
         self.gap_between_shifts = scheduler.gap_between_shifts
@@ -2026,15 +2027,14 @@ class ScheduleBuilder:
         """
         current_score = self.calculate_score() # Use current state from scheduler
 
-        # If it's the initial save OR the current score is better than the best found so far
-        if initial or self.best_schedule_data is None or current_score > self.best_schedule_data['score']:
-            log_prefix = "[Initial Save]" if initial else "[New Best]"
-            old_score = self.best_schedule_data['score'] if self.best_schedule_data else float('-inf')
+        # This line caused the error if self.best_schedule_data wasn't initialized
+        old_score = self.best_schedule_data['score'] if self.best_schedule_data is not None else float('-inf')
 
+        if initial or self.best_schedule_data is None or current_score > old_score:
+            log_prefix = "[Initial Save]" if initial else "[New Best]"
             logging.info(f"{log_prefix} Saving current state as best. Score: {current_score:.2f} (Previous best: {old_score:.2f})")
 
             # Deep copy all relevant state from the scheduler instance
-            # Ensure all tracked data is included here
             self.best_schedule_data = {
                 'schedule': copy.deepcopy(self.scheduler.schedule),
                 'worker_assignments': copy.deepcopy(self.scheduler.worker_assignments),
@@ -2044,10 +2044,8 @@ class ScheduleBuilder:
                 'last_assigned_date': copy.deepcopy(self.scheduler.last_assigned_date),
                 'consecutive_shifts': copy.deepcopy(self.scheduler.consecutive_shifts),
                 'score': current_score
-                # Add any other tracked metrics that define the schedule's state
+                # Add any other tracked metrics
             }
-        # else:
-            # logging.debug(f"Current score {current_score:.2f} is not better than best score {self.best_schedule_data['score']:.2f}. Not saving.")
 
     def get_best_schedule(self):
         """ Returns the best schedule data dictionary found. """
