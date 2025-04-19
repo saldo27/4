@@ -1557,7 +1557,7 @@ class CalendarViewScreen(Screen):
         else:
             for worker_id, stats in sorted(stats_data['workers'].items(), key=numeric_sort_key):
                 print(f"DEBUG: display_summary_dialog - Processing worker: {worker_id}")
-            worker_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=[5, 10], spacing=3)
+                worker_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=[5, 10], spacing=3)
                 # Get calculated stats for this worker
                 total_w = stats.get('total', 0)
                 weekends_w = stats.get('weekends', 0)
