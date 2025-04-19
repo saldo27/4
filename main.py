@@ -62,7 +62,7 @@ class PasswordScreen(Screen):
         entered_password = self.password_input.text
         if entered_password == correct_password:
             self.error_label.text = '' # Clear error
-            self.manager.current = 'Hola!' # Transition to the main app
+            self.manager.current = 'WelcomeScreen' # Transition to the main app
         else:
             self.error_label.text = 'Incorrecto'
             self.password_input.text = '' # Clear input field
