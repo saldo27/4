@@ -1504,11 +1504,12 @@ class CalendarViewScreen(Screen):
         print(f"DEBUG: prepare_statistics - Finished GLOBAL calculation.")
         return global_stats # Return the newly created dictionary
 
-    def display_summary_dialog(self, month_stats):
+    def display_summary_dialog(self, stats_data):
         """
-        Display the detailed summary dialog with shift listings and distributions.
+        Display the detailed summary dialog (handles global stats).
         """
         print("DEBUG: display_summary_dialog called.")
+        # --- ALL THE FOLLOWING CODE MUST BE INDENTED INSIDE THIS METHOD ---
         content = BoxLayout(orientation='vertical', padding=10, spacing=10)
         scroll = ScrollView(size_hint=(1, 0.8))
         summary_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=[10, 10])
@@ -1525,7 +1526,7 @@ class CalendarViewScreen(Screen):
 
         summary_title = Label(text=title_text, size_hint_y=None, height=40, bold=True)
         summary_layout.add_widget(summary_title)
-        
+
         # --- Worker Details Header ---
         worker_header = Label(text="Worker Details:", size_hint_y=None, height=40, bold=True)
         summary_layout.add_widget(worker_header)
@@ -1533,80 +1534,85 @@ class CalendarViewScreen(Screen):
         # --- Loop Through Workers ---
         print("DEBUG: display_summary_dialog - Adding worker details...")
         weekdays_short = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+        workers_stats = stats_data.get('workers', {})
+        worker_shifts_all = stats_data.get('worker_shifts', {})
 
-        for worker_id, stats in sorted(month_stats['workers'].items()):
-            print(f"DEBUG: display_summary_dialog - Processing worker: {worker_id}")
-            worker_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=[5, 10], spacing=3) # Reduced spacing
+        if not workers_stats:
+             # Add a message if there are no workers/stats
+             summary_layout.add_widget(Label(text="No worker statistics found for this period.", size_hint_y=None, height=30))
+        else:
+            for worker_id, stats in sorted(workers_stats.items()):
+                print(f"DEBUG: display_summary_dialog - Processing worker: {worker_id}")
+                worker_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=[5, 10], spacing=3)
 
-            # Get calculated stats for this worker
-            total_w = stats.get('total', 0)
-            weekends_w = stats.get('weekends', 0)
-            holidays_w = stats.get('holidays', 0) # Get holiday count
-            last_post_w = stats.get('last_post', 0)
-            weekday_counts = stats.get('weekday_counts', {})
-            post_counts = stats.get('post_counts', {})
-            worker_shifts = month_stats['worker_shifts'].get(worker_id, [])
+                # Get calculated stats for this worker
+                total_w = stats.get('total', 0)
+                weekends_w = stats.get('weekends', 0)
+                holidays_w = stats.get('holidays', 0)
+                last_post_w = stats.get('last_post', 0)
+                weekday_counts = stats.get('weekday_counts', {})
+                post_counts = stats.get('post_counts', {})
+                worker_shifts = worker_shifts_all.get(worker_id, [])
 
-            # --- Worker Summary Line ---
-            summary_text = f"Worker {worker_id}: Total: {total_w} | Weekends: {weekends_w} | Holidays: {holidays_w} | Last Post: {last_post_w}"
-            worker_box.add_widget(Label(
-                text=summary_text, size_hint_y=None, height=25, bold=True, halign='left',
-                text_size=(summary_layout.width - 30, None) # Allow wrapping
-            ))
+                # --- Worker Summary Line ---
+                summary_text = f"Worker {worker_id}: Total: {total_w} | Weekends: {weekends_w} | Holidays: {holidays_w} | Last Post: {last_post_w}"
+                worker_box.add_widget(Label(
+                    text=summary_text, size_hint_y=None, height=25, bold=True, halign='left',
+                    text_size=(summary_layout.width - 30, None)
+                ))
 
-            # --- Weekday Distribution Line ---
-            weekdays_str = "Weekdays: " + " ".join([f"{weekdays_short[i]}:{weekday_counts.get(i, 0)}" for i in range(7)])
-            worker_box.add_widget(Label(
-                text=weekdays_str, size_hint_y=None, height=25, halign='left',
-                text_size=(summary_layout.width - 30, None)
-            ))
+                # --- Weekday Distribution Line ---
+                weekdays_str = "Weekdays: " + " ".join([f"{weekdays_short[i]}:{weekday_counts.get(i, 0)}" for i in range(7)])
+                worker_box.add_widget(Label(
+                    text=weekdays_str, size_hint_y=None, height=25, halign='left',
+                    text_size=(summary_layout.width - 30, None)
+                ))
 
-            # --- Post Distribution Line ---
-            posts_str = "Posts: " + " ".join([f"P{post+1}:{count}" for post, count in sorted(post_counts.items())])
-            worker_box.add_widget(Label(
-                text=posts_str, size_hint_y=None, height=25, halign='left',
-                text_size=(summary_layout.width - 30, None)
-            ))
+                # --- Post Distribution Line ---
+                posts_str = "Posts: " + " ".join([f"P{post+1}:{count}" for post, count in sorted(post_counts.items())])
+                worker_box.add_widget(Label(
+                    text=posts_str, size_hint_y=None, height=25, halign='left',
+                    text_size=(summary_layout.width - 30, None)
+                ))
 
-            # --- Assigned Shifts Header ---
-            worker_box.add_widget(Label(
-                text="Assigned Shifts:", size_hint_y=None, height=25, halign='left', bold=True
-            ))
+                # --- Assigned Shifts Header ---
+                worker_box.add_widget(Label(
+                    text="Assigned Shifts:", size_hint_y=None, height=25, halign='left', bold=True
+                ))
 
-            # --- List of Shifts ---
-            if not worker_shifts:
-                 worker_box.add_widget(Label(text="  (No shifts assigned this month)", size_hint_y=None, height=20, halign='left'))
-            for shift in sorted(worker_shifts, key=lambda x: x['date']):
-                date_str = shift['date'].strftime('%d-%m-%Y')
-                post_str = f"Post {shift['post']}"
-                day_type = ""
-                if shift['is_holiday']: day_type = " [HOLIDAY]"
-                elif shift['is_weekend']: day_type = " [WEEKEND]"
+                # --- List of Shifts ---
+                if not worker_shifts:
+                     worker_box.add_widget(Label(text="  (No shifts assigned)", size_hint_y=None, height=20, halign='left'))
+                for shift in sorted(worker_shifts, key=lambda x: x['date']):
+                    date_str = shift['date'].strftime('%d-%m-%Y')
+                    post_str = f"Post {shift['post']}"
+                    day_type = ""
+                    if shift['is_holiday']: day_type = " [HOLIDAY]"
+                    elif shift['is_weekend']: day_type = " [WEEKEND]"
 
-                shift_text = f" • {date_str} ({shift['day'][:3]}){day_type}: {post_str}" # Use short day name
-                shift_label = Label(
-                    text=shift_text, size_hint_y=None, height=20, halign='left', # Reduced height
-                    text_size=(summary_layout.width - 40, None) # Allow wrapping
-                )
-                worker_box.add_widget(shift_label)
+                    shift_text = f" • {date_str} ({shift['day'][:3]}){day_type}: {post_str}"
+                    shift_label = Label(
+                        text=shift_text, size_hint_y=None, height=20, halign='left',
+                        text_size=(summary_layout.width - 40, None)
+                    )
+                    worker_box.add_widget(shift_label)
 
-            # --- Calculate Height Dynamically ---
-            # Base height for summary lines + shift header + padding
-            base_height = 25 * 4 + 20 # Approx height for 4 summary lines + padding/spacing
-            shifts_height = max(20, len(worker_shifts) * 20) # Height for shifts list (min 20)
-            worker_box.height = base_height + shifts_height
-            print(f"DEBUG: display_summary_dialog - Worker {worker_id} has {len(worker_shifts)} shifts. Box height: {worker_box.height}")
+                # --- Calculate Height Dynamically ---
+                base_height = 25 * 4 + 20
+                shifts_height = max(20, len(worker_shifts) * 20)
+                worker_box.height = base_height + shifts_height
+                # print(f"DEBUG: display_summary_dialog - Worker {worker_id} Box height: {worker_box.height}") # Optional Debug
 
-            # --- Separator ---
-            separator = BoxLayout(size_hint_y=None, height=1)
-            with separator.canvas:
-                from kivy.graphics import Color, Rectangle # Import locally if needed
-                Color(0.7, 0.7, 0.7, 1)
-                Rectangle(pos=separator.pos, size=separator.size)
+                # --- Separator ---
+                separator = BoxLayout(size_hint_y=None, height=1)
+                with separator.canvas:
+                    from kivy.graphics import Color, Rectangle
+                    Color(0.7, 0.7, 0.7, 1)
+                    Rectangle(pos=separator.pos, size=separator.size)
 
-            summary_layout.add_widget(worker_box)
-            summary_layout.add_widget(separator)
-            # --- End Worker Loop ---
+                summary_layout.add_widget(worker_box)
+                summary_layout.add_widget(separator)
+                # --- End Worker Loop ---
 
         print("DEBUG: display_summary_dialog - Finished adding worker details.")
         scroll.add_widget(summary_layout)
@@ -1614,6 +1620,7 @@ class CalendarViewScreen(Screen):
 
         # --- Buttons (Export PDF, Close) ---
         button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
+        # DEFINE buttons here, inside the method
         pdf_button = Button(text='Export PDF')
         close_button = Button(text='Close')
         button_layout.add_widget(pdf_button)
@@ -1622,7 +1629,7 @@ class CalendarViewScreen(Screen):
 
         # --- Popup Creation ---
         popup = Popup(
-            title='Monthly Summary', content=content, size_hint=(0.9, 0.9), auto_dismiss=False
+            title='Schedule Summary', content=content, size_hint=(0.9, 0.9), auto_dismiss=False
         )
         
     def show_global_summary(self, instance):
@@ -1656,33 +1663,33 @@ class CalendarViewScreen(Screen):
             print(f"DEBUG: show_global_summary - ERROR: {e}")
 
     
-    def on_pdf(instance):
-        print("DEBUG: on_pdf callback triggered!")
-        try:
-            print("DEBUG: Calling export_summary_pdf from on_pdf...")
-            # Pass the comprehensive month_stats
-            self.export_summary_pdf(month_stats) # Call the METHOD in main.py
-            print("DEBUG: export_summary_pdf call finished.")
-        except Exception as e:
-            print(f"DEBUG: Error calling export_summary_pdf from on_pdf: {e}")
-            logging.error(f"Error during PDF export triggered from popup: {e}", exc_info=True)
-            # Show error popup
-        finally:
-             popup.dismiss()
-             print("DEBUG: Popup dismissed from on_pdf")
+        def on_pdf(instance):
+            print("DEBUG: on_pdf callback triggered!")
+            try:
+                print("DEBUG: Calling export_summary_pdf from on_pdf...")
+                # Pass the comprehensive month_stats
+                self.export_summary_pdf(month_stats) # Call the METHOD in main.py
+                print("DEBUG: export_summary_pdf call finished.")
+            except Exception as e:
+                print(f"DEBUG: Error calling export_summary_pdf from on_pdf: {e}")
+                logging.error(f"Error during PDF export triggered from popup: {e}", exc_info=True)
+                # Show error popup
+            finally:
+                 popup.dismiss()
+                 print("DEBUG: Popup dismissed from on_pdf")
 
-    def on_close(instance):
-        print("DEBUG: on_close callback triggered!")
-        popup.dismiss()
-        print("DEBUG: Popup dismissed from on_close")
+        def on_close(instance):
+            print("DEBUG: on_close callback triggered!")
+            popup.dismiss()
+            print("DEBUG: Popup dismissed from on_close")
 
-    pdf_button.bind(on_press=on_pdf)
-    close_button.bind(on_press=on_close)
+        pdf_button.bind(on_press=on_pdf)
+        close_button.bind(on_press=on_close)
 
-    # --- Show Popup ---
-    print("DEBUG: Opening summary popup...")
-    popup.open()
-    print("DEBUG: Summary popup should be open.")
+        # --- Show Popup ---
+        print("DEBUG: Opening summary popup...")
+        popup.open()
+        print("DEBUG: Summary popup should be open.")
 
 
     def export_summary_pdf(self, stats_data): # Renamed param
