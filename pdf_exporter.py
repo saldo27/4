@@ -1,11 +1,11 @@
-from kivy.app import App 
+from kivy.app import App
 from kivy.uix.popup import Popup
 from kivy.uix.label import Label
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape, letter
+from reportlab.lib.pagesizes import A4, landscape, letter # Keep A4 if needed elsewhere
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
+from reportlab.lib.units import inch, cm # Use cm for better control maybe
 from calendar import monthcalendar
 from datetime import datetime
 import logging
