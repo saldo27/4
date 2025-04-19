@@ -1413,72 +1413,83 @@ class ScheduleBuilder:
                 continue
         
             # Try to swap a shift from overassigned post to underassigned post
-            for over_post, _ in overassigned_posts:
+            or over_post, _ in overassigned_posts:
                 for under_post, _ in underassigned_posts:
                     # Find all dates where this worker has the overassigned post
                     possible_swap_dates = []
-                
-                    for date, workers in self.schedule.items():
-                        if len(workers) > over_post and workers[over_post] == worker_id:
-                            possible_swap_dates.append(date)
-                
-                    # Shuffle the dates to introduce randomness
+                    # Use scheduler references
+                    for date_loop, workers_loop in self.scheduler.schedule.items():
+                        if len(workers_loop) > over_post and workers_loop[over_post] == worker_id:
+                            # --- MANDATORY CHECK ---
+                            if not self._is_mandatory(worker_id, date_loop):
+                                possible_swap_dates.append(date_loop)
+                            else:
+                                logging.debug(f"Post rotation: Skipping mandatory shift for {worker_id} on {date_loop.strftime('%Y-%m-%d')}")
+                            # --- END CHECK ---
+
                     random.shuffle(possible_swap_dates)
-                
-                    # Try each date
-                    for date in possible_swap_dates:
-                        # Look for a date where this worker isn't assigned but could be
-                        for other_date in sorted(self.schedule.keys()):
-                            # Skip if it's the same date
-                            if other_date == date:
-                                continue
-                            
-                            # Skip if worker is already assigned to this date
-                            if worker_id in self.schedule[other_date]:
-                                continue
-                        
-                            # Skip if the target post already has someone
-                            if len(self.schedule[other_date]) > under_post and self.schedule[other_date][under_post] is not None:
-                                continue
-                            
-                            # Check if this would be a valid assignment
+
+                    for date in possible_swap_dates: # This is the date the worker is MOVING FROM
+                        # Look for a date where this worker isn't assigned but could take the under_post
+                        # Use scheduler references
+                        for other_date in sorted(self.scheduler.schedule.keys()): # This is the date the worker is MOVING TO
+                            if other_date == date: continue
+                            if worker_id in self.scheduler.schedule.get(other_date, []): continue
+
+                            # Ensure the target slot exists and is empty
+                            schedule_other_date = self.scheduler.schedule.get(other_date, [])
+                            if len(schedule_other_date) <= under_post:
+                                # Need to extend list if target post doesn't exist
+                                while len(schedule_other_date) <= under_post:
+                                    schedule_other_date.append(None)
+                                self.scheduler.schedule[other_date] = schedule_other_date # Update schedule if list was extended
+
+                            if self.scheduler.schedule[other_date][under_post] is not None:
+                                continue # Target slot is not empty
+
+                            # Check if this would be a valid swap
+                            # Simulate: remove from 'date', check if can add to 'other_date'
                             if not self._can_swap_assignments(worker_id, date, over_post, other_date, under_post):
                                 continue
-                        
-                            # Perform the swap
-                            old_worker = self.schedule[date][over_post]
-                        
-                            # Handle the case where we need to extend the other date's shifts list
-                            while len(self.schedule[other_date]) <= under_post:
-                                self.schedule[other_date].append(None)
-                        
-                            # Make the swap
-                            self.schedule[date][over_post] = None
-                            self.schedule[other_date][under_post] = worker_id
-                        
-                            # Update tracking data
-                            self.worker_assignments[worker_id].remove(date)
-                            self.worker_assignments[worker_id].add(other_date)
-                            self.scheduler._update_tracking_data(under_worker_id, weekend_date, post)
-                        
-                            logging.info(f"Improved post rotation: Moved worker {worker_id} from {date.strftime('%d-%m-%Y')} "
-                                        f"post {over_post} to {other_date.strftime('%d-%m-%Y')} post {under_post}")
-                        
+
+                            # --- Perform the swap ---
+                            logging.info(f"Post Rotation Swap: Moving {worker_id} from {date.strftime('%Y-%m-%d')}|P{over_post} to {other_date.strftime('%Y-%m-%d')}|P{under_post}")
+
+                            # 1. Update schedule dictionary
+                            self.scheduler.schedule[date][over_post] = None
+                            self.scheduler.schedule[other_date][under_post] = worker_id
+
+                            # 2. Update worker_assignments set
+                            self.scheduler.worker_assignments.setdefault(worker_id, set()).remove(date)
+                            self.scheduler.worker_assignments.setdefault(worker_id, set()).add(other_date)
+
+                            # --- CORRECTED _update_tracking_data CALLS ---
+                            # 3. Update detailed tracking stats (posts, weekdays, weekends)
+                            # Remove stats for the old assignment
+                            self.scheduler._update_tracking_data(worker_id, date, over_post, removing=True)
+                            # Add stats for the new assignment
+                            self.scheduler._update_tracking_data(worker_id, other_date, under_post)
+                            # --- END CORRECTION ---
+
                             fixes_made += 1
-                            break
-                    
-                        if fixes_made > fixes_attempted * 0.5:  # If we've made enough fixes, stop
-                            break
-                        
-                    if fixes_made > fixes_attempted * 0.5:  # If we've made enough fixes, stop
-                        break
-                    
-                if fixes_made > fixes_attempted * 0.5:  # If we've made enough fixes, stop
-                    break
-    
-        logging.info(f"Post rotation improvement: attempted {fixes_attempted} fixes, made {fixes_made} changes")
-    
-        return fixes_made > 0  # Return whether we made any improvements
+                            # Break loops after successful swap for this worker/over_post/under_post combination
+                            goto_next_worker = True # Use a flag or nested breaks
+                            break # Break from other_date loop
+
+                        if goto_next_worker: break # Break from date loop
+                    if goto_next_worker: break # Break from under_post loop
+                if goto_next_worker: break # Break from over_post loop
+
+            # Reset flag for next worker
+            goto_next_worker = False
+
+            # Limit fixes per worker?
+            # if fixes_made >= 2: break # Optional: Limit changes per worker
+
+        logging.info(f"Post rotation improvement: attempted fixes for {len(imbalanced_workers)} workers, made {fixes_made} changes")
+        if fixes_made > 0:
+            self._save_current_as_best() # Save if changes were made
+        return fixes_made > 0
 
     def _improve_weekend_distribution(self):
         """
