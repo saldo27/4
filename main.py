@@ -742,29 +742,38 @@ class WorkerDetailsScreen(Screen):
     def generate_schedule(self):
         app = App.get_running_app()
         try:
+            print("DEBUG: generate_schedule - Starting schedule generation...") # <<< ADD
             scheduler = Scheduler(app.schedule_config)
             success = scheduler.generate_schedule()  # This returns True/False
-    
+
             if not success:  # Schedule generation failed
                 raise ValueError("Failed to generate schedule - validation errors detected")
-        
+
             # Get the actual schedule from the scheduler object
-            schedule = scheduler.schedule  
-        
+            schedule = scheduler.schedule
+
             if not schedule:  # Schedule is empty
                 raise ValueError("Generated schedule is empty")
-        
+
             app.schedule_config['schedule'] = schedule
-    
+            print("DEBUG: generate_schedule - Schedule generated and saved to config.") # <<< ADD
+
             popup = Popup(title='Success',
                          content=Label(text='Schedule generated successfully!'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
+            print("DEBUG: generate_schedule - Success popup opened.") # <<< ADD
+
+            # --- Transition Point ---
+            print("DEBUG: generate_schedule - Preparing to switch to calendar_view...") # <<< ADD
             self.manager.current = 'calendar_view'
-    
+            print("DEBUG: generate_schedule - Switched manager.current to calendar_view.") # <<< ADD
+            # --- End Transition Point ---
+
         except Exception as e:
             error_message = f"Failed to generate schedule: {str(e)}"
-            logging.error(error_message)
+            print(f"DEBUG: generate_schedule - ERROR: {error_message}") # <<< ADD ERROR PRINT
+            logging.error(error_message, exc_info=True) # Keep logging
             self.show_error(error_message)
         
     def clear_inputs(self):
@@ -968,12 +977,34 @@ class CalendarViewScreen(Screen):
         return (1, 1, 1, 1)  # White for regular days
                                
     def on_enter(self):
-            app = App.get_running_app()
+        print("DEBUG: CalendarViewScreen.on_enter - Entered screen.") # <<< ENSURE THIS IS HERE
+        app = App.get_running_app()
+        try:
+            print("DEBUG: CalendarViewScreen.on_enter - Accessing schedule_config...") # <<< ADD
             self.schedule = app.schedule_config.get('schedule', {})
+            print(f"DEBUG: CalendarViewScreen.on_enter - Schedule loaded (is empty: {not self.schedule})") # <<< ADD
+
             if self.schedule:
-                # Set current_date to the first date in the schedule
+                print("DEBUG: CalendarViewScreen.on_enter - Finding min date...") # <<< ADD
                 self.current_date = min(self.schedule.keys())
+                print(f"DEBUG: CalendarViewScreen.on_enter - Current date set to {self.current_date}") # <<< ADD
+                print("DEBUG: CalendarViewScreen.on_enter - Calling display_month...") # <<< ADD
                 self.display_month(self.current_date)
+                print("DEBUG: CalendarViewScreen.on_enter - display_month finished.") # <<< ADD
+            else:
+                 print("DEBUG: CalendarViewScreen.on_enter - Schedule is empty, setting current_date to now.") # <<< ADD
+                 self.current_date = datetime.now() # Fallback
+                 self.month_label.text = self.current_date.strftime('%B %Y') # Update label
+                 # Optionally clear the grid if needed
+                 # self.calendar_grid.clear_widgets()
+                 # self.details_layout.clear_widgets()
+
+        except Exception as e:
+            print(f"DEBUG: CalendarViewScreen.on_enter - ERROR: {e}") # <<< ADD ERROR PRINT
+            logging.error(f"Error during CalendarViewScreen.on_enter: {e}", exc_info=True) # Keep logging
+            # Optionally show an error popup here too
+            popup = Popup(title='Screen Load Error', content=Label(text=f'Failed to load calendar: {e}'), size_hint=(None, None), size=(400, 200))
+            popup.open()
 
     def display_month(self, date):
         self.calendar_grid.clear_widgets()
