@@ -2018,49 +2018,127 @@ class ScheduleBuilder:
         """Restore backup by delegating to scheduler"""
         return self.scheduler._restore_best_schedule()
 
-    def _save_current_as_best(self):
-        """Save current schedule as the best
-        """ 
-        # Save the schedule to the parent scheduler object (CRITICAL!)
-        # Use direct assignment to scheduler's backup attributes
-        logging.debug("Saving current state to scheduler's backup attributes...") # Add logging
-        try:
-            # Backup schedule
-            self.scheduler.backup_schedule = {}
-            for date, shifts in self.schedule.items():
-                 self.scheduler.backup_schedule[date] = shifts.copy() if shifts else []
+    def _save_current_as_best(self, initial=False):
+        """
+        Calculates the score of the current schedule state and saves it as the
+        best schedule found so far if it's better than the current best, or if
+        it's the initial save.
+        """
+        current_score = self.calculate_score() # Use current state from scheduler
 
-            # Backup worker assignments
-            self.scheduler.backup_worker_assignments = {}
-            for w_id, assignments in self.worker_assignments.items():
-                 self.scheduler.backup_worker_assignments[w_id] = assignments.copy()
+        # If it's the initial save OR the current score is better than the best found so far
+        if initial or self.best_schedule_data is None or current_score > self.best_schedule_data['score']:
+            log_prefix = "[Initial Save]" if initial else "[New Best]"
+            old_score = self.best_schedule_data['score'] if self.best_schedule_data else float('-inf')
 
-            # Backup worker posts
-            self.scheduler.backup_worker_posts = {}
-            for w_id, posts in self.worker_posts.items():
-                 self.scheduler.backup_worker_posts[w_id] = posts.copy()
+            logging.info(f"{log_prefix} Saving current state as best. Score: {current_score:.2f} (Previous best: {old_score:.2f})")
 
-            # Backup worker weekdays
-            self.scheduler.backup_worker_weekdays = {}
-            for w_id, weekdays in self.worker_weekdays.items():
-                 self.scheduler.backup_worker_weekdays[w_id] = weekdays.copy()
+            # Deep copy all relevant state from the scheduler instance
+            # Ensure all tracked data is included here
+            self.best_schedule_data = {
+                'schedule': copy.deepcopy(self.scheduler.schedule),
+                'worker_assignments': copy.deepcopy(self.scheduler.worker_assignments),
+                'worker_shift_counts': copy.deepcopy(self.scheduler.worker_shift_counts),
+                'worker_weekend_shifts': copy.deepcopy(self.scheduler.worker_weekend_shifts),
+                'worker_posts': copy.deepcopy(self.scheduler.worker_posts),
+                'last_assigned_date': copy.deepcopy(self.scheduler.last_assigned_date),
+                'consecutive_shifts': copy.deepcopy(self.scheduler.consecutive_shifts),
+                'score': current_score
+                # Add any other tracked metrics that define the schedule's state
+            }
+        # else:
+            # logging.debug(f"Current score {current_score:.2f} is not better than best score {self.best_schedule_data['score']:.2f}. Not saving.")
 
-            # Backup worker weekends
-            self.scheduler.backup_worker_weekends = {}
-            for w_id, weekends in self.worker_weekends.items():
-                 self.scheduler.backup_worker_weekends[w_id] = weekends.copy()
+    def get_best_schedule(self):
+        """ Returns the best schedule data dictionary found. """
+        if self.best_schedule_data is None:
+             logging.warning("get_best_schedule called but no best schedule was saved.")
+        return self.best_schedule_data
 
-            # Backup constraint skips (handle potential missing keys)
-            self.scheduler.backup_constraint_skips = {}
-            if hasattr(self.scheduler, 'constraint_skips'): # Check scheduler has this attr
-                 for w_id, skips in self.scheduler.constraint_skips.items():
-                      self.scheduler.backup_constraint_skips[w_id] = {
-                           'gap': skips.get('gap', []).copy(),
-                           'incompatibility': skips.get('incompatibility', []).copy(),
-                           'reduced_gap': skips.get('reduced_gap', []).copy(),
-                      }
-            logging.debug("Successfully saved current state to scheduler's backup.")
-            return True # Indicate success
-        except Exception as e:
-             logging.error(f"Error saving current state as best: {e}", exc_info=True)
-             return False # Indicate failure
+    def calculate_score(self, schedule_to_score=None, assignments_to_score=None):
+         """
+         Calculates the score of a given schedule state or the current state.
+         Higher score is better. Penalties decrease the score.
+         """
+         # Use current state if not provided
+         schedule = schedule_to_score if schedule_to_score is not None else self.scheduler.schedule
+         assignments = assignments_to_score if assignments_to_score is not None else self.scheduler.worker_assignments
+
+         base_score = 1000.0  # Start with a high score
+         penalty = 0.0
+
+         # --- Penalties ---
+         # 1. Empty Shifts (High Penalty)
+         empty_shifts = 0
+         for date, posts in schedule.items():
+             empty_shifts += posts.count(None)
+         penalty += empty_shifts * 50.0 # Significant penalty for each empty shift
+
+         # 2. Workload Imbalance (Moderate Penalty)
+         shift_counts = [len(dates) for dates in assignments.values()]
+         if shift_counts:
+             min_shifts = min(shift_counts) if shift_counts else 0
+             max_shifts = max(shift_counts) if shift_counts else 0
+             # Penalize based on the range of shift counts
+             penalty += (max_shifts - min_shifts) * 5.0
+
+         # 3. Weekend Imbalance (Moderate Penalty)
+         weekend_counts = [self.scheduler.worker_weekend_shifts.get(w_id, 0) for w_id in assignments.keys()]
+         if weekend_counts:
+             min_weekends = min(weekend_counts) if weekend_counts else 0
+             max_weekends = max(weekend_counts) if weekend_counts else 0
+             penalty += (max_weekends - min_weekends) * 10.0 # Weekends might be more sensitive
+
+         # 4. Post Rotation Imbalance (Lower Penalty)
+         # Calculate deviation similar to _identify_imbalanced_posts
+         total_post_deviation_penalty = 0
+         num_posts = self.num_shifts
+         if num_posts > 1:
+             for worker_id, assigned_dates in assignments.items():
+                 worker_post_counts = self.scheduler.worker_posts.get(worker_id, {})
+                 total_assigned = len(assigned_dates)
+                 if total_assigned > 0:
+                     target_per_post = total_assigned / num_posts
+                     worker_deviation = 0
+                     for post in range(num_posts):
+                          actual_count = worker_post_counts.get(post, 0)
+                          worker_deviation += abs(actual_count - target_per_post)
+                     # Add penalty based on total deviation for the worker
+                     total_post_deviation_penalty += worker_deviation * 1.0 # Lower penalty weight for posts
+
+         penalty += total_post_deviation_penalty
+
+
+         # 5. Consecutive Shifts (Moderate Penalty) - Check using tracking data
+         # Example: Penalize if consecutive shifts exceed a limit often
+         max_allowed_consecutive = self.config.get('max_consecutive_shifts', 3) # Get from config
+         consecutive_penalty = 0
+         # This requires tracking consecutive shifts accurately during updates
+         # For scoring, we might just look at the final state if tracking isn't perfect
+         # Or penalize based on the number of times the limit was exceeded (needs better tracking)
+         # Placeholder: Simple check on final assignments (less accurate)
+         for worker_id, dates in sorted(assignments.items()):
+              sorted_dates = sorted(list(dates))
+              current_consecutive = 0
+              for i, date in enumerate(sorted_dates):
+                   if i > 0 and (date - sorted_dates[i-1]).days == 1:
+                        current_consecutive += 1
+                   else:
+                        current_consecutive = 1 # Start counting again
+                   if current_consecutive > max_allowed_consecutive:
+                        consecutive_penalty += 5.0 # Penalize violations
+
+         penalty += consecutive_penalty
+
+
+         # 6. Minimum Rest Violation (High Penalty) - Check using tracking data
+         # Similar logic to consecutive, check time between shifts
+
+
+         # --- Add other penalties based on constraints ---
+
+
+         final_score = base_score - penalty
+         # logging.debug(f"Calculated score: {final_score:.2f} (Base: {base_score}, Penalty: {penalty:.2f})")
+         return final_score
+
