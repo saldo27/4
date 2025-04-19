@@ -1637,12 +1637,15 @@ class CalendarViewScreen(Screen):
             try:
                 print("DEBUG: Calling export_summary_pdf from on_pdf...")
                 # Pass the comprehensive month_stats
-                self.export_summary_pdf(month_stats) # Call the METHOD in main.py
+                self.export_summary_pdf(stats_data)
                 print("DEBUG: export_summary_pdf call finished.")
             except Exception as e:
                 print(f"DEBUG: Error calling export_summary_pdf from on_pdf: {e}")
                 logging.error(f"Error during PDF export triggered from popup: {e}", exc_info=True)
                 # Show error popup
+                error_popup = Popup(title='PDF Export Error', content=Label(text=f'Failed export: {e}'),
+                                    size_hint=(None, None), size=(400,200))
+                error_popup.open()
             finally:
                  popup.dismiss()
                  print("DEBUG: Popup dismissed from on_pdf")
@@ -1716,6 +1719,7 @@ class CalendarViewScreen(Screen):
                  popup = Popup(title='Error', content=Label(text='PDF export failed internally.'),
                               size_hint=(None, None), size=(400, 200))
                  popup.open()
+            pass # Placeholder
 
         except AttributeError as ae:
              print(f"DEBUG: export_summary_pdf - ATTRIBUTE ERROR: {ae}")
