@@ -1343,207 +1343,7 @@ class CalendarViewScreen(Screen):
             summary_data['totals']['last_post_shifts'] += last_post_shifts
     
         return summary_data
-
-    def display_summary_dialog(self, month_stats):
-        """
-        Display the detailed summary dialog with shift listings and ask if user wants to export PDF
-        Returns True if user wants PDF
-        """
-        # Create the content layout
-        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
-
-        # Summary scroll view
-        scroll = ScrollView(size_hint=(1, 0.8))
-        summary_layout = GridLayout(
-            cols=1, 
-            spacing=10, 
-            size_hint_y=None,
-            padding=[10, 10]
-        )
-        summary_layout.bind(minimum_height=summary_layout.setter('height'))
-
-        # Month title
-        month_title = Label(
-            text=f"Summary for {self.current_date.strftime('%B %Y')}",
-            size_hint_y=None,
-            height=40,
-            bold=True
-        )
-        summary_layout.add_widget(month_title)
-
-        # General stats
-        stats_box = BoxLayout(
-            orientation='vertical',
-            size_hint_y=None,
-            height=120,
-            padding=[5, 5]
-        )
-
-        stats_box.add_widget(Label(
-            text=f"Total Workers: {len(month_stats['workers'])}",
-            size_hint_y=None,
-            height=30,
-            halign='left'
-        ))
-
-        stats_box.add_widget(Label(
-            text=f"Total Shifts: {month_stats['total_shifts']}",
-            size_hint_y=None,
-            height=30,
-            halign='left'
-        ))
-
-        stats_box.add_widget(Label(
-            text=f"Weekend Shifts: {month_stats['weekend_shifts']}",
-            size_hint_y=None,
-            height=30,
-            halign='left'
-        ))
-
-        stats_box.add_widget(Label(
-            text=f"Last Post Shifts: {month_stats['last_post_shifts']}",
-            size_hint_y=None,
-            height=30,
-            halign='left'
-        ))
-
-        summary_layout.add_widget(stats_box)
-
-        # Worker details header
-        worker_header = Label(
-            text="Worker Details:",
-            size_hint_y=None,
-            height=40,
-            bold=True
-        )
-        summary_layout.add_widget(worker_header)
-
-        # Add worker details with shift listings
-        for worker_id, stats in sorted(month_stats['workers'].items()):
-            # Create a container for each worker
-            worker_box = BoxLayout(
-                orientation='vertical',
-                size_hint_y=None,
-                padding=[5, 10],
-                spacing=5
-            )
-    
-            # Calculate height based on number of shifts (min 120px, 30px per shift)
-            worker_shifts = month_stats['worker_shifts'].get(worker_id, [])
-            height = max(120, 60 + (len(worker_shifts) * 30))
-            worker_box.height = height
-    
-            # Worker summary
-            worker_box.add_widget(Label(
-                text=f"Worker {worker_id}:",
-                size_hint_y=None,
-                height=30,
-                bold=True,
-                halign='left'
-            ))
-    
-            worker_box.add_widget(Label(
-                text=f"Total: {stats['total']} | Weekends: {stats['weekends']} | Last Post: {stats['last_post']}",
-                size_hint_y=None,
-                height=30,
-                halign='left'
-            ))
-    
-            # List of shifts header
-            worker_box.add_widget(Label(
-                text="Assigned Shifts:",
-                size_hint_y=None,
-                height=30,
-                halign='left'
-            ))
-    
-            # Display each shift
-            for shift in sorted(worker_shifts, key=lambda x: x['date']):
-                date_str = shift['date'].strftime('%d-%m-%Y')
-                post_str = f"Post {shift['post']}"
-                day_type = ""
-                if shift['is_holiday']:
-                    day_type = " [HOLIDAY]"
-                elif shift['is_weekend']:
-                    day_type = " [WEEKEND]"
-            
-                shift_label = Label(
-                    text=f"• {date_str} ({shift['day']}){day_type}: {post_str}",
-                    size_hint_y=None,
-                    height=30,
-                    halign='left'
-                )
-                shift_label.bind(size=shift_label.setter('text_size'))
-                worker_box.add_widget(shift_label)
-            
-            # Add separator
-            separator = BoxLayout(
-                size_hint_y=None,
-                height=1
-            )
-            with separator.canvas:
-                Color(0.7, 0.7, 0.7, 1)  # Light gray
-                Rectangle(pos=separator.pos, size=separator.size)
         
-            # Add worker box and separator to layout
-            summary_layout.add_widget(worker_box)
-            summary_layout.add_widget(separator)
-
-        scroll.add_widget(summary_layout)
-        content.add_widget(scroll)
-
-        # Button layout
-        button_layout = BoxLayout(
-            orientation='horizontal',
-            size_hint_y=0.1,
-            spacing=10
-        )
-
-        pdf_button = Button(text='Export PDF')
-        close_button = Button(text='Close')
-
-        button_layout.add_widget(pdf_button)
-        button_layout.add_widget(close_button)
-        content.add_widget(button_layout)
-
-        # Create popup
-        popup = Popup(
-            title='Monthly Summary',
-            content=content,
-            size_hint=(0.9, 0.9),
-            auto_dismiss=False
-        )
-
-        # Store user's choice
-        user_wants_pdf = [False] # Using a list to allow modification within nested function
-
-        # Define the callback functions with proper indentation
-        def on_pdf(instance):
-            print("DEBUG: on_pdf callback triggered!") # <<< ADDED
-            user_wants_pdf[0] = True
-            print(f"DEBUG: user_wants_pdf set to: {user_wants_pdf[0]}") # <<< ADDED
-            popup.dismiss()
-            print("DEBUG: Popup dismissed from on_pdf") # <<< ADDED
-
-        def on_close(instance):
-            print("DEBUG: on_close callback triggered!") # <<< ADDED
-            user_wants_pdf[0] = False # Ensure it's False if closed manually
-            print(f"DEBUG: user_wants_pdf set to: {user_wants_pdf[0]}") # <<< ADDED
-            popup.dismiss()
-            print("DEBUG: Popup dismissed from on_close") # <<< ADDED
-
-
-        print("DEBUG: Binding buttons...") # <<< ADDED
-        pdf_button.bind(on_press=on_pdf)
-        close_button.bind(on_press=on_close)
-        print("DEBUG: Buttons bound.") # <<< ADDED
-
-        # Show popup and wait for it to close
-        print("DEBUG: Opening popup...") # <<< ADDED
-        popup.open()
-        print("DEBUG: Popup should be open now.") # <<< ADDED
-
-    
     def prepare_month_statistics(self, month_stats):
         """
         Calculate statistics for the current month and store them in the provided month_stats dictionary
@@ -1607,12 +1407,15 @@ class CalendarViewScreen(Screen):
 
     def show_month_summary(self, instance):
         """Display a summary of the current month's schedule"""
+        print("DEBUG: show_month_summary called.") # <<< ADD DEBUG
         try:
             if not self.current_date:
+                print("DEBUG: show_month_summary - No current date.") # <<< ADD DEBUG
                 return
-            
+
             app = App.get_running_app()
-    
+            print("DEBUG: show_month_summary - Calculating stats...") # <<< ADD DEBUG
+
             # Calculate basic statistics for this month
             month_stats = {
                 'total_shifts': 0,
@@ -1620,30 +1423,36 @@ class CalendarViewScreen(Screen):
                 'weekend_shifts': 0,
                 'last_post_shifts': 0,
                 'posts': {i: 0 for i in range(app.schedule_config.get('num_shifts', 0))},
-                'worker_shifts': {}  # Dictionary to store shifts by worker
+                'worker_shifts': {}
             }
-    
+
             # Calculate statistics
             self.prepare_month_statistics(month_stats)
-        
-            # Display summary dialog and check if user wants PDF
-            if self.display_summary_dialog(month_stats):
-                # *** MODIFIED CALL HERE ***
-                # Pass year and month from self.current_date
-                self.export_summary_pdf(self.current_date.year, self.current_date.month, month_stats) 
-        
+            print(f"DEBUG: show_month_summary - Stats calculated: {list(month_stats.keys())}") # <<< ADD DEBUG
+
+            # --- MODIFICATION START ---
+            # Just display the dialog. The dialog's button will handle the export.
+            print("DEBUG: show_month_summary - Calling display_summary_dialog...") # <<< ADD DEBUG
+            self.display_summary_dialog(month_stats)
+            print("DEBUG: show_month_summary - display_summary_dialog finished.") # <<< ADD DEBUG
+            # --- MODIFICATION END ---
+
         except Exception as e:
+            # Keep error handling
             popup = Popup(title='Error',
                          content=Label(text=f'Failed to show summary: {str(e)}'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
             logging.error(f"Summary error: {str(e)}", exc_info=True)
+            print(f"DEBUG: show_month_summary - ERROR: {e}") # <<< ADD DEBUG ERROR
+
 
     def display_summary_dialog(self, month_stats):
         """
         Display the detailed summary dialog with shift listings and ask if user wants to export PDF
         Returns True if user wants PDF
         """
+        print("DEBUG: display_summary_dialog called.") # <<< ADD DEBUG
         # Create the content layout
         content = BoxLayout(orientation='vertical', padding=10, spacing=10)
     
@@ -1807,39 +1616,65 @@ class CalendarViewScreen(Screen):
         user_wants_pdf = [False]
     
         def on_pdf(instance):
-            user_wants_pdf[0] = True
-            popup.dismiss()
-        
+            print("DEBUG: on_pdf callback triggered!") # <<< KEEP/ADD DEBUG
+            try:
+                # Directly call the export function
+                print("DEBUG: Calling export_summary_pdf from on_pdf...") # <<< ADD DEBUG
+                # Pass the month_stats dictionary
+                self.export_summary_pdf(month_stats)
+                print("DEBUG: export_summary_pdf call finished.") # <<< ADD DEBUG
+            except Exception as e:
+                print(f"DEBUG: Error calling export_summary_pdf from on_pdf: {e}") # <<< ADD DEBUG ERROR
+                logging.error(f"Error during PDF export triggered from popup: {e}", exc_info=True)
+                # Show an error popup if the export call fails
+                error_popup = Popup(
+                    title='PDF Export Error',
+                    content=Label(text=f'Failed to start export: {str(e)}'),
+                    size_hint=(None, None), size=(400, 200)
+                )
+                error_popup.open()
+            finally:
+                 # Dismiss the summary popup AFTER attempting export
+                 popup.dismiss()
+                 print("DEBUG: Popup dismissed from on_pdf") # <<< KEEP/ADD DEBUG
+
         def on_close(instance):
+            print("DEBUG: on_close callback triggered!") # <<< KEEP/ADD DEBUG
             popup.dismiss()
-    
+            print("DEBUG: Popup dismissed from on_close") # <<< KEEP/ADD DEBUG
+
+        print("DEBUG: Binding buttons in popup...") # <<< ADD DEBUG
         pdf_button.bind(on_press=on_pdf)
         close_button.bind(on_press=on_close)
-    
-        # Show popup and wait for it to close
-        popup.open()
-    
-        # Return user's choice
-        return user_wants_pdf[0]
+        print("DEBUG: Buttons bound in popup.") # <<< ADD DEBUG
 
-    def export_summary_pdf(self, month_stats):
-        print("DEBUG: export_summary_pdf called!") # <--- ADD THIS LINE
-        logging.info("Attempting to export summary PDF...") # <--- ALSO GOOD TO ADD
+        # Show popup
+        print("DEBUG: Opening summary popup...") # <<< ADD DEBUG
+        popup.open()
+        print("DEBUG: Summary popup should be open.") # <<< ADD DEBUG
+
+        # REMOVE the return statement - this function no longer returns a value
+        # return user_wants_pdf[0]
+        # --- MODIFICATION END 
+
+     def export_summary_pdf(self, month_stats): # Signature is correct (takes month_stats)
+        print("DEBUG: export_summary_pdf called!") # <<< KEEP/ADD DEBUG
+        logging.info("Attempting to export summary PDF...") # <<< KEEP/ADD DEBUG
         try:
             app = App.get_running_app()
-        
-            # Create the exporter
+            print("DEBUG: export_summary_pdf - Creating PDFExporter...") # <<< ADD DEBUG
             exporter = PDFExporter(app.schedule_config)
-        
+
+            print("DEBUG: export_summary_pdf - Calling exporter.export_monthly_summary...") # <<< ADD DEBUG
             # Use the PDFExporter's export_monthly_summary method directly
-            # This method is specifically designed for this purpose
             filename = exporter.export_monthly_summary(
                 self.current_date.year,
                 self.current_date.month,
-                month_stats
+                month_stats # Pass the received stats
             )
-        
-            # Show success message if the export was successful
+            print(f"DEBUG: export_summary_pdf - Export successful: {filename}") # <<< ADD DEBUG
+
+            # Show success message
             popup = Popup(
                 title='Success',
                 content=Label(text=f'Summary exported to {filename}'),
@@ -1847,12 +1682,11 @@ class CalendarViewScreen(Screen):
                 size=(400, 200)
             )
             popup.open()
-        
+
         except Exception as e:
-            # Log the error for debugging
+            # Log and show error
+            print(f"DEBUG: export_summary_pdf - ERROR: {e}") # <<< ADD DEBUG ERROR
             logging.error(f"Failed to export summary PDF: {str(e)}", exc_info=True)
-        
-            # Show error popup
             popup = Popup(
                 title='Error',
                 content=Label(text=f'Failed to export PDF: {str(e)}'),
