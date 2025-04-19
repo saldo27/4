@@ -1,5 +1,6 @@
 # Imports
 from datetime import datetime, timedelta
+import copy
 import logging
 import random
 from typing import TYPE_CHECKING
@@ -23,6 +24,7 @@ class ScheduleBuilder:
         # IMPORTANT: Use direct references, not copies
         self.workers_data = scheduler.workers_data
         self.schedule = scheduler.schedule  # Use the same reference
+        self.config = scheduler.config
         self.worker_assignments = scheduler.worker_assignments  # Use the same reference
         self.num_shifts = scheduler.num_shifts
         self.holidays = scheduler.holidays
@@ -2025,16 +2027,14 @@ class ScheduleBuilder:
         best schedule found so far if it's better than the current best, or if
         it's the initial save.
         """
-        current_score = self.calculate_score() # Use current state from scheduler
-
-        # This line caused the error if self.best_schedule_data wasn't initialized
+        current_score = self.calculate_score()
         old_score = self.best_schedule_data['score'] if self.best_schedule_data is not None else float('-inf')
 
         if initial or self.best_schedule_data is None or current_score > old_score:
             log_prefix = "[Initial Save]" if initial else "[New Best]"
             logging.info(f"{log_prefix} Saving current state as best. Score: {current_score:.2f} (Previous best: {old_score:.2f})")
 
-            # Deep copy all relevant state from the scheduler instance
+            # This part requires the 'copy' module to be imported
             self.best_schedule_data = {
                 'schedule': copy.deepcopy(self.scheduler.schedule),
                 'worker_assignments': copy.deepcopy(self.scheduler.worker_assignments),
@@ -2044,7 +2044,6 @@ class ScheduleBuilder:
                 'last_assigned_date': copy.deepcopy(self.scheduler.last_assigned_date),
                 'consecutive_shifts': copy.deepcopy(self.scheduler.consecutive_shifts),
                 'score': current_score
-                # Add any other tracked metrics
             }
 
     def get_best_schedule(self):
