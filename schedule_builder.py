@@ -1413,7 +1413,7 @@ class ScheduleBuilder:
                 continue
         
             # Try to swap a shift from overassigned post to underassigned post
-            or over_post, _ in overassigned_posts:
+            for over_post, _ in overassigned_posts:
                 for under_post, _ in underassigned_posts:
                     # Find all dates where this worker has the overassigned post
                     possible_swap_dates = []
