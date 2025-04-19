@@ -1668,34 +1668,34 @@ class CalendarViewScreen(Screen):
         )
         
         def show_global_summary(self, instance):
-        """Calculate and display a summary of the ENTIRE schedule period."""
-        print("DEBUG: show_global_summary called.")
-        try:
-            print("DEBUG: show_global_summary - Calculating GLOBAL stats...")
-            # Call the new global calculation function
-            global_stats = self.prepare_statistics()
+            """Calculate and display a summary of the ENTIRE schedule period."""
+            print("DEBUG: show_global_summary called.")
+            try:
+                print("DEBUG: show_global_summary - Calculating GLOBAL stats...")
+                # Call the new global calculation function
+                global_stats = self.prepare_statistics()
 
-            if not global_stats:
-                 print("DEBUG: show_global_summary - No stats returned.")
-                 # Show popup if no stats?
-                 popup = Popup(title='Info', content=Label(text='No schedule data available for summary.'),
-                               size_hint=(None, None), size=(400, 200))
-                 popup.open()
-                 return
+                if not global_stats:
+                     print("DEBUG: show_global_summary - No stats returned.")
+                     # Show popup if no stats?
+                     popup = Popup(title='Info', content=Label(text='No schedule data available for summary.'),
+                                   size_hint=(None, None), size=(400, 200))
+                     popup.open()
+                     return
+    
+                print(f"DEBUG: show_global_summary - Stats calculated. Keys: {list(global_stats.keys())}")
 
-            print(f"DEBUG: show_global_summary - Stats calculated. Keys: {list(global_stats.keys())}")
+                # Pass the global stats to the display function
+                print("DEBUG: show_global_summary - Calling display_summary_dialog...")
+                self.display_summary_dialog(global_stats) # Pass the dictionary
+                print("DEBUG: show_global_summary - display_summary_dialog finished.")
 
-            # Pass the global stats to the display function
-            print("DEBUG: show_global_summary - Calling display_summary_dialog...")
-            self.display_summary_dialog(global_stats) # Pass the dictionary
-            print("DEBUG: show_global_summary - display_summary_dialog finished.")
-
-        except Exception as e:
-            popup = Popup(title='Error', content=Label(text=f'Failed to show summary: {str(e)}'),
-                         size_hint=(None, None), size=(400, 200))
-            popup.open()
-            logging.error(f"Global Summary error: {str(e)}", exc_info=True)
-            print(f"DEBUG: show_global_summary - ERROR: {e}")
+            except Exception as e:
+                popup = Popup(title='Error', content=Label(text=f'Failed to show summary: {str(e)}'),
+                             size_hint=(None, None), size=(400, 200))
+                popup.open()
+                logging.error(f"Global Summary error: {str(e)}", exc_info=True)
+                print(f"DEBUG: show_global_summary - ERROR: {e}")
 
     
         def on_pdf(instance):
