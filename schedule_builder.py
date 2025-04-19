@@ -1340,155 +1340,93 @@ class ScheduleBuilder:
             self._save_current_as_best()
         return changes_made > 0
 
-    def _improve_post_rotation(self): 
-        """Improve post rotation by swapping assignments
-        """
-
-        # Ensure data consistency before proceeding
-        self._ensure_data_integrity()
-    
-        # Verify and fix data consistency before proceeding
-        self._verify_assignment_consistency()        # Find workers with imbalanced post distribution
-        imbalanced_workers = []
-    
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            post_counts = self._get_post_counts(worker_id)
-            total_assignments = sum(post_counts.values())
-        
-            # Skip workers with no or few assignments
-            if total_assignments < self.num_shifts:
-                continue
-        
-            # Calculate expected distribution
-            expected_per_post = total_assignments / self.num_shifts
-        
-            # Calculate deviation from ideal distribution
-            deviation = 0
-            for post in range(self.num_shifts):
-                post_count = post_counts.get(post, 0)
-                deviation += abs(post_count - expected_per_post)
-        
-            # Normalize deviation by total assignments
-            normalized_deviation = deviation / total_assignments
-        
-            # Add to imbalanced list if deviation is significant
-            if normalized_deviation > 0.2:  # 20% deviation threshold
-                imbalanced_workers.append((worker_id, post_counts, normalized_deviation))
-    
-        # Sort workers by deviation (most imbalanced first)
-        imbalanced_workers.sort(key=lambda x: x[2], reverse=True)
-    
-        # Try to fix the most imbalanced workers
-        fixes_attempted = 0
+    def _improve_post_rotation(self):
+        """Improve post rotation by swapping assignments"""
+        logging.info("Attempting to improve post rotation...")
         fixes_made = 0
-    
+        # Removed initialization here, will do it inside the loop
+
+        imbalanced_workers = self._identify_imbalanced_posts() # Assume this returns list of tuples
+
         for worker_id, post_counts, deviation in imbalanced_workers:
-            if fixes_attempted >= 10:  # Limit number of fix attempts
-                break
-            
-            logging.info(f"Trying to improve post rotation for worker {worker_id} (deviation: {deviation:.2f})")
-        
-            # Find overassigned and underassigned posts
-            total_assignments = sum(post_counts.values())
-            expected_per_post = total_assignments / self.num_shifts
-        
-            overassigned_posts = []
-            underassigned_posts = []
-        
-            for post in range(self.num_shifts):
-                post_count = post_counts.get(post, 0)
-                if post_count > expected_per_post + 0.5:
-                    overassigned_posts.append((post, post_count))
-                elif post_count < expected_per_post - 0.5:
-                    underassigned_posts.append((post, post_count))
-        
-            # Sort by most overassigned/underassigned
-            overassigned_posts.sort(key=lambda x: x[1], reverse=True)
-            underassigned_posts.sort(key=lambda x: x[1])
-        
-            fixes_attempted += 1
-        
+            # --- Initialize/Reset the flag for EACH worker ---
+            goto_next_worker = False
+            # --- End Initialization ---
+
+            overassigned_posts, underassigned_posts = self._get_over_under_posts(post_counts)
             if not overassigned_posts or not underassigned_posts:
                 continue
-        
-            # Try to swap a shift from overassigned post to underassigned post
+
+            logging.debug(f"Improving post rotation for {worker_id}: Over={overassigned_posts}, Under={underassigned_posts}")
+
             for over_post, _ in overassigned_posts:
                 for under_post, _ in underassigned_posts:
-                    # Find all dates where this worker has the overassigned post
                     possible_swap_dates = []
                     # Use scheduler references
                     for date_loop, workers_loop in self.scheduler.schedule.items():
-                        if len(workers_loop) > over_post and workers_loop[over_post] == worker_id:
-                            # --- MANDATORY CHECK ---
-                            if not self._is_mandatory(worker_id, date_loop):
-                                possible_swap_dates.append(date_loop)
-                            else:
-                                logging.debug(f"Post rotation: Skipping mandatory shift for {worker_id} on {date_loop.strftime('%Y-%m-%d')}")
-                            # --- END CHECK ---
+                         if len(workers_loop) > over_post and workers_loop[over_post] == worker_id:
+                              if not self._is_mandatory(worker_id, date_loop):
+                                   possible_swap_dates.append(date_loop)
+                              # else: Skip mandatory
 
                     random.shuffle(possible_swap_dates)
 
-                    for date in possible_swap_dates: # This is the date the worker is MOVING FROM
-                        # Look for a date where this worker isn't assigned but could take the under_post
-                        # Use scheduler references
-                        for other_date in sorted(self.scheduler.schedule.keys()): # This is the date the worker is MOVING TO
-                            if other_date == date: continue
+                    for date in possible_swap_dates: # Date moving FROM
+                        potential_other_dates = sorted([d for d in self.scheduler.schedule.keys() if d != date])
+
+                        for other_date in potential_other_dates: # Date moving TO
+                            # ... (checks: worker not already assigned, target slot exists/empty) ...
                             if worker_id in self.scheduler.schedule.get(other_date, []): continue
 
-                            # Ensure the target slot exists and is empty
                             schedule_other_date = self.scheduler.schedule.get(other_date, [])
-                            if len(schedule_other_date) <= under_post:
-                                # Need to extend list if target post doesn't exist
-                                while len(schedule_other_date) <= under_post:
-                                    schedule_other_date.append(None)
-                                self.scheduler.schedule[other_date] = schedule_other_date # Update schedule if list was extended
+                            target_slot_exists = len(schedule_other_date) > under_post
+                            target_slot_empty = target_slot_exists and schedule_other_date[under_post] is None
 
-                            if self.scheduler.schedule[other_date][under_post] is not None:
-                                continue # Target slot is not empty
+                            if not target_slot_exists and len(schedule_other_date) == under_post:
+                                target_slot_empty = True
 
-                            # Check if this would be a valid swap
-                            # Simulate: remove from 'date', check if can add to 'other_date'
+                            if not target_slot_empty: continue
+
                             if not self._can_swap_assignments(worker_id, date, over_post, other_date, under_post):
                                 continue
 
                             # --- Perform the swap ---
                             logging.info(f"Post Rotation Swap: Moving {worker_id} from {date.strftime('%Y-%m-%d')}|P{over_post} to {other_date.strftime('%Y-%m-%d')}|P{under_post}")
 
+                            # ... (Update schedule, assignments, tracking data) ...
                             # 1. Update schedule dictionary
                             self.scheduler.schedule[date][over_post] = None
+                            while len(self.scheduler.schedule[other_date]) <= under_post:
+                                self.scheduler.schedule[other_date].append(None)
                             self.scheduler.schedule[other_date][under_post] = worker_id
-
                             # 2. Update worker_assignments set
                             self.scheduler.worker_assignments.setdefault(worker_id, set()).remove(date)
                             self.scheduler.worker_assignments.setdefault(worker_id, set()).add(other_date)
-
-                            # --- CORRECTED _update_tracking_data CALLS ---
-                            # 3. Update detailed tracking stats (posts, weekdays, weekends)
-                            # Remove stats for the old assignment
+                            # 3. Update detailed tracking stats
                             self.scheduler._update_tracking_data(worker_id, date, over_post, removing=True)
-                            # Add stats for the new assignment
                             self.scheduler._update_tracking_data(worker_id, other_date, under_post)
-                            # --- END CORRECTION ---
+
 
                             fixes_made += 1
-                            # Break loops after successful swap for this worker/over_post/under_post combination
-                            goto_next_worker = True # Use a flag or nested breaks
+                            # Set flag to True since swap was made
+                            goto_next_worker = True
                             break # Break from other_date loop
 
-                        if goto_next_worker: break # Break from date loop
-                    if goto_next_worker: break # Break from under_post loop
-                if goto_next_worker: break # Break from over_post loop
+                        # Check flag and break from date loop (Error occurred here)
+                        if goto_next_worker: break
 
-            # Reset flag for next worker
-            goto_next_worker = False
+                    # Check flag and break from under_post loop
+                    if goto_next_worker: break
 
-            # Limit fixes per worker?
-            # if fixes_made >= 2: break # Optional: Limit changes per worker
+                # Check flag and break from over_post loop
+                if goto_next_worker: break
+
+            # No reset needed here as it's initialized at the start of the next worker's loop
+            # goto_next_worker = False # Removed reset from here
 
         logging.info(f"Post rotation improvement: attempted fixes for {len(imbalanced_workers)} workers, made {fixes_made} changes")
         if fixes_made > 0:
-            self._save_current_as_best() # Save if changes were made
+            self._save_current_as_best()
         return fixes_made > 0
 
     def _improve_weekend_distribution(self):
