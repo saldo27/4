@@ -1192,6 +1192,101 @@ class ScheduleBuilder:
         logging.debug(f"No suitable swap candidate X found for W={worker_W_id}'s slot ({conflict_date.strftime('%Y-%m-%d')},{conflict_post})")
         return None
     
+    def _identify_imbalanced_posts(self, deviation_threshold=1.5):
+        """
+        Identifies workers with an imbalanced distribution of assigned posts.
+
+        Args:
+            deviation_threshold: How much the count for a single post can deviate
+                                 from the average before considering the worker imbalanced.
+
+        Returns:
+            List of tuples: [(worker_id, post_counts, max_deviation), ...]
+                           Sorted by max_deviation descending.
+        """
+        imbalanced_workers = []
+        num_posts = self.num_shifts
+        if num_posts == 0: return [] # Avoid division by zero
+
+        # Use scheduler's worker data and post tracking
+        for worker in self.scheduler.workers_data:
+            worker_id = worker['id']
+            # Get post counts, defaulting to an empty dict if worker has no assignments yet
+            actual_post_counts = self.scheduler.worker_posts.get(worker_id, {})
+            total_assigned = sum(actual_post_counts.values())
+
+            # If worker has no shifts or only one type of post, they can't be imbalanced yet
+            if total_assigned == 0 or num_posts <= 1:
+                continue
+
+            target_per_post = total_assigned / num_posts
+            max_deviation = 0
+            post_deviations = {} # Store deviation per post
+
+            for post in range(num_posts):
+                actual_count = actual_post_counts.get(post, 0)
+                deviation = actual_count - target_per_post
+                post_deviations[post] = deviation
+                if abs(deviation) > max_deviation:
+                    max_deviation = abs(deviation)
+
+            # Consider imbalanced if the count for any post is off by more than the threshold
+            if max_deviation > deviation_threshold:
+                # Store the actual counts, not the deviations map for simplicity
+                imbalanced_workers.append((worker_id, actual_post_counts.copy(), max_deviation))
+                logging.debug(f"Worker {worker_id} identified as imbalanced for posts. Max Deviation: {max_deviation:.2f}, Target/Post: {target_per_post:.2f}, Counts: {actual_post_counts}")
+
+
+        # Sort by the magnitude of imbalance (highest deviation first)
+        imbalanced_workers.sort(key=lambda x: x[2], reverse=True)
+        return imbalanced_workers
+
+    def _get_over_under_posts(self, post_counts, total_assigned, balance_threshold=1.0):
+        """
+        Given a worker's post counts, find which posts they have significantly
+        more or less than the average.
+
+        Args:
+            post_counts (dict): {post_index: count} for the worker.
+            total_assigned (int): Total shifts assigned to the worker.
+            balance_threshold: How far from the average count triggers over/under.
+
+        Returns:
+            tuple: (list_of_overassigned_posts, list_of_underassigned_posts)
+                   Each list contains tuples: [(post_index, count), ...]
+                   Sorted by deviation magnitude.
+        """
+        overassigned = []
+        underassigned = []
+        num_posts = self.num_shifts
+        if num_posts <= 1 or total_assigned == 0:
+            return [], [] # Cannot be over/under assigned
+
+        target_per_post = total_assigned / num_posts
+
+        for post in range(num_posts):
+            actual_count = post_counts.get(post, 0)
+            deviation = actual_count - target_per_post
+
+            # Use a threshold slightly > 0 to avoid minor float issues
+            # Consider overassigned if count is clearly higher than target
+            if deviation > balance_threshold:
+                overassigned.append((post, actual_count, deviation)) # Include deviation for sorting
+            # Consider underassigned if count is clearly lower than target
+            elif deviation < -balance_threshold:
+                 underassigned.append((post, actual_count, deviation)) # Deviation is negative
+
+        # Sort overassigned: highest count (most over) first
+        overassigned.sort(key=lambda x: x[2], reverse=True)
+        # Sort underassigned: lowest count (most under) first (most negative deviation)
+        underassigned.sort(key=lambda x: x[2])
+
+        # Return only (post, count) tuples
+        overassigned_simple = [(p, c) for p, c, d in overassigned]
+        underassigned_simple = [(p, c) for p, c, d in underassigned]
+
+        return overassigned_simple, underassigned_simple
+    
     def _balance_workloads(self):
         """
         """
@@ -1344,17 +1439,21 @@ class ScheduleBuilder:
         """Improve post rotation by swapping assignments"""
         logging.info("Attempting to improve post rotation...")
         fixes_made = 0
-        # Removed initialization here, will do it inside the loop
+        # Use a threshold slightly above 1 to avoid swapping for minor imbalances
+        imbalanced_workers = self._identify_imbalanced_posts(deviation_threshold=1.5)
 
-        imbalanced_workers = self._identify_imbalanced_posts() # Assume this returns list of tuples
-
+        if not imbalanced_workers:
+             logging.info("No workers identified with significant post imbalance.")
+             return False
+            
         for worker_id, post_counts, deviation in imbalanced_workers:
-            # --- Initialize/Reset the flag for EACH worker ---
             goto_next_worker = False
-            # --- End Initialization ---
+            total_assigned = sum(post_counts.values()) # Recalculate or pass from identify? Pass is better.
 
-            overassigned_posts, underassigned_posts = self._get_over_under_posts(post_counts)
+
+            overassigned_posts, underassigned_posts = self._get_over_under_posts(post_counts, total_assigned, balance_threshold=1.0)
             if not overassigned_posts or not underassigned_posts:
+                logging.debug(f"Worker {worker_id} is imbalanced (dev={deviation:.2f}) but no clear over/under posts found with threshold 1.0. Counts: {post_counts}")
                 continue
 
             logging.debug(f"Improving post rotation for {worker_id}: Over={overassigned_posts}, Under={underassigned_posts}")
