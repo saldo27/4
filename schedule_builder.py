@@ -1136,6 +1136,7 @@ class ScheduleBuilder:
     
     def _balance_workloads(self):
         """
+        """
         logging.info("Attempting to balance worker workloads")
         # Ensure data consistency before proceeding
         self._ensure_data_integrity()
@@ -1277,10 +1278,14 @@ class ScheduleBuilder:
                     break
 
         logging.info(f"Workload balancing: made {changes_made} changes")
+        if changes_made > 0:
+            self._save_current_as_best()
         return changes_made > 0
 
-    def _improve_post_rotation(self):
-        """Improve post rotation by swapping assignments"""
+    def _improve_post_rotation(self): 
+        """Improve post rotation by swapping assignments
+        """
+
         # Ensure data consistency before proceeding
         self._ensure_data_integrity()
     
@@ -1689,33 +1694,48 @@ class ScheduleBuilder:
         return self.scheduler._restore_best_schedule()
 
     def _save_current_as_best(self):
-        """Save current schedule as the best"""
+        """Save current schedule as the best
+        """ 
         # Save the schedule to the parent scheduler object (CRITICAL!)
-        self.scheduler.backup_schedule = self.schedule.copy()
-        self.scheduler.backup_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
-        self.scheduler.backup_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}
-        self.scheduler.backup_worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.worker_weekdays.items()}
-        self.scheduler.backup_worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.worker_weekends.items()}
-        self.scheduler.backup_constraint_skips = {
-            w_id: {
-                'gap': skips['gap'].copy(),
-                'incompatibility': skips['incompatibility'].copy(),
-                'reduced_gap': skips['reduced_gap'].copy(),
-            }
-            for w_id, skips in self.constraint_skips.items()
-        }
+        # Use direct assignment to scheduler's backup attributes
+        logging.debug("Saving current state to scheduler's backup attributes...") # Add logging
+        try:
+            # Backup schedule
+            self.scheduler.backup_schedule = {}
+            for date, shifts in self.schedule.items():
+                 self.scheduler.backup_schedule[date] = shifts.copy() if shifts else []
 
-        # Also update local backup
-        self.backup_schedule = self.schedule.copy()
-        self.backup_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
-        self.backup_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}
-        self.backup_worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.worker_weekdays.items()}
-        self.backup_worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.worker_weekends.items()}
-        self.backup_constraint_skips = {
-            w_id: {
-                'gap': skips['gap'].copy(),
-                'incompatibility': skips['incompatibility'].copy(),
-                'reduced_gap': skips['reduced_gap'].copy(),
-            }
-            for w_id, skips in self.constraint_skips.items()
-        }
+            # Backup worker assignments
+            self.scheduler.backup_worker_assignments = {}
+            for w_id, assignments in self.worker_assignments.items():
+                 self.scheduler.backup_worker_assignments[w_id] = assignments.copy()
+
+            # Backup worker posts
+            self.scheduler.backup_worker_posts = {}
+            for w_id, posts in self.worker_posts.items():
+                 self.scheduler.backup_worker_posts[w_id] = posts.copy()
+
+            # Backup worker weekdays
+            self.scheduler.backup_worker_weekdays = {}
+            for w_id, weekdays in self.worker_weekdays.items():
+                 self.scheduler.backup_worker_weekdays[w_id] = weekdays.copy()
+
+            # Backup worker weekends
+            self.scheduler.backup_worker_weekends = {}
+            for w_id, weekends in self.worker_weekends.items():
+                 self.scheduler.backup_worker_weekends[w_id] = weekends.copy()
+
+            # Backup constraint skips (handle potential missing keys)
+            self.scheduler.backup_constraint_skips = {}
+            if hasattr(self.scheduler, 'constraint_skips'): # Check scheduler has this attr
+                 for w_id, skips in self.scheduler.constraint_skips.items():
+                      self.scheduler.backup_constraint_skips[w_id] = {
+                           'gap': skips.get('gap', []).copy(),
+                           'incompatibility': skips.get('incompatibility', []).copy(),
+                           'reduced_gap': skips.get('reduced_gap', []).copy(),
+                      }
+            logging.debug("Successfully saved current state to scheduler's backup.")
+            return True # Indicate success
+        except Exception as e:
+             logging.error(f"Error saving current state as best: {e}", exc_info=True)
+             return False # Indicate failure
