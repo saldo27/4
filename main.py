@@ -54,19 +54,29 @@ class PasswordScreen(Screen):
         self.add_widget(layout)
 
     def check_password(self, instance):
-        # --- IMPORTANT: Store your password securely! ---
-        # Hardcoding is okay for testing, but not for production.
-        # Consider environment variables or a more secure method.
-        correct_password = "this" # CHANGE THIS
-
+        print("DEBUG: check_password called.")
+        correct_password = "this" # Or your actual password
         entered_password = self.password_input.text
-        if entered_password == correct_password:
-            self.error_label.text = '' # Clear error
-            self.manager.current = 'WelcomeScreen' # Transition to the main app
-        else:
-            self.error_label.text = 'Incorrecto'
-            self.password_input.text = '' # Clear input field
+        print(f"DEBUG: Entered Password: '{entered_password}'")
+        print(f"DEBUG: Correct Password: '{correct_password}'")
+        print(f"DEBUG: self.manager is: {self.manager}")
+        if self.manager:
+            print(f"DEBUG: Available screens: {[s.name for s in self.manager.screens]}")
 
+        if entered_password == correct_password:
+            print("DEBUG: Password MATCHES.")
+            self.error_label.text = ''
+            try:
+                print("DEBUG: Attempting transition to 'welcome'...")
+                self.manager.current = 'welcome' 
+                print("DEBUG: Transition command sent to 'welcome'.")
+            except Exception as e:
+                print(f"DEBUG: ERROR during transition: {e}")
+                self.error_label.text = f'Transition Error: {e}'
+        else:
+            print("DEBUG: Password MISMATCH.")
+            self.error_label.text = 'Incorrect Password'
+            self.password_input.text = ''
 
 class WelcomeScreen(Screen):
     def __init__(self, **kwargs):
