@@ -1504,48 +1504,6 @@ class CalendarViewScreen(Screen):
         print(f"DEBUG: prepare_statistics - Finished GLOBAL calculation.")
         return global_stats # Return the newly created dictionary
 
-    def show_month_summary(self, instance):
-        """Display a summary of the current month's schedule"""
-        print("DEBUG: show_month_summary called.") # <<< ADD DEBUG
-        try:
-            if not self.current_date:
-                print("DEBUG: show_month_summary - No current date.") # <<< ADD DEBUG
-                return
-
-            app = App.get_running_app()
-            print("DEBUG: show_month_summary - Calculating stats...") # <<< ADD DEBUG
-
-            # Calculate basic statistics for this month
-            month_stats = {
-                'total_shifts': 0,
-                'workers': {},
-                'weekend_shifts': 0,
-                'last_post_shifts': 0,
-                'posts': {i: 0 for i in range(app.schedule_config.get('num_shifts', 0))},
-                'worker_shifts': {}
-            }
-
-            # Calculate statistics
-            self.prepare_month_statistics(month_stats)
-            print(f"DEBUG: show_month_summary - Stats calculated: {list(month_stats.keys())}") # <<< ADD DEBUG
-
-            # --- MODIFICATION START ---
-            # Just display the dialog. The dialog's button will handle the export.
-            print("DEBUG: show_month_summary - Calling display_summary_dialog...") # <<< ADD DEBUG
-            self.display_summary_dialog(month_stats)
-            print("DEBUG: show_month_summary - display_summary_dialog finished.") # <<< ADD DEBUG
-            # --- MODIFICATION END ---
-
-        except Exception as e:
-            # Keep error handling
-            popup = Popup(title='Error',
-                         content=Label(text=f'Failed to show summary: {str(e)}'),
-                         size_hint=(None, None), size=(400, 200))
-            popup.open()
-            logging.error(f"Summary error: {str(e)}", exc_info=True)
-            print(f"DEBUG: show_month_summary - ERROR: {e}") # <<< ADD DEBUG ERROR
-
-
     def display_summary_dialog(self, month_stats):
         """
         Display the detailed summary dialog with shift listings and distributions.
@@ -1667,64 +1625,64 @@ class CalendarViewScreen(Screen):
             title='Monthly Summary', content=content, size_hint=(0.9, 0.9), auto_dismiss=False
         )
         
-        def show_global_summary(self, instance):
-            """Calculate and display a summary of the ENTIRE schedule period."""
-            print("DEBUG: show_global_summary called.")
-            try:
-                print("DEBUG: show_global_summary - Calculating GLOBAL stats...")
-                # Call the new global calculation function
-                global_stats = self.prepare_statistics()
+    def show_global_summary(self, instance):
+        """Calculate and display a summary of the ENTIRE schedule period."""
+        print("DEBUG: show_global_summary called.")
+        try:
+            print("DEBUG: show_global_summary - Calculating GLOBAL stats...")
+            # Call the new global calculation function
+            global_stats = self.prepare_statistics()
 
-                if not global_stats:
-                     print("DEBUG: show_global_summary - No stats returned.")
-                     # Show popup if no stats?
-                     popup = Popup(title='Info', content=Label(text='No schedule data available for summary.'),
-                                   size_hint=(None, None), size=(400, 200))
-                     popup.open()
-                     return
+            if not global_stats:
+                 print("DEBUG: show_global_summary - No stats returned.")
+                 # Show popup if no stats?
+                 popup = Popup(title='Info', content=Label(text='No schedule data available for summary.'),
+                              size_hint=(None, None), size=(400, 200))
+                 popup.open()
+                 return
     
-                print(f"DEBUG: show_global_summary - Stats calculated. Keys: {list(global_stats.keys())}")
+            print(f"DEBUG: show_global_summary - Stats calculated. Keys: {list(global_stats.keys())}")
 
-                # Pass the global stats to the display function
-                print("DEBUG: show_global_summary - Calling display_summary_dialog...")
-                self.display_summary_dialog(global_stats) # Pass the dictionary
-                print("DEBUG: show_global_summary - display_summary_dialog finished.")
+            # Pass the global stats to the display function
+            print("DEBUG: show_global_summary - Calling display_summary_dialog...")
+            self.display_summary_dialog(global_stats) # Pass the dictionary
+            print("DEBUG: show_global_summary - display_summary_dialog finished.")
 
-            except Exception as e:
-                popup = Popup(title='Error', content=Label(text=f'Failed to show summary: {str(e)}'),
-                             size_hint=(None, None), size=(400, 200))
-                popup.open()
-                logging.error(f"Global Summary error: {str(e)}", exc_info=True)
-                print(f"DEBUG: show_global_summary - ERROR: {e}")
+        except Exception as e:
+            popup = Popup(title='Error', content=Label(text=f'Failed to show summary: {str(e)}'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()
+            logging.error(f"Global Summary error: {str(e)}", exc_info=True)
+            print(f"DEBUG: show_global_summary - ERROR: {e}")
 
     
-        def on_pdf(instance):
-            print("DEBUG: on_pdf callback triggered!")
-            try:
-                print("DEBUG: Calling export_summary_pdf from on_pdf...")
-                # Pass the comprehensive month_stats
-                self.export_summary_pdf(month_stats) # Call the METHOD in main.py
-                print("DEBUG: export_summary_pdf call finished.")
-            except Exception as e:
-                print(f"DEBUG: Error calling export_summary_pdf from on_pdf: {e}")
-                logging.error(f"Error during PDF export triggered from popup: {e}", exc_info=True)
-                # Show error popup
-            finally:
-                 popup.dismiss()
-                 print("DEBUG: Popup dismissed from on_pdf")
+    def on_pdf(instance):
+        print("DEBUG: on_pdf callback triggered!")
+        try:
+            print("DEBUG: Calling export_summary_pdf from on_pdf...")
+            # Pass the comprehensive month_stats
+            self.export_summary_pdf(month_stats) # Call the METHOD in main.py
+            print("DEBUG: export_summary_pdf call finished.")
+        except Exception as e:
+            print(f"DEBUG: Error calling export_summary_pdf from on_pdf: {e}")
+            logging.error(f"Error during PDF export triggered from popup: {e}", exc_info=True)
+            # Show error popup
+        finally:
+             popup.dismiss()
+             print("DEBUG: Popup dismissed from on_pdf")
 
-        def on_close(instance):
-            print("DEBUG: on_close callback triggered!")
-            popup.dismiss()
-            print("DEBUG: Popup dismissed from on_close")
+    def on_close(instance):
+        print("DEBUG: on_close callback triggered!")
+        popup.dismiss()
+        print("DEBUG: Popup dismissed from on_close")
 
-        pdf_button.bind(on_press=on_pdf)
-        close_button.bind(on_press=on_close)
+    pdf_button.bind(on_press=on_pdf)
+    close_button.bind(on_press=on_close)
 
-        # --- Show Popup ---
-        print("DEBUG: Opening summary popup...")
-        popup.open()
-        print("DEBUG: Summary popup should be open.")
+    # --- Show Popup ---
+    print("DEBUG: Opening summary popup...")
+    popup.open()
+    print("DEBUG: Summary popup should be open.")
 
 
     def export_summary_pdf(self, stats_data): # Renamed param
