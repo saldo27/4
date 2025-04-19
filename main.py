@@ -826,18 +826,23 @@ class CalendarViewScreen(Screen):
         # Header with title and navigation
         header = BoxLayout(orientation='horizontal', size_hint_y=0.1)
         self.month_label = Label(text='', size_hint_x=0.4)
-        prev_month = Button(text='<', size_hint_x=0.2)
-        next_month = Button(text='>', size_hint_x=0.2)
-        summary_btn = Button(text='Summario', size_hint_x=0.2)
+        prev_month = Button(text='<', size_hint_x=0.1) # Adjust sizes if needed
+        next_month = Button(text='>', size_hint_x=0.1)
+        today_btn = Button(text='Today', size_hint_x=0.2)
+        # RENAME the button text and UPDATE the binding
+        summary_btn = Button(text='Global Summary', size_hint_x=0.2) # Changed text
 
         prev_month.bind(on_press=self.previous_month)
         next_month.bind(on_press=self.next_month)
-        summary_btn.bind(on_press=self.show_month_summary)
+        today_btn.bind(on_press=self.go_to_today)
+        # Make sure this binding calls the RENAMED function
+        summary_btn.bind(on_press=self.show_global_summary) # Calls the new function
 
         header.add_widget(prev_month)
         header.add_widget(self.month_label)
         header.add_widget(next_month)
-        header.add_widget(summary_btn)
+        header.add_widget(today_btn)
+        header.add_widget(summary_btn) # Add the summary button
         self.layout.add_widget(header)
 
         # Days of week header
@@ -1420,6 +1425,84 @@ class CalendarViewScreen(Screen):
         print(f"DEBUG: prepare_month_statistics - Finished. Worker stats keys: {list(month_stats['workers'].get(list(month_stats['workers'].keys())[0], {}).keys()) if month_stats['workers'] else 'No workers'}")
         return month_stats
 
+    def prepare_statistics(self): # Removed month_stats parameter, it will create it
+        """
+        Calculate statistics for the ENTIRE schedule period.
+        """
+        app = App.get_running_app()
+        if not hasattr(app, 'schedule_config') or not app.schedule_config:
+             print("DEBUG: prepare_statistics - No schedule_config found.")
+             return {} # Return empty if no config
+
+        schedule = app.schedule_config.get('schedule', {})
+        num_shifts = app.schedule_config.get('num_shifts', 0)
+        holidays = app.schedule_config.get('holidays', [])
+        start_date = app.schedule_config.get('start_date') # Get overall start
+        end_date = app.schedule_config.get('end_date')     # Get overall end
+
+        if not schedule:
+            print("DEBUG: prepare_statistics - Schedule is empty.")
+            return {}
+
+        # Initialize the stats dictionary
+        global_stats = {
+            'total_shifts': 0,
+            'workers': {},
+            'weekend_shifts': 0,
+            'last_post_shifts': 0,
+            'posts': {i: 0 for i in range(num_shifts)},
+            'worker_shifts': {},
+            'period_start': start_date, # Store period boundaries
+            'period_end': end_date
+        }
+
+        print(f"DEBUG: prepare_statistics - Processing ALL dates in schedule...")
+        # Iterate through ALL dates in the loaded schedule
+        for date, workers in schedule.items():
+            # No date filtering needed here for global summary
+            global_stats['total_shifts'] += len(workers)
+            is_weekend = date.weekday() >= 5
+            is_holiday = date in holidays
+
+            for i, worker_id in enumerate(workers):
+                if worker_id is None:
+                    continue
+
+                # Initialize worker stats dict if first time seen
+                if worker_id not in global_stats['workers']:
+                    global_stats['workers'][worker_id] = {
+                        'total': 0, 'weekends': 0, 'holidays': 0, 'last_post': 0,
+                        'weekday_counts': {day: 0 for day in range(7)},
+                        'post_counts': {post: 0 for post in range(num_shifts)}
+                    }
+                if worker_id not in global_stats['worker_shifts']:
+                     global_stats['worker_shifts'][worker_id] = []
+
+                # Add detailed shift info for the list
+                shift_detail = {
+                    'date': date, 'day': date.strftime('%A'), 'post': i + 1,
+                    'is_weekend': is_weekend, 'is_holiday': is_holiday
+                }
+                global_stats['worker_shifts'][worker_id].append(shift_detail)
+
+                # Increment counts
+                global_stats['workers'][worker_id]['total'] += 1
+                global_stats['workers'][worker_id]['weekday_counts'][date.weekday()] += 1
+                if i < num_shifts: # Ensure post index is valid
+                    global_stats['workers'][worker_id]['post_counts'][i] += 1
+
+                if is_weekend:
+                    global_stats['weekend_shifts'] += 1
+                    global_stats['workers'][worker_id]['weekends'] += 1
+                if is_holiday:
+                     global_stats['workers'][worker_id]['holidays'] += 1
+
+                if i == num_shifts - 1:
+                    global_stats['last_post_shifts'] += 1
+                    global_stats['workers'][worker_id]['last_post'] += 1
+
+        print(f"DEBUG: prepare_statistics - Finished GLOBAL calculation.")
+        return global_stats # Return the newly created dictionary
 
     def show_month_summary(self, instance):
         """Display a summary of the current month's schedule"""
@@ -1473,16 +1556,18 @@ class CalendarViewScreen(Screen):
         summary_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=[10, 10])
         summary_layout.bind(minimum_height=summary_layout.setter('height'))
 
-        # --- Month Title ---
-        month_name = self.current_date.strftime('%B %Y')
-        month_title = Label(text=f"Summary for {month_name}", size_hint_y=None, height=40, bold=True)
-        summary_layout.add_widget(month_title)
+        # --- Modify Title ---
+        start = stats_data.get('period_start')
+        end = stats_data.get('period_end')
+        if start and end:
+            period_str = f"{start.strftime('%d-%m-%Y')} to {end.strftime('%d-%m-%Y')}"
+            title_text = f"Schedule Summary ({period_str})"
+        else:
+            title_text = "Schedule Summary (Full Period)"
 
-        # --- General Stats Box (Optional - can be removed if redundant) ---
-        # stats_box = BoxLayout(...)
-        # ... (add overall stats labels) ...
-        # summary_layout.add_widget(stats_box)
-
+        summary_title = Label(text=title_text, size_hint_y=None, height=40, bold=True)
+        summary_layout.add_widget(summary_title)
+        
         # --- Worker Details Header ---
         worker_header = Label(text="Worker Details:", size_hint_y=None, height=40, bold=True)
         summary_layout.add_widget(worker_header)
@@ -1581,6 +1666,37 @@ class CalendarViewScreen(Screen):
         popup = Popup(
             title='Monthly Summary', content=content, size_hint=(0.9, 0.9), auto_dismiss=False
         )
+        
+        def show_global_summary(self, instance):
+        """Calculate and display a summary of the ENTIRE schedule period."""
+        print("DEBUG: show_global_summary called.")
+        try:
+            print("DEBUG: show_global_summary - Calculating GLOBAL stats...")
+            # Call the new global calculation function
+            global_stats = self.prepare_statistics()
+
+            if not global_stats:
+                 print("DEBUG: show_global_summary - No stats returned.")
+                 # Show popup if no stats?
+                 popup = Popup(title='Info', content=Label(text='No schedule data available for summary.'),
+                               size_hint=(None, None), size=(400, 200))
+                 popup.open()
+                 return
+
+            print(f"DEBUG: show_global_summary - Stats calculated. Keys: {list(global_stats.keys())}")
+
+            # Pass the global stats to the display function
+            print("DEBUG: show_global_summary - Calling display_summary_dialog...")
+            self.display_summary_dialog(global_stats) # Pass the dictionary
+            print("DEBUG: show_global_summary - display_summary_dialog finished.")
+
+        except Exception as e:
+            popup = Popup(title='Error', content=Label(text=f'Failed to show summary: {str(e)}'),
+                         size_hint=(None, None), size=(400, 200))
+            popup.open()
+            logging.error(f"Global Summary error: {str(e)}", exc_info=True)
+            print(f"DEBUG: show_global_summary - ERROR: {e}")
+
     
         def on_pdf(instance):
             print("DEBUG: on_pdf callback triggered!")
@@ -1611,42 +1727,44 @@ class CalendarViewScreen(Screen):
         print("DEBUG: Summary popup should be open.")
 
 
-    def export_summary_pdf(self, month_stats): # Signature is correct (takes month_stats)
-        print("DEBUG: export_summary_pdf called!") # <<< KEEP/ADD DEBUG
-        logging.info("Attempting to export summary PDF...") # <<< KEEP/ADD DEBUG
+    def export_summary_pdf(self, stats_data): # Renamed param
+        print("DEBUG: export_summary_pdf (main.py) called!")
+        logging.info("Attempting to export GLOBAL summary PDF...") # Changed log message
         try:
             app = App.get_running_app()
-            print("DEBUG: export_summary_pdf - Creating PDFExporter...") # <<< ADD DEBUG
+            print("DEBUG: export_summary_pdf - Creating PDFExporter...")
             exporter = PDFExporter(app.schedule_config)
 
-            print("DEBUG: export_summary_pdf - Calling exporter.export_monthly_summary...") # <<< ADD DEBUG
-            # Use the PDFExporter's export_monthly_summary method directly
-            filename = exporter.export_monthly_summary(
-                self.current_date.year,
-                self.current_date.month,
-                month_stats # Pass the received stats
-            )
-            print(f"DEBUG: export_summary_pdf - Export successful: {filename}") # <<< ADD DEBUG
+            print("DEBUG: export_summary_pdf - Calling exporter.export_summary_pdf...") # Calls the method in the OTHER file
+            # --- CORRECT THE CALL AGAIN and Pass the correct data ---
+            # The pdf_exporter method expects year, month, stats OR just stats?
+            # Let's modify pdf_exporter.py to just take stats for the summary.
+            filename = exporter.export_summary_pdf(stats_data) # Pass the whole stats dictionary
+            # --- END CORRECTION ---
 
-            # Show success message
-            popup = Popup(
-                title='Success',
-                content=Label(text=f'Summary exported to {filename}'),
-                size_hint=(None, None),
-                size=(400, 200)
-            )
-            popup.open()
+            if filename: # Check if export was successful (returned filename)
+                print(f"DEBUG: export_summary_pdf - Export successful: {filename}")
+                popup = Popup(title='Success', content=Label(text=f'Summary exported to {filename}'),
+                             size_hint=(None, None), size=(400, 200))
+                popup.open()
+            else:
+                 print(f"DEBUG: export_summary_pdf - Export failed (no filename returned).")
+                 # Error should have been raised by exporter, but just in case
+                 popup = Popup(title='Error', content=Label(text='PDF export failed internally.'),
+                              size_hint=(None, None), size=(400, 200))
+                 popup.open()
 
+        except AttributeError as ae:
+             print(f"DEBUG: export_summary_pdf - ATTRIBUTE ERROR: {ae}")
+             logging.error(f"AttributeError during PDF export: {ae}", exc_info=True)
+             popup = Popup(title='Export Error', content=Label(text=f'PDF export failed.\nMethod mismatch.\nError: {ae}'),
+                          size_hint=(None, None), size=(400, 250))
+             popup.open()
         except Exception as e:
-            # Log and show error
-            print(f"DEBUG: export_summary_pdf - ERROR: {e}") # <<< ADD DEBUG ERROR
+            print(f"DEBUG: export_summary_pdf - ERROR: {e}")
             logging.error(f"Failed to export summary PDF: {str(e)}", exc_info=True)
-            popup = Popup(
-                title='Error',
-                content=Label(text=f'Failed to export PDF: {str(e)}'),
-                size_hint=(None, None),
-                size=(400, 200)
-            )
+            popup = Popup(title='Error', content=Label(text=f'Failed to export PDF: {str(e)}'),
+                         size_hint=(None, None), size=(400, 200))
             popup.open()
         
     def export_to_pdf(self, instance):
