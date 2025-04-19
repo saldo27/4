@@ -1258,6 +1258,7 @@ class Scheduler:
             # Save this initial state as the first "best" schedule
             self.schedule_builder._save_current_as_best(initial=True)
             logging.info("Mandatory shifts assigned.")
+            self.log_schedule_summary("After Mandatory Assignment")
             # Optional: Log initial state or score after mandatory assignments
             # self.log_schedule_summary("After Mandatory Assignment")
 
