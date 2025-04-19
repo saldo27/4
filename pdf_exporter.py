@@ -17,6 +17,8 @@ class PDFExporter:
         self.num_shifts = schedule_config.get('num_shifts', 0)
         self.holidays = schedule_config.get('holidays', [])
         self.styles = getSampleStyleSheet()
+        self.styles.add(ParagraphStyle(name='SmallNormal', parent=self.styles['Normal'], fontSize=9))
+        self.styles.add(ParagraphStyle(name='SmallBold', parent=self.styles['SmallNormal'], fontName='Helvetica-Bold'))
 
     def export_summary_pdf(self, stats_data): # Takes the whole stats dictionary now
         """Export a detailed GLOBAL summary with shift listings and distributions."""
@@ -52,6 +54,7 @@ class PDFExporter:
             worker_title = Paragraph("Worker Details & Distributions", styles['h2'])
             story.append(worker_title)
             story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph("<u>Assigned Shifts:</u>", styles['SmallBold']))
 
             # Use the workers data directly from stats_data
             workers_stats = stats_data.get('workers', {})
