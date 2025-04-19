@@ -149,42 +149,42 @@ class ScheduleBuilder:
 
         logging.debug(f"Worker {worker_id} is available on {date.strftime('%d-%m-%Y')}")
         return False
+    
+    def _check_incompatibility_with_list(self, worker_id_to_check, assigned_workers_list):
+        """Checks if worker_id_to_check is incompatible with anyone in the list."""
+        worker_to_check_data = next((w for w in self.workers_data if w['id'] == worker_id_to_check), None)
+        if not worker_to_check_data: return True # Should not happen, but fail safe
+
+        incompatible_with = worker_to_check_data.get('incompatible_with', [])
+
+        for assigned_id in assigned_workers_list:
+             if assigned_id is None or assigned_id == worker_id_to_check:
+                  continue
+             # Check both directions for incompatibility
+             if assigned_id in incompatible_with:
+                  logging.debug(f"Incompatibility Check: {worker_id_to_check} cannot work with {assigned_id}")
+                  return False # Found incompatibility
+
+             # Also check if the assigned worker lists the worker_to_check as incompatible
+             assigned_worker_data = next((w for w in self.workers_data if w['id'] == assigned_id), None)
+             if assigned_worker_data and worker_id_to_check in assigned_worker_data.get('incompatible_with', []):
+                 logging.debug(f"Incompatibility Check: {assigned_id} cannot work with {worker_id_to_check}")
+                 return False # Found incompatibility
+
+        return True # No incompatibilities found
 
     def _check_incompatibility(self, worker_id, date):
-        """
-        Check for worker incompatibilities on a specific date
-    
-        Args:
-            worker_id: ID of the worker to check
-            date: Date to check for incompatibilities
-    
-        Returns:
-            bool: True if no incompatibilities found, False if incompatibilities exist
-        """
-        # Get worker data
-        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
-        if not worker:
-            logging.debug(f"Worker {worker_id} not found in workers_data")
-            return False
-    
-        # Get incompatible workers
-        incompatible_with = worker.get('incompatible_with', [])
-        if not incompatible_with:
-            return True
-    
-        # Get workers currently assigned to this date
-        currently_assigned = []
-        if date in self.schedule:
-            # Extract all non-None worker IDs from the schedule for this date
-            currently_assigned = [w for w in self.schedule[date] if w is not None]
-    
-        # Check if any incompatible workers are already assigned to this date
-        for incompatible_id in incompatible_with:
-            if incompatible_id in currently_assigned:
-                logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} already assigned on {date.strftime('%d-%m-%Y')}")
-                return False
-    
-        return True
+        """Check if worker is incompatible with already assigned workers on a specific date"""
+        try:
+            if date not in self.schedule:
+                return True # No one assigned yet, so compatible
+
+            assigned_workers_list = self.schedule.get(date, [])
+            return self._check_incompatibility_with_list(worker_id, assigned_workers_list)
+
+        except Exception as e:
+            logging.error(f"Error checking incompatibility for worker {worker_id} on {date}: {str(e)}")
+            return False # Fail safe - assume incompatible on error
         
     def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
@@ -738,43 +738,48 @@ class ScheduleBuilder:
                 if not (self.start_date <= date <= self.end_date):
                     continue
 
-                # Initialize schedule for the date if needed
+                # --- MODIFIED INITIALIZATION BLOCK ---
+                # Ensure the date key exists and its list is the correct size.
+                # Use self.schedule consistently (it refers to scheduler.schedule).
                 if date not in self.schedule:
-                    # Use direct reference from scheduler
-                    self.scheduler.schedule[date] = [None] * self.num_shifts
-                # Ensure list has correct length
-                while len(self.scheduler.schedule[date]) < self.num_shifts:
-                     self.scheduler.schedule[date].append(None)
+                    # If date doesn't exist at all, create it with the full list
+                    self.schedule[date] = [None] * self.num_shifts
+                else:
+                    # If date exists, ensure the list is long enough (handles partially filled dates)
+                    while len(self.schedule[date]) < self.num_shifts:
+                        self.schedule[date].append(None)
 
-                # Check if worker is already assigned (e.g., if mandatory day listed twice)
-                if worker_id in self.scheduler.schedule[date]:
+                if worker_id in self.schedule[date]:
                     logging.debug(f"Worker {worker_id} already assigned (mandatory) on {date.strftime('%Y-%m-%d')}")
                     continue # Already assigned, move to next mandatory date
 
                 # Find the first available post for this worker
                 assigned_post = -1
                 for post in range(self.num_shifts):
-                    if self.scheduler.schedule[date][post] is None:
+                    # Check if post is empty
+                    if self.schedule[date][post] is None:
                         # Check basic constraints (like incompatibility with others already assigned)
                         # Temporarily add worker to check incompatibility
-                        self.scheduler.schedule[date][post] = worker_id
-                        is_compatible = self._check_incompatibility(worker_id, date)
+                        self.schedule[date][post] = worker_id
+                        # Pass self.schedule[date] (current assignments) for checking
+                        is_compatible = self._check_incompatibility_with_list(worker_id, self.schedule[date])
                         # Remove temporary assignment
-                        self.scheduler.schedule[date][post] = None
+                        self.schedule[date][post] = None # Backtrack
 
                         if is_compatible:
                              # Found a free and compatible post
                              assigned_post = post
                              break
                         # else: Keep searching for another post
-
+                        
                 if assigned_post != -1:
-                    # Assign worker to the found post
-                    self.scheduler.schedule[date][assigned_post] = worker_id
-                    # Use direct reference for worker_assignments
-                    if worker_id not in self.scheduler.worker_assignments:
-                         self.scheduler.worker_assignments[worker_id] = set()
-                    self.scheduler.worker_assignments[worker_id].add(date)
+                    # Assign worker to the found post (using self.schedule)
+                    self.schedule[date][assigned_post] = worker_id
+
+                    # Use self.worker_assignments (builder's reference to scheduler's)
+                    if worker_id not in self.worker_assignments:
+                         self.worker_assignments[worker_id] = set()
+                    self.worker_assignments[worker_id].add(date)
 
                     # --- FIX THE UPDATE TRACKING CALL ---
                     # Use the correct variables: worker_id, date, assigned_post
@@ -789,7 +794,6 @@ class ScheduleBuilder:
                     skipped_count += 1
 
         logging.info(f"Finished assigning mandatory guards: {assigned_count} assigned, {skipped_count} skipped.")
-
                         
     def _assign_priority_days(self, forward):
         """Process weekend and holiday assignments first since they're harder to fill"""
@@ -1585,15 +1589,15 @@ class ScheduleBuilder:
         Try to find a new date to assign this worker to fix an incompatibility
         """
         # --- ADD MANDATORY CHECK ---
-         if self._is_mandatory(worker_id, date):
-              logging.warning(f"Cannot reassign worker {worker_id} from mandatory shift on {date.strftime('%Y-%m-%d')} to fix incompatibility.")
-              # Option 1: Try removing the *other* incompatible worker instead? (More complex logic)
-              # Option 2: Just log and fail for now.
-              return False # Cannot move from mandatory shift
-         # --- END MANDATORY CHECK ---
+        if self._is_mandatory(worker_id, date):
+            logging.warning(f"Cannot reassign worker {worker_id} from mandatory shift on {date.strftime('%Y-%m-%d')} to fix incompatibility.")
+            # Option 1: Try removing the *other* incompatible worker instead? (More complex logic)
+            # Option 2: Just log and fail for now.
+            return False # Cannot move from mandatory shift
+        # --- END MANDATORY CHECK ---
         # Find the position this worker is assigned to
         try:
-            post = self.schedule[date].index(worker_id)
+           post = self.schedule[date].index(worker_id)
         except ValueError:
             return False
     
