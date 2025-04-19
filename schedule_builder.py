@@ -1028,7 +1028,8 @@ class ScheduleBuilder:
 
                     # Assign the worker
                     self.schedule[date][post] = worker_id
-                    self.worker_assignments[worker_id].add(date)
+                    # Ensure worker_id key exists before adding to set
+                    self.worker_assignments.setdefault(worker_id, set()).add(date)
                     # Use the main scheduler's update method
                     self.scheduler._update_tracking_data(worker_id, date, post)
 
@@ -1049,129 +1050,124 @@ class ScheduleBuilder:
         # --- Pass 2: Swap Attempt ---
         if not remaining_empty_shifts:
              logging.info(f"Filled {shifts_filled_count} shifts directly. No remaining empty shifts.")
-             # Update the main scheduler's schedule reference BEFORE returning
-             self.scheduler.schedule = self.schedule.copy()
-             self._save_current_as_best() # Save progress if direct fills happened
+             # Only save if changes were actually made in Pass 1
+             if made_change_in_pass:
+                 self._save_current_as_best()
+             # No need to copy schedule back, assuming we modified scheduler's directly
              return made_change_in_pass
 
         logging.info(f"Filled {shifts_filled_count} shifts directly. Attempting swaps for {len(remaining_empty_shifts)} remaining empty shifts.")
 
+        # Iterate through the empty shifts remaining after Pass 1
         for date, post in remaining_empty_shifts:
-             # Ensure the slot is *still* empty before attempting swap
-             if not (date in self.schedule and len(self.schedule[date]) > post and self.schedule[date][post] is None):
-                 continue # Skip if it got filled somehow
+            # Ensure the slot is *still* empty before attempting swap
+            if not (date in self.schedule and len(self.schedule[date]) > post and self.schedule[date][post] is None):
+                continue # Skip if it got filled somehow
 
-             swap_found = False
-             potential_swap_workers = [w for w in self.scheduler.workers_data if w['id'] not in self.scheduler.schedule.get(date, [])]
-             random.shuffle(potential_swap_workers)
+            swap_found = False
+            # Find workers not already working on the target 'date'
+            potential_swap_workers = [w for w in self.scheduler.workers_data if w['id'] not in self.scheduler.schedule.get(date, [])]
+            random.shuffle(potential_swap_workers) # Randomize worker order
 
-             for worker_W in potential_swap_workers:
-                 worker_W_id = worker_W['id']
-                 # Get the original list, but be aware it might become stale
-                 original_assignments_W = sorted(list(self.scheduler.worker_assignments.get(worker_W_id, set())))
+            # --- CORRECTED INDENTATION for worker_W loop ---
+            # This loop iterates through workers who could potentially take the empty shift
+            for worker_W in potential_swap_workers:
+                worker_W_id = worker_W['id']
+                # Get the original list, but be aware it might become stale
+                original_assignments_W = sorted(list(self.scheduler.worker_assignments.get(worker_W_id, set())))
 
-                 for conflict_date in original_assignments_W:
-                     # --- Check if mandatory ---
-                     if self._is_mandatory(worker_W_id, conflict_date):
-                         logging.debug(f"Cannot swap worker {worker_W_id} from mandatory shift on {conflict_date.strftime('%Y-%m-%d')}")
-                         continue
+                # This loop iterates through the shifts worker_W currently has, to see if removing one makes them eligible
+                for conflict_date in original_assignments_W:
+                    # --- Check if mandatory ---
+                    if self._is_mandatory(worker_W_id, conflict_date):
+                        logging.debug(f"Cannot swap worker {worker_W_id} from mandatory shift on {conflict_date.strftime('%Y-%m-%d')}")
+                        continue # Skip this conflict_date for this worker_W
 
-                     # --- MODIFICATION START ---
-                     # Check if the conflict_date is *still* assigned to worker_W before trying to remove
-                     removed_during_check = False # Flag to track if we actually remove it
-                     current_assignments_W = self.scheduler.worker_assignments.get(worker_W_id, set())
+                    # --- Simulation Block ---
+                    removed_during_check = False
+                    current_assignments_W = self.scheduler.worker_assignments.get(worker_W_id, set())
 
-                     if conflict_date in current_assignments_W:
-                         # Temporarily remove this assignment to check if W becomes valid for the empty slot
-                         try:
-                             self.scheduler.worker_assignments[worker_W_id].remove(conflict_date)
-                             removed_during_check = True
-                         except KeyError:
-                             # Should not happen due to 'if conflict_date in ...' but safety first
-                             logging.warning(f"KeyError during remove simulation for {worker_W_id} on {conflict_date}, despite check.")
-                             continue # Skip this conflict_date
-                     else:
-                         # conflict_date is no longer assigned to worker_W, likely due to a previous swap.
-                         # No need to simulate removal or check potential swaps based on this stale date.
-                         logging.debug(f"Skipping swap simulation based on stale conflict_date {conflict_date.strftime('%Y-%m-%d')} for worker {worker_W_id}")
-                         continue # Move to the next conflict_date in original_assignments_W
-                     # --- MODIFICATION END ---
+                    if conflict_date in current_assignments_W:
+                        try:
+                            self.scheduler.worker_assignments[worker_W_id].remove(conflict_date)
+                            removed_during_check = True
+                        except KeyError:
+                            logging.warning(f"KeyError during remove simulation for {worker_W_id} on {conflict_date}, despite check.")
+                            continue
+                    else:
+                        logging.debug(f"Skipping swap simulation based on stale conflict_date {conflict_date.strftime('%Y-%m-%d')} for worker {worker_W_id}")
+                        continue
+                    # --- End Simulation Block ---
 
+                    can_W_take_empty_slot = self._can_assign_worker(worker_W_id, date, post)
 
-                     # Check if worker W can NOW take the empty slot (date, post)
-                     can_W_take_empty_slot = self._can_assign_worker(worker_W_id, date, post)
+                    if removed_during_check:
+                        self.scheduler.worker_assignments[worker_W_id].add(conflict_date) # Restore state
 
-                     # Restore the assignment *only if* we removed it during the check
-                     if removed_during_check:
-                         self.scheduler.worker_assignments[worker_W_id].add(conflict_date) # Add back immediately
+                    if not can_W_take_empty_slot:
+                        continue # This conflict_date wasn't the blocker, or W is still invalid
 
-                     # If W cannot take the empty slot even after simulated removal, continue
-                     if not can_W_take_empty_slot:
-                         continue
+                    # --- Find conflict_post and worker_X ---
+                    try:
+                        if conflict_date not in self.scheduler.schedule or worker_W_id not in self.scheduler.schedule[conflict_date]:
+                             logging.warning(f"Swap check inconsistency: worker {worker_W_id} / {conflict_date} state mismatch.")
+                             continue
+                        conflict_post = self.scheduler.schedule[conflict_date].index(worker_W_id)
+                    except (ValueError, IndexError, KeyError) as e:
+                        logging.warning(f"Worker {worker_W_id} assignment for {conflict_date} inconsistent during swap check ({type(e).__name__}). Skipping.")
+                        continue
 
-                     # --- Find conflict_post and worker_X ---
-                     try:
-                         # Ensure conflict_date is still in the schedule dictionary
-                         if conflict_date not in self.scheduler.schedule:
-                              logging.warning(f"Swap check inconsistency: conflict_date {conflict_date} not found in schedule.")
-                              continue
-                         # Ensure worker_W is still listed for that date in the schedule (might have been swapped out already)
-                         if worker_W_id not in self.scheduler.schedule[conflict_date]:
-                              logging.warning(f"Swap check inconsistency: worker {worker_W_id} no longer in schedule for {conflict_date}.")
-                              continue
-                         conflict_post = self.scheduler.schedule[conflict_date].index(worker_W_id)
-                     except (ValueError, IndexError, KeyError) as e:
-                         logging.warning(f"Worker {worker_W_id} assignment for {conflict_date} inconsistent during swap check ({type(e).__name__}). Skipping.")
-                         continue # Data inconsistency
+                    worker_X_id = self._find_swap_candidate(worker_W_id, conflict_date, conflict_post)
 
-                     worker_X_id = self._find_swap_candidate(worker_W_id, conflict_date, conflict_post)
+                    # --- Perform Swap if candidate found ---
+                    if worker_X_id:
+                        logging.info(f"[Swap Fill] Found swap: W={worker_W_id}, X={worker_X_id}, EmptySlot=({date.strftime('%Y-%m-%d')},{post}), ConflictSlot=({conflict_date.strftime('%Y-%m-%d')},{conflict_post})")
 
-                     # --- Perform Swap if candidate found ---
-                     if worker_X_id:
-                         logging.info(f"[Swap Fill] Found swap: W={worker_W_id}, X={worker_X_id}, EmptySlot=({date.strftime('%Y-%m-%d')},{post}), ConflictSlot=({conflict_date.strftime('%Y-%m-%d')},{conflict_post})")
+                        # --- Perform the Swap (directly on scheduler's data) ---
+                        # 1. Assign W to empty slot
+                        self.scheduler.schedule[date][post] = worker_W_id
+                        self.scheduler.worker_assignments.setdefault(worker_W_id, set()).add(date)
+                        self.scheduler._update_tracking_data(worker_W_id, date, post)
 
-                         # --- Perform the Swap (ensure all refs are scheduler's) ---
-                         # 1. Assign W to the originally empty slot
-                         self.scheduler.schedule[date][post] = worker_W_id
-                         self.scheduler.worker_assignments.setdefault(worker_W_id, set()).add(date)
-                         self.scheduler._update_tracking_data(worker_W_id, date, post)
+                        # 2. Remove W from conflict slot (with check)
+                        if conflict_date in self.scheduler.worker_assignments.get(worker_W_id, set()):
+                            self.scheduler.schedule[conflict_date][conflict_post] = None
+                            self.scheduler.worker_assignments[worker_W_id].remove(conflict_date)
+                            self.scheduler._update_tracking_data(worker_W_id, conflict_date, conflict_post, removing=True)
+                        else:
+                            logging.error(f"CRITICAL INCONSISTENCY during swap: {worker_W_id} not assigned to {conflict_date} before assigning X.")
+                            self.scheduler.schedule[conflict_date][conflict_post] = None # Ensure empty for X
 
-                         # 2. Remove W from their conflicting slot (use check before remove)
-                         if conflict_date in self.scheduler.worker_assignments.get(worker_W_id, set()):
-                              self.scheduler.schedule[conflict_date][conflict_post] = None # Temporarily empty
-                              self.scheduler.worker_assignments[worker_W_id].remove(conflict_date)
-                              self.scheduler._update_tracking_data(worker_W_id, conflict_date, conflict_post, removing=True)
-                         else:
-                              # This should ideally not happen if the logic above is correct, but log if it does
-                              logging.error(f"CRITICAL INCONSISTENCY during swap: {worker_W_id} was not assigned to {conflict_date} before assigning X.")
-                              # Attempt to continue, but the state might be slightly off
-                              self.scheduler.schedule[conflict_date][conflict_post] = None # Ensure it's empty for X
+                        # 3. Assign X to W's old slot
+                        self.scheduler.schedule[conflict_date][conflict_post] = worker_X_id
+                        self.scheduler.worker_assignments.setdefault(worker_X_id, set()).add(conflict_date)
+                        self.scheduler._update_tracking_data(worker_X_id, conflict_date, conflict_post)
 
+                        shifts_filled_count += 1
+                        made_change_in_pass = True
+                        swap_found = True
+                        # Break from the inner 'conflict_date' loop since we found a swap for W
+                        break
 
-                         # 3. Assign X to W's old slot
-                         self.scheduler.schedule[conflict_date][conflict_post] = worker_X_id
-                         self.scheduler.worker_assignments.setdefault(worker_X_id, set()).add(conflict_date)
-                         self.scheduler._update_tracking_data(worker_X_id, conflict_date, conflict_post)
+                # --- CORRECTED INDENTATION for if swap_found ---
+                # This checks if the inner 'conflict_date' loop resulted in a swap for the current worker_W
+                if swap_found:
+                    # Break from the outer 'worker_W' loop since we found a swap for the empty shift
+                    break
 
-                         shifts_filled_count += 1
-                         made_change_in_pass = True
-                         swap_found = True
-                         break # Stop searching for workers W for this empty slot
-
-                 if swap_found:
-                     break # Move to the next empty slot
-
-                    if not swap_found:
-                        logging.debug(f"Could not find direct fill or swap for empty shift on {date.strftime('%Y-%m-%d')} post {post}")
-
+            # --- CORRECTED INDENTATION for if not swap_found ---
+            # This runs after checking all potential workers (worker_W) for the current empty shift
+            if not swap_found:
+                logging.debug(f"Could not find direct fill or swap for empty shift on {date.strftime('%Y-%m-%d')} post {post}")
+        # --- End of loop for empty_shifts ---
 
         logging.info(f"Finished attempting swaps. Total shifts filled in this run: {shifts_filled_count}")
 
-        # Ensure scheduler's references are updated if changes were made
+        # Save if any changes were made in Pass 1 OR Pass 2
         if made_change_in_pass:
             self._save_current_as_best()
         return made_change_in_pass
-
+    
     def _find_swap_candidate(self, worker_W_id, conflict_date, conflict_post):
         """
         Finds a worker (X) who can take the shift at (conflict_date, conflict_post),
