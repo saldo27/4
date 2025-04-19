@@ -1632,6 +1632,34 @@ class CalendarViewScreen(Screen):
             title='Schedule Summary', content=content, size_hint=(0.9, 0.9), auto_dismiss=False
         )
         
+        def on_pdf(instance):
+            print("DEBUG: on_pdf callback triggered!")
+            try:
+                print("DEBUG: Calling export_summary_pdf from on_pdf...")
+                # Pass the comprehensive month_stats
+                self.export_summary_pdf(month_stats) # Call the METHOD in main.py
+                print("DEBUG: export_summary_pdf call finished.")
+            except Exception as e:
+                print(f"DEBUG: Error calling export_summary_pdf from on_pdf: {e}")
+                logging.error(f"Error during PDF export triggered from popup: {e}", exc_info=True)
+                # Show error popup
+            finally:
+                 popup.dismiss()
+                 print("DEBUG: Popup dismissed from on_pdf")
+
+        def on_close(instance):
+            print("DEBUG: on_close callback triggered!")
+            popup.dismiss()
+            print("DEBUG: Popup dismissed from on_close")
+
+        pdf_button.bind(on_press=on_pdf)
+        close_button.bind(on_press=on_close)
+
+        # --- Show Popup ---
+        print("DEBUG: Opening summary popup...")
+        popup.open()
+        print("DEBUG: Summary popup should be open.")
+        
     def show_global_summary(self, instance):
         """Calculate and display a summary of the ENTIRE schedule period."""
         print("DEBUG: show_global_summary called.")
@@ -1661,36 +1689,6 @@ class CalendarViewScreen(Screen):
             popup.open()
             logging.error(f"Global Summary error: {str(e)}", exc_info=True)
             print(f"DEBUG: show_global_summary - ERROR: {e}")
-
-    
-        def on_pdf(instance):
-            print("DEBUG: on_pdf callback triggered!")
-            try:
-                print("DEBUG: Calling export_summary_pdf from on_pdf...")
-                # Pass the comprehensive month_stats
-                self.export_summary_pdf(month_stats) # Call the METHOD in main.py
-                print("DEBUG: export_summary_pdf call finished.")
-            except Exception as e:
-                print(f"DEBUG: Error calling export_summary_pdf from on_pdf: {e}")
-                logging.error(f"Error during PDF export triggered from popup: {e}", exc_info=True)
-                # Show error popup
-            finally:
-                 popup.dismiss()
-                 print("DEBUG: Popup dismissed from on_pdf")
-
-        def on_close(instance):
-            print("DEBUG: on_close callback triggered!")
-            popup.dismiss()
-            print("DEBUG: Popup dismissed from on_close")
-
-        pdf_button.bind(on_press=on_pdf)
-        close_button.bind(on_press=on_close)
-
-        # --- Show Popup ---
-        print("DEBUG: Opening summary popup...")
-        popup.open()
-        print("DEBUG: Summary popup should be open.")
-
 
     def export_summary_pdf(self, stats_data): # Renamed param
         print("DEBUG: export_summary_pdf (main.py) called!")
