@@ -1657,7 +1657,7 @@ class CalendarViewScreen(Screen):
         # return user_wants_pdf[0]
         # --- MODIFICATION END 
 
-     def export_summary_pdf(self, month_stats): # Signature is correct (takes month_stats)
+    def export_summary_pdf(self, month_stats): # Signature is correct (takes month_stats)
         print("DEBUG: export_summary_pdf called!") # <<< KEEP/ADD DEBUG
         logging.info("Attempting to export summary PDF...") # <<< KEEP/ADD DEBUG
         try:
