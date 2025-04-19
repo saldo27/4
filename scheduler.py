@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import logging
 import sys
 import random
+import copy
 from constraint_checker import ConstraintChecker
 from schedule_builder import ScheduleBuilder
 from data_manager import DataManager
@@ -1208,411 +1209,216 @@ class Scheduler:
                 worker['work_periods'] = f"{start_str} - {end_str}"
                 logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
             
-    def generate_schedule(self, num_attempts=60, allow_feedback_improvement=True, improvement_attempts=30):
+    def generate_schedule(self, max_improvement_loops=30):
         """
-        Generate the complete schedule using a multi-phase approach to maximize shift coverage
-    
+        Generates the duty schedule.
+
+        Orchestrates the schedule generation process, including initial assignments
+        and iterative improvements.
+
         Args:
-            num_attempts: Number of initial attempts to generate a schedule
-            allow_feedback_improvement: Whether to allow feedback-based improvement
-            improvement_attempts: Number of attempts to improve the best schedule
+            max_improvement_loops (int): Maximum number of times to loop through
+                                         improvement steps if changes are still being made.
+
+        Returns:
+            bool: True if a valid schedule was successfully generated and finalized,
+                  False otherwise.
+
+        Raises:
+            SchedulerError: If a fatal error occurs during generation that prevents
+                            a schedule from being created.
         """
-        logging.info("=== Starting schedule generation with multi-phase approach ===")
-        
+        logging.info("Starting schedule generation...")
+        start_time = datetime.now()
+
+        # --- 1. Initialization ---
         try:
-            # Ensure data structures are consistent before we start
-            self._ensure_data_integrity()
-        
-            # Prepare worker data - set defaults for empty fields
-            self._prepare_worker_data()
-            
-            # PHASE 1: Generate multiple initial schedules and select the best one
-            best_schedule = None
-            best_coverage = 0
-            best_post_rotation = 0
-            best_worker_assignments = None
-            best_worker_posts = None
-            best_worker_weekdays = None
-            best_worker_weekends = None
-            best_constraint_skips = None
-            coverage_stats = []
-            
-            # Initialize relax_level variable for use in coverage stats
-            relax_level = 0
+            # Clear previous state if necessary
+            self.schedule = {}
+            self.worker_assignments = {}
+            self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
+            self.worker_weekend_shifts = {w['id']: 0 for w in self.workers_data}
+            self.worker_posts = {w['id']: {} for w in self.workers_data} # {worker_id: {post_idx: count}}
+            self.last_assigned_date = {w['id']: None for w in self.workers_data}
+            self.consecutive_shifts = {w['id']: 0 for w in self.workers_data}
+            # Initialize any other tracking data structures
 
-            # Start with fewer attempts, but make each one more effective
-            for attempt in range(num_attempts):
-                # Set a seed based on the attempt number to ensure different runs
-                random.seed(attempt + 1)
-        
-                logging.info(f"Attempt {attempt + 1} of {num_attempts}")
-                self._reset_schedule()
-            
-                # Calculate target shifts for workers
-                self._calculate_target_shifts()
-                self._calculate_monthly_targets()
-        
-                # Choose direction: Forward-only for odd attempts, backward-only for even attempts
-                forward = attempt % 2 == 0
-                logging.info(f"Direction: {'forward' if forward else 'backward'}")
-        
-                # STEP 1: Process mandatory assignments first (always!)
-                logging.info("Processing mandatory guards...")
-                self.schedule_builder._assign_mandatory_guards()
-        
-                # STEP 2: Process weekend and holiday assignments next (they're harder to fill)
-                self.schedule_builder._assign_priority_days(forward)
-            
-                # STEP 3: Process the remaining days
-                dates_to_process = self.schedule_builder._get_remaining_dates_to_process(forward)
-                for date in dates_to_process:
-                    # Use strict constraints for first half of attempts, then progressively relax
-                    relax_level = min(2, attempt // (num_attempts // 3))
-                    self.schedule_builder._assign_day_shifts_with_relaxation(date, attempt, relax_level)
-        
-                # Clean up and validate
-                self._cleanup_schedule()
-                try:
-                    self._validate_final_schedule()
-                except SchedulerError as e:
-                    logging.warning(f"Schedule validation found issues: {str(e)}")
-        
-                # Calculate coverage
-                total_shifts = (self.end_date - self.start_date + timedelta(days=1)).days * self.num_shifts
-                filled_shifts = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
-                coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
-        
-                # Calculate post rotation scores
-                post_rotation_stats = self._calculate_post_rotation()
-        
-                # Log detailed coverage information
-                logging.info(f"Attempt {attempt + 1} coverage: {coverage:.2f}%")
-                logging.info(f"Post rotation score: {post_rotation_stats['overall_score']:.2f}%")
-        
-                # Store coverage stats for summary
-                coverage_stats.append({
-                    'attempt': attempt + 1,
-                    'coverage': coverage,
-                    'post_rotation_score': post_rotation_stats['overall_score'],
-                    'unfilled_shifts': total_shifts - filled_shifts,
-                    'direction': 'forward' if forward else 'backward',
-                    'relax_level': relax_level
-                })
+            # Create ScheduleBuilder instance, passing necessary data
+            self.schedule_builder = ScheduleBuilder(self)
+            logging.info("Scheduler initialized and ScheduleBuilder created.")
 
-                # Check if this is the best schedule so far
-                # Prioritize coverage first, then post rotation
-                if coverage > best_coverage or (coverage == best_coverage and 
-                                              post_rotation_stats['overall_score'] > best_post_rotation):
-                    best_coverage = coverage
-                    best_post_rotation = post_rotation_stats['overall_score']
-                    best_schedule = self.schedule.copy()
-                    best_worker_assignments = {w_id: assignments.copy() 
-                                             for w_id, assignments in self.worker_assignments.items()}
-                    best_worker_posts = {w_id: posts.copy() 
-                                       for w_id, posts in self.worker_posts.items()}
-                    best_worker_weekdays = {w_id: weekdays.copy() 
-                                          for w_id, weekdays in self.worker_weekdays.items()}
-                    best_worker_weekends = {w_id: weekends.copy() 
-                                          for w_id, weekends in self.worker_weekends.items()}
-                    best_constraint_skips = {
-                        w_id: {
-                            'gap': skips['gap'].copy(),
-                            'incompatibility': skips['incompatibility'].copy(),
-                            'reduced_gap': skips['reduced_gap'].copy(),
-                        }
-                        for w_id, skips in self.constraint_skips.items()
-                    }
-                
-                    # Early stopping if we get 100% coverage
-                    if coverage >= 99.9:
-                        logging.info("Found a perfect schedule! Stopping early.")
-                        break
+        except Exception as e:
+            logging.exception("Initialization failed during schedule generation.")
+            raise SchedulerError(f"Initialization failed: {str(e)}")
 
-            # Use the best schedule found
-            if best_schedule:
-                self.schedule = best_schedule
-                self.worker_assignments = best_worker_assignments
-                self.worker_posts = best_worker_posts
-                self.worker_weekdays = best_worker_weekdays
-                self.worker_weekends = best_worker_weekends
-                self.constraint_skips = best_constraint_skips
-    
-                # Log summary statistics
-                logging.info("=== Initial Coverage Statistics Summary ===")
-                for stats in coverage_stats:
-                    logging.info(f"[Attempt {stats['attempt']:2d}] Coverage={stats['coverage']:.2f}%, "
-                                f"Post Rotation={stats['post_rotation_score']:.2f}%, "
-                                f"Unfilled={stats['unfilled_shifts']}, "
-                                f"Direction={stats['direction']}, "
-                                f"RelaxLevel={stats['relax_level']}")
-    
-                # PHASE 2: Targeted improvement for the best schedule
-                if allow_feedback_improvement and best_coverage < 99.9:
-                    logging.info("\n=== Starting targeted improvement phase ===")
-    
-                    # Try mixed strategy first
-                    if best_coverage == 0:
-                        logging.warning("Zero coverage detected, using mixed assignment strategies")
-                        success = self._assign_mixed_strategy()
-                        if success:
-                            # Recalculate coverage
-                            coverage = self._calculate_coverage() 
-                            post_rotation_stats = self._calculate_post_rotation()
-                            best_coverage = coverage
-                            best_post_rotation = post_rotation_stats['overall_score']
-                            logging.info(f"Mixed strategy assignment resulted in coverage: {coverage:.2f}%")
-                
-                            # Create a backup of this successful assignment
-                            self._backup_best_schedule()
-                            best_schedule = self.schedule.copy()
-                            best_worker_assignments = {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()}
-                            best_worker_posts = {w_id: posts.copy() for w_id, posts in self.worker_posts.items()}    
-                            best_worker_weekdays = {w_id: weekdays.copy() for w_id, weekdays in self.worker_weekdays.items()}
-                            best_worker_weekends = {w_id: weekends.copy() for w_id, weekends in self.worker_weekends.items()}
-                            best_constraint_skips = {
-                                w_id: {
-                                    'gap': skips['gap'].copy() if 'gap' in skips else [],
-                                    'incompatibility': skips['incompatibility'].copy() if 'incompatibility' in skips else [],
-                                    'reduced_gap': skips['reduced_gap'].copy() if 'reduced_gap' in skips else []
-                                }
-                                for w_id, skips in self.constraint_skips.items()
-                            }
-            
-                    # Save the current best metrics
-                    initial_best_coverage = best_coverage
-                    initial_best_post_rotation = best_post_rotation
-                
-                    # Initialize improvement tracker
-                    improvements_made = 0
-            
-                    # Try to improve the schedule through targeted modifications
-                    for i in range(improvement_attempts):
-                        logging.info(f"Improvement attempt {i+1}/{improvement_attempts}")
-                
-                        # Create a copy of the best schedule to work with
-                        self.schedule_builder._backup_best_schedule()
-                
-                        # Try different improvement strategies based on attempt number
-                        if i % 5 == 0:
-                            logging.info("Strategy: Fix incompatibility violations")
-                            self.schedule_builder._fix_incompatibility_violations()
-                        elif i % 5 == 1:
-                            logging.info("Strategy: Fill empty shifts")
-                            self.schedule_builder._try_fill_empty_shifts()
-                        elif i % 5 == 2:
-                            logging.info("Strategy: Balance workloads")
-                            self.schedule_builder._balance_workloads()
-                        elif i % 5 == 3:
-                            logging.info("Strategy: Improve post rotation")
-                            self.schedule_builder._improve_post_rotation()
-                        elif i % 5 == 4:
-                            logging.info("Strategy: Improve weekend distribution")
-                            self.schedule_builder._improve_weekend_distribution()
-                
-                         # Validate the schedule
-                        logging.info("Validating final schedule...")
-                        if not self._validate_final_schedule():
-                            logging.warning("Schedule validation failed after improvement attempt")
-                            # If validation fails, restore previous best
-                            self.schedule_builder._restore_best_schedule()
-                            continue
-                
-                        # Calculate new metrics
-                        post_rotation_stats = self._calculate_post_rotation()
-                        coverage = self._calculate_coverage()
-                
-                        logging.info(f"[Post rotation overall score] {post_rotation_stats['overall_score']:.2f}%")
-                        logging.info(f"[Post uniformity] {post_rotation_stats['uniformity']:.2f}%, Avg worker score: {post_rotation_stats['avg_worker']:.2f}%")
-                        logging.info(f"[Improved coverage] {coverage:.2f}%, Post Rotation: {post_rotation_stats['overall_score']:.2f}%")
-                
-                        # If this attempt improved either coverage or post rotation, keep it
-                        if coverage > best_coverage + 0.5 or (coverage > best_coverage and post_rotation_stats['overall_score'] >= best_post_rotation - 1):
-                            best_coverage = coverage
-                            best_post_rotation = post_rotation_stats['overall_score']
-                            self.schedule_builder._save_current_as_best()
-                            improvements_made += 1
-                            logging.info(f"Improvement accepted! New best coverage: {best_coverage:.2f}%")
-                        else:
-                            # Restore the previous best schedule
-                            self.schedule_builder._restore_best_schedule()
+        # --- 2. Assign Mandatory Shifts ---
+        try:
+            logging.info("Assigning mandatory shifts...")
+            self.schedule_builder._assign_mandatory_guards()
+            # Save this initial state as the first "best" schedule
+            self.schedule_builder._save_current_as_best(initial=True)
+            logging.info("Mandatory shifts assigned.")
+            # Optional: Log initial state or score after mandatory assignments
+            # self.log_schedule_summary("After Mandatory Assignment")
 
-                    # Save the current best metrics
-                    initial_best_coverage = best_coverage
-                    initial_best_post_rotation = best_post_rotation
+        except Exception as e:
+            logging.exception("Error assigning mandatory guards.")
+            raise SchedulerError(f"Failed during mandatory assignment: {str(e)}")
 
-                    # Final report on improvements
-                    if best_coverage > initial_best_coverage or best_post_rotation > initial_best_post_rotation:
-                        improvement = f"Coverage improved by {best_coverage - initial_best_coverage:.2f}%, " \
-                                    f"Post Rotation improved by {best_post_rotation - initial_best_post_rotation:.2f}%"
-                        logging.info(f"=== Schedule successfully improved! ===")
-                        logging.info(improvement)
-                    else:
-                        logging.info("=== No improvements found over initial schedule ===")
-                else:
-                    # If no valid schedule was found, try a simple direct assignment approach
-                    logging.warning("Standard scheduling failed. Trying simple direct assignment.")
-                    self._assign_workers_simple()
-                    coverage = self._calculate_coverage()
-                    if coverage > 0:
-                        logging.info(f"Simple assignment created a basic schedule with {coverage:.2f}% coverage.")
 
-                # Ensure we use the best schedule found during improvements
-                if best_coverage > 0:
-                    try:
-                        # First ensure all required backup attributes exist
-                        if not hasattr(self, 'backup_schedule'):
-                            self.backup_schedule = {}
-                            for date, shifts in self.schedule.items():
-                                self.backup_schedule[date] = shifts.copy() if shifts else []
-        
-                        if not hasattr(self, 'backup_worker_assignments'):
-                            self.backup_worker_assignments = {
-                                w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()
-                            }
-        
-                        if not hasattr(self, 'backup_worker_posts'):
-                            self.backup_worker_posts = {
-                                w_id: set() if w_id not in self.worker_posts else self.worker_posts[w_id].copy() 
-                                for w_id in self.worker_assignments
-                            }
-        
-                        if not hasattr(self, 'backup_worker_weekdays'):
-                            self.backup_worker_weekdays = {
-                                w_id: {} if w_id not in self.worker_weekdays else self.worker_weekdays[w_id].copy()
-                                for w_id in self.worker_assignments
-                            }
-        
-                        if not hasattr(self, 'backup_worker_weekends'):
-                            self.backup_worker_weekends = {
-                                w_id: [] if w_id not in self.worker_weekends else self.worker_weekends[w_id].copy()
-                                for w_id in self.worker_assignments
-                            }
-        
-                        # Now do the actual assignment from backups
-                        self.schedule = {date: shifts.copy() for date, shifts in self.backup_schedule.items()}
-                        self.worker_assignments = {
-                            w_id: assignments.copy() for w_id, assignments in self.backup_worker_assignments.items()
-                        }
-                        self.worker_posts = {
-                            w_id: posts.copy() for w_id, posts in self.backup_worker_posts.items()
-                        }
-                        self.worker_weekdays = {
-                            w_id: weekdays.copy() for w_id, weekdays in self.backup_worker_weekdays.items()
-                        }
-                        self.worker_weekends = {
-                            w_id: weekends.copy() for w_id, weekends in self.backup_worker_weekends.items()
-                        }
-        
-                        logging.info("Restored best schedule found during improvements")
-                    except Exception as e:
-                        logging.error(f"Error restoring from backup: {str(e)}")
-                        # Fallback: just use simple assignment if restoration fails
-                        self._assign_workers_simple()
+        # --- 3. Iterative Improvement Loop ---
+        improvement_loop_count = 0
+        improvement_made_in_cycle = True # Start as True to enter the loop
 
-                # Before calculating final stats, make sure we're using the most up-to-date schedule
-                if hasattr(self, 'backup_schedule') and self.backup_schedule:
-                    self.schedule = self.backup_schedule.copy()
-                    logging.info("Final update of schedule from backup before stats")
-                else:
-                    logging.warning("No backup schedule found for final update")
+        try:
+            while improvement_made_in_cycle and improvement_loop_count < max_improvement_loops:
+                improvement_made_in_cycle = False # Reset flag for this loop iteration
+                logging.info(f"--- Starting Improvement Loop {improvement_loop_count + 1} ---")
+                loop_start_time = datetime.now()
 
-                # Extra check to see if schedule is actually filled
-                filled_count = 0
-                for date, shifts in self.schedule.items():
-                    for worker in shifts:
-                        if worker is not None:
-                            filled_count += 1
-                logging.info(f"Final schedule check: {filled_count} filled shifts before final calculation")
+                # --- Run Improvement Steps ---
+                # The order can influence the final result.
+                # Generally: Fill gaps -> Balance major constraints -> Fine-tune specific rules
 
-                # Before final stats, make sure we have assignments
-                filled_count = sum(1 for shifts in self.schedule.values() for worker in shifts if worker is not None)
-                logging.info(f"Final schedule check: {filled_count} filled shifts before final calculation")
+                # a) Try to fill any remaining empty shifts (Directly or via Swaps)
+                if self.schedule_builder._try_fill_empty_shifts():
+                    logging.info("Improvement Loop: Filled empty shifts.")
+                    improvement_made_in_cycle = True
 
-                # If we lost our assignments but have a backup with assignments, use it
-                if filled_count == 0 and hasattr(self, 'backup_schedule'):
-                    backup_filled = sum(1 for shifts in self.backup_schedule.values() for worker in shifts if worker is not None)
-                    if backup_filled > 0:
-                        logging.info(f"Using backup schedule which has {backup_filled} filled shifts")
-                        self.schedule = {date: shifts.copy() for date, shifts in self.backup_schedule.items()}
-                        # Update filled_count
-                        filled_count = backup_filled
+                # b) Balance overall workloads (total shift counts)
+                if self.schedule_builder._balance_workloads():
+                     logging.info("Improvement Loop: Balanced workloads.")
+                     improvement_made_in_cycle = True
 
-                # If we still don't have assignments, retry with simple assignment
-                if filled_count == 0:
-                    logging.warning("Schedule is empty. Running simple assignment as last resort.")
-                    self._assign_workers_simple()
+                # c) Improve general post rotation (balance across all posts)
+                if self.schedule_builder._improve_post_rotation():
+                     logging.info("Improvement Loop: Improved general post rotation.")
+                     improvement_made_in_cycle = True
 
-                # Ensure we have a valid schedule with assignments
-                try:
-                    # Check if our schedule got wiped out
-                    filled_count = sum(1 for date in self.schedule for shift in self.schedule[date] if shift is not None)
-                    logging.info(f"Final check: Schedule has {filled_count} filled shifts")
-    
-                    if filled_count == 0:
-                        logging.warning("Schedule is empty at end of processing, running simple assignment")
-                        self._assign_workers_simple()
-    
-                    # Final coverage stats
-                    total_shifts = sum(len(shifts) for shifts in self.schedule.values())
-                    filled_shifts = sum(1 for date in self.schedule for shift in self.schedule[date] if shift is not None)
-                    coverage = (filled_shifts / total_shifts * 100) if total_shifts > 0 else 0
-                    logging.info(f"Final schedule coverage: {coverage:.2f}% ({filled_shifts}/{total_shifts} shifts filled)")
-                    
-                    # Final incompatibility verification check
-                    if filled_count > 0:
-                        self.schedule_builder._verify_no_incompatibilities()
-    
-                    return True
-                except Exception as e:
-                    logging.error(f"Error in final schedule check: {str(e)}", exc_info=True)
-                    # Run simple assignment as a last resort
-                    try:
-                        logging.info("Attempting emergency simple assignment")
-                        self._assign_workers_simple()
-                        return True
-                    except Exception as e2:
-                        logging.error(f"Emergency simple assignment failed: {str(e2)}", exc_info=True)
-                        return False
+                # d) Specifically balance the last post assignments
+                if self.schedule_builder._balance_last_post():
+                     logging.info("Improvement Loop: Balanced last post assignments.")
+                     improvement_made_in_cycle = True
 
-                # Final report on improvements
-                if best_coverage > initial_best_coverage or best_post_rotation > initial_best_post_rotation:
-                    improvement = f"Coverage improved by {best_coverage - initial_best_coverage:.2f}%, " \
-                                f"Post Rotation improved by {best_post_rotation - initial_best_post_rotation:.2f}%"
-                    logging.info(f"=== Schedule successfully improved! ===")
-                    logging.info(improvement)
-                else:
-                    logging.info("=== No improvements found over initial schedule ===")
-                        
-                # If we encountered an error but had a working schedule, restore it
-                if best_coverage > 0:
-                    self.schedule = best_schedule
-                    self.worker_assignments = best_worker_assignments
-                    self.worker_posts = best_worker_posts
-                    self.worker_weekdays = best_worker_weekdays
-                    self.worker_weekends = best_worker_weekends
-                    # Don't try to restore constraint_skips here since it might be the source of the error
+                # e) Improve weekend shift distribution
+                if self.schedule_builder._improve_weekend_distribution():
+                     logging.info("Improvement Loop: Improved weekend distribution.")
+                     improvement_made_in_cycle = True
 
-            # Final incompatibility verification check
-            if filled_count > 0:
-                self.schedule_builder._verify_no_incompatibilities()
+                # f) Add any other improvement steps here (e.g., consecutive shifts)
+                # if self.schedule_builder._improve_consecutive_shifts():
+                #      logging.info("Improvement Loop: Improved consecutive shifts.")
+                #      improvement_made_in_cycle = True
 
+
+                loop_end_time = datetime.now()
+                logging.info(f"--- Improvement Loop {improvement_loop_count + 1} finished in {(loop_end_time - loop_start_time).total_seconds():.2f}s. Changes made: {improvement_made_in_cycle} ---")
+
+                if not improvement_made_in_cycle:
+                    logging.info("No further improvements detected in this loop. Exiting improvement phase.")
+                improvement_loop_count += 1
+
+                # Optional: Log schedule summary after each full loop
+                # self.log_schedule_summary(f"After Improvement Loop {improvement_loop_count}")
+
+
+            if improvement_loop_count >= max_improvement_loops:
+                logging.warning(f"Reached maximum improvement loops ({max_improvement_loops}). Stopping improvements.")
+
+        except Exception as e:
+             logging.exception("Error during schedule improvement loop.")
+             # Depending on severity, either raise or try to use the best schedule found so far
+             # Let's raise for now, as an error here indicates a problem in the logic
+             raise SchedulerError(f"Failed during improvement loop {improvement_loop_count}: {str(e)}")
+
+
+        # --- 4. Finalization ---
+        try:
+            logging.info("Finalizing schedule...")
+            # Retrieve the best schedule found by the builder
+            final_schedule_data = self.schedule_builder.get_best_schedule()
+
+            if final_schedule_data is None:
+                logging.error("No best schedule was saved by ScheduleBuilder.")
+                # Attempt to use the current state as fallback? Or fail? Let's fail clearly.
+                raise SchedulerError("Schedule generation process completed, but no best schedule was found.")
+
+            # Update the main scheduler's state with the best found schedule
+            self.schedule = final_schedule_data['schedule']
+            self.worker_assignments = final_schedule_data['worker_assignments']
+            self.worker_shift_counts = final_schedule_data['worker_shift_counts']
+            self.worker_weekend_shifts = final_schedule_data['worker_weekend_shifts']
+            self.worker_posts = final_schedule_data['worker_posts']
+            self.last_assigned_date = final_schedule_data['last_assigned_date']
+            self.consecutive_shifts = final_schedule_data['consecutive_shifts']
+            final_score = final_schedule_data['score']
+
+            logging.info(f"Final schedule selected with score: {final_score}")
+
+            # Perform final validation (e.g., check for empty shifts)
+            empty_shifts_final = []
+            for date, posts in self.schedule.items():
+                for post, worker in enumerate(posts):
+                    if worker is None:
+                        empty_shifts_final.append((date, post))
+
+            if empty_shifts_final:
+                logging.warning(f"Final schedule has {len(empty_shifts_final)} empty shifts remaining: {empty_shifts_final}")
+                # Decide if this is acceptable or should return False/raise error
+                # For now, let's log a warning but consider it generated
+                # return False # Uncomment if empty shifts mean failure
+
+            # Log summary of the final schedule
+            self.log_schedule_summary("Final Generated Schedule")
+
+            end_time = datetime.now()
+            logging.info(f"Schedule generation completed successfully in {(end_time - start_time).total_seconds():.2f} seconds.")
             return True
 
-            max_improvement_iterations = 10 # Safety limit
-            for i in range(max_improvement_iterations):
-                logging.info(f"--- Starting Global Improvement Iteration {i+1}/{max_improvement_iterations} ---")
-                # Call the builder's improvement function
-                made_improvement = self.schedule_builder._apply_targeted_improvements(attempt_number=i)
-
-                if not made_improvement:
-                    logging.info(f"No improvements made in iteration {i+1}. Stopping improvement loop.")
-                    break # Exit loop if no changes were made in a full pass
-                elif i == max_improvement_iterations - 1:
-                    logging.warning("Reached maximum improvement iterations.")
-        
         except Exception as e:
-            logging.error(f"Failed to generate schedule: {str(e)}", exc_info=True)
-            raise SchedulerError(f"Failed to generate schedule: {str(e)}")
+            logging.exception("Error during schedule finalization.")
+            # Use the original exception if it's a SchedulerError, otherwise wrap it
+            if isinstance(e, SchedulerError):
+                raise e
+            else:
+                raise SchedulerError(f"Failed during finalization: {str(e)}")
+
+    def log_schedule_summary(self, title="Schedule Summary"):
+        """ Helper method to log key statistics about the current schedule state. """
+        logging.info(f"--- {title} ---")
+        try:
+            total_shifts_assigned = sum(len(assignments) for assignments in self.worker_assignments.values())
+            logging.info(f"Total shifts assigned: {total_shifts_assigned}")
+
+            empty_shifts = 0
+            total_slots = 0
+            for date, posts in self.schedule.items():
+                 total_slots += len(posts)
+                 empty_shifts += posts.count(None)
+            logging.info(f"Total slots: {total_slots}, Empty slots: {empty_shifts}")
+
+            logging.info("Shift Counts per Worker:")
+            for worker_id, count in sorted(self.worker_shift_counts.items()):
+                 logging.info(f"  Worker {worker_id}: {count} shifts")
+
+            logging.info("Weekend Shifts per Worker:")
+            for worker_id, count in sorted(self.worker_weekend_shifts.items()):
+                 logging.info(f"  Worker {worker_id}: {count} weekend shifts")
+
+            logging.info("Post Assignments per Worker:")
+            for worker_id, posts_dict in sorted(self.worker_posts.items()):
+                 if posts_dict: # Only log if worker has assignments
+                      logging.info(f"  Worker {worker_id}: {dict(sorted(posts_dict.items()))}")
+
+            # Add more stats as needed (e.g., consecutive shifts, score)
+            current_score = self.schedule_builder.calculate_score(self.schedule, self.worker_assignments) # Assuming calculate_score uses current state
+            logging.info(f"Current Schedule Score: {current_score}")
+
+
+        except Exception as e:
+            logging.error(f"Error generating schedule summary: {e}")
+        logging.info(f"--- End {title} ---")
+
 
     def validate_and_fix_final_schedule(self):
         """
