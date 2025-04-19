@@ -24,6 +24,20 @@ logging.basicConfig(
     ]
 )
 
+def numeric_sort_key(item):
+    """
+    Attempts to convert the first element of a tuple (the key) to an integer
+    for sorting. Returns a tuple to prioritize numeric keys and handle errors.
+    item[0] is assumed to be the worker ID (key).
+    """
+    try:
+        # Try converting the key (worker ID) to an integer
+        return (0, int(item[0])) # (0, numeric_value) - sorts numbers first
+    except (ValueError, TypeError):
+        # If conversion fails, return a tuple indicating it's non-numeric
+        return (1, item[0]) # (1, original_string) - sorts non-numbers after numbers
+
+
 class PasswordScreen(Screen):
     def __init__(self, **kwargs):
         super(PasswordScreen, self).__init__(**kwargs)
@@ -560,7 +574,7 @@ class WorkerDetailsScreen(Screen):
             return True
         except ValueError:
             return False
-    
+        
     def validate_worker_data(self):
         """Validate all worker data fields"""
         if not self.worker_id.text.strip():
@@ -1541,10 +1555,9 @@ class CalendarViewScreen(Screen):
              # Add a message if there are no workers/stats
              summary_layout.add_widget(Label(text="No worker statistics found for this period.", size_hint_y=None, height=30))
         else:
-            for worker_id, stats in sorted(workers_stats.items()):
+            for worker_id, stats in sorted(stats_data['workers'].items(), key=numeric_sort_key):
                 print(f"DEBUG: display_summary_dialog - Processing worker: {worker_id}")
-                worker_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=[5, 10], spacing=3)
-
+            worker_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=[5, 10], spacing=3)
                 # Get calculated stats for this worker
                 total_w = stats.get('total', 0)
                 weekends_w = stats.get('weekends', 0)
