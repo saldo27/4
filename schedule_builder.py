@@ -1048,7 +1048,7 @@ class ScheduleBuilder:
                 else:
                     # If no candidate found, keep for swap attempt
                     remaining_empty_shifts.append((date, post))
-                    logging.debug(f"Could not find direct candidate (relaxed+incomp) for {date.strftime('%Y-%m-%d'
+                    logging.debug(f"Could not find direct candidate (relaxed+incomp) for {date.strftime('%Y-%m-%d')}.")
                                   
             elif date in self.scheduler.schedule and len(self.scheduler.schedule[date]) > post and self.scheduler.schedule[date][post] is not None:
                  pass
@@ -1128,7 +1128,7 @@ class ScheduleBuilder:
                 if swap_found: break # Break from worker_W loop
 
             if not swap_found:
-                logging.debug(f"Could not find direct fill or swap for empty shift on {date.strftime('%Y-%m-%d')} post {post}")ft on {date.strftime('%Y-%m-%d')} post {post}")
+                logging.debug(f"Could not find direct fill or swap for empty shift on {date.strftime('%Y-%m-%d')} post {post}")ft on {date.strftime('%Y-%m-%d')} post {post}.")
         # --- End of loop for remaining_empty_shifts ---
 
         logging.info(f"--- Finished Pass 2: Attempted swaps. Total shifts filled in this run (direct + swap): {shifts_filled_count} ---")
