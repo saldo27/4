@@ -751,23 +751,24 @@ class ScheduleBuilder:
         """Assigns mandatory shifts based on configuration."""
         logging.info("Starting mandatory guard assignment...")
         assigned_count = 0
-        mandatory_shifts = self.scheduler.config.get('mandatory_shifts', {}) # Assuming format { "YYYY-MM-DD": {post_idx: worker_id} }
+        # Use scheduler reference for config and worker_ids set
+        mandatory_shifts_config = self.scheduler.config.get('mandatory_shifts', {})
+        worker_ids_set = set(w['id'] for w in self.workers_data) # Pre-compile for faster lookup
 
-        if not mandatory_shifts:
+        if not mandatory_shifts_config:
             logging.info("No mandatory shifts found in configuration.")
             return
 
-        # Ensure dates are datetime objects if they are strings
+        # Process mandatory shifts config (ensure dates/posts are correct types)
         processed_mandatory = {}
-        for date_str, assignments in mandatory_shifts.items():
-            try:
-                date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-                 # Ensure posts are integers
-                processed_assignments = {int(post): worker for post, worker in assignments.items()}
-                processed_mandatory[date_obj] = processed_assignments
-            except ValueError as e:
-                logging.error(f"Invalid date format or post index in mandatory_shifts for '{date_str}': {e}")
-                continue # Skip invalid entries
+        for date_str, assignments in mandatory_shifts_config.items():
+             try:
+                 date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                 processed_assignments = {int(post): worker for post, worker in assignments.items()}
+                 processed_mandatory[date_obj] = processed_assignments
+             except ValueError as e:
+                 logging.error(f"Invalid date format or post index in mandatory_shifts for '{date_str}': {e}")
+                 continue
 
         # Iterate through the schedule date range
         current_date = self.scheduler.start_date
@@ -776,39 +777,62 @@ class ScheduleBuilder:
                 assignments_for_date = processed_mandatory[current_date]
                 logging.debug(f"Processing mandatory shifts for {current_date}: {assignments_for_date}")
 
+                # Ensure schedule list exists for the date
+                if current_date not in self.scheduler.schedule:
+                    self.scheduler.schedule[current_date] = [None] * self.num_shifts
+
                 for post_idx, worker_id in assignments_for_date.items():
-                    # Basic validation
-                    if worker_id not in self.scheduler.worker_ids:
-                        logging.warning(f"Mandatory shift worker '{worker_id}' on {current_date} (Post {post_idx}) not found in workers data. Skipping.")
-                        continue
-                    if post_idx < 0 or post_idx >= self.num_shifts:
-                        logging.warning(f"Mandatory shift post index {post_idx} for worker '{worker_id}' on {current_date} is out of range (0-{self.num_shifts-1}). Skipping.")
-                        continue
+                    # --- Start Simplified Mandatory Check ---
+                    can_assign_mandatory = True
+                    reason = ""
 
-                    # Initialize schedule for the date if needed
-                    if current_date not in self.scheduler.schedule:
-                        self.scheduler.schedule[current_date] = [None] * self.num_shifts
+                    # 1. Check worker exists
+                    if worker_id not in worker_ids_set:
+                        reason = f"Worker '{worker_id}' not found"
+                        can_assign_mandatory = False
 
-                    # Check if slot is already taken (maybe by another mandatory shift)
-                    if self.scheduler.schedule[current_date][post_idx] is not None:
-                        logging.warning(f"Mandatory shift slot {current_date} (Post {post_idx}) is already filled by {self.scheduler.schedule[current_date][post_idx]}. Skipping assignment for {worker_id}.")
-                        continue
+                    # 2. Check post index valid
+                    if can_assign_mandatory and (post_idx < 0 or post_idx >= self.num_shifts):
+                        reason = f"Post index {post_idx} out of range (0-{self.num_shifts-1})"
+                        can_assign_mandatory = False
 
-                    # Check constraints (IMPORTANT!)
-                    # Use relaxation_level=1 or higher initially for mandatory if needed
-                    if self.scheduler._check_constraints(worker_id, current_date, post_idx, relaxation_level=1):
+                    # 3. Check slot empty
+                    if can_assign_mandatory and self.scheduler.schedule[current_date][post_idx] is not None:
+                        # Allow overwriting ONLY if the current occupant is NOT mandatory for this slot
+                        # (Requires more complex check if mandatory shifts can conflict)
+                        # For now, assume mandatory shifts don't conflict with each other.
+                        # If they can, this needs adjustment.
+                        reason = f"Slot already filled by {self.scheduler.schedule[current_date][post_idx]}"
+                        can_assign_mandatory = False # Strict: Don't overwrite
+
+                    # 4. Check basic availability (days off, work period)
+                    if can_assign_mandatory and self._is_worker_unavailable(worker_id, current_date):
+                         reason = "Worker unavailable (day off/outside period)"
+                         can_assign_mandatory = False
+
+                    # 5. Check incompatibility with workers ALREADY assigned today
+                    if can_assign_mandatory and not self._check_incompatibility(worker_id, current_date):
+                         reason = "Incompatible with already assigned worker(s)"
+                         can_assign_mandatory = False
+                    # --- End Simplified Mandatory Check ---
+
+                    # Perform assignment if all checks passed
+                    if can_assign_mandatory:
                         logging.info(f"Assigning mandatory shift: {current_date} Post {post_idx} -> Worker {worker_id}")
                         self.scheduler.schedule[current_date][post_idx] = worker_id
-                        # Update tracking data immediately
+                        # Update tracking data immediately using the SCHEDULER's method
                         self.scheduler._update_tracking_data(worker_id, current_date, post_idx)
                         assigned_count += 1
                     else:
-                        logging.warning(f"Could not assign mandatory shift for {worker_id} on {current_date} (Post {post_idx}) due to constraint violations (Relaxation 1).")
-                        # Consider raising an error here if mandatory shifts MUST be assigned
+                        # Log failure reason
+                        logging.warning(f"Could not assign mandatory shift for {worker_id} on {current_date} (Post {post_idx}): {reason}.")
+                        # Consider raising an error if unassignable mandatory shifts are critical failures
+                        # raise SchedulerError(f"Unassignable mandatory shift: {worker_id} on {current_date} Post {post_idx} - {reason}")
 
             current_date += timedelta(days=1)
 
-        logging.info(f"Finished mandatory guard assignment. Assigned {assigned_count} shifts.")                        
+        logging.info(f"Finished mandatory guard assignment. Assigned {assigned_count} shifts.")
+
     def _assign_priority_days(self, forward):
         """Process weekend and holiday assignments first since they're harder to fill"""
         dates_to_process = []
@@ -1136,7 +1160,7 @@ class ScheduleBuilder:
 
         if made_change_in_pass:
             self._save_current_as_best()
-        return made_change_in_pass
+        return made_change_in_pa
     
     def _find_swap_candidate(self, worker_W_id, conflict_date, conflict_post):
         """

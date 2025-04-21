@@ -35,32 +35,37 @@ class ConstraintChecker:
     
     def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
-        Check if two workers are incompatible based on incompatibility property or list.
+        Check if two workers are incompatible based on the 'incompatible_with' list.
         """
         try:
             if worker1_id == worker2_id:
                 return False  # A worker isn't incompatible with themselves
-            
+
             # Get workers' data
             worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
             worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
-    
+
             if not worker1 or not worker2:
-                return False
-    
-            # Case 1: Check 'is_incompatible' property (both must have it for incompatibility)
-            has_incompatibility1 = worker1.get('is_incompatible', False)
-            has_incompatibility2 = worker2.get('is_incompatible', False)
-            if has_incompatibility1 and has_incompatibility2:
-                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible (both marked incompatible)")
-                return True
-    
-            return False
-    
+                logging.warning(f"Could not find worker data for {worker1_id} or {worker2_id} during incompatibility check.")
+                return False # Cannot determine incompatibility if data is missing
+
+            # Check 'incompatible_with' list in both directions
+            incompatible_list1 = worker1.get('incompatible_with', [])
+            incompatible_list2 = worker2.get('incompatible_with', [])
+
+            # Ensure the lists contain IDs (handle potential variations if needed)
+            # Assuming IDs are strings or comparable types
+            is_incompatible = (worker2_id in incompatible_list1) or \
+                              (worker1_id in incompatible_list2)
+
+            if is_incompatible:
+                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible based on 'incompatible_with' list.")
+            return is_incompatible
+
         except Exception as e:
-            logging.error(f"Error checking worker incompatibility: {str(e)}")
-            return False  # Default to compatible in case of error
-        
+            logging.error(f"Error checking worker incompatibility between {worker1_id} and {worker2_id}: {str(e)}")
+            return False  # Default to compatible in case of error        
+
     def _check_incompatibility(self, worker_id, date):
         """Check if worker is incompatible with already assigned workers"""
         try:

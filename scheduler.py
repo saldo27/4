@@ -1493,59 +1493,110 @@ class Scheduler:
         gap_issues = 0
         other_issues = 0
         fixes_made = 0
-    
+
         # 1. Check for incompatibilities
         for date in sorted(self.schedule.keys()):
-            # Get non-None workers assigned to this date
-            workers_assigned = [w for w in self.schedule[date] if w is not None]
-        
-            # Check each pair of workers for incompatibility
-            for i, worker1_id in enumerate(workers_assigned):
-                for worker2_id in workers_assigned[i+1:]:
-                    # Check if workers are incompatible using the schedule_builder method
-                    if self.schedule_builder._are_workers_incompatible(worker1_id, worker2_id):
-                        incompatibility_issues += 1
-                        logging.warning(f"VALIDATION: Found incompatible workers {worker1_id} and {worker2_id} on {date}")
-                    
-                        # Remove one of the workers (preferably one with more assignments)
-                        w1_count = len(self.worker_assignments.get(worker1_id, set()))
-                        w2_count = len(self.worker_assignments.get(worker2_id, set()))
-                    
-                        worker_to_remove = worker1_id if w1_count >= w2_count else worker2_id
-                        post = self.schedule[date].index(worker_to_remove)
-                    
-                        # Remove the worker
-                        self.schedule[date][post] = None
-                        if worker_to_remove in self.worker_assignments:
-                            self.worker_assignments[worker_to_remove].remove(date)
-                    
-                        fixes_made += 1
-                        logging.warning(f"VALIDATION: Removed worker {worker_to_remove} from {date} to fix incompatibility")
+            workers_assigned = [w for w in self.schedule.get(date, []) if w is not None] # Use .get for safety
 
-        # 2. Check for minimum gap violations
-        for worker_id in self.worker_assignments:
-            # Get all dates this worker is assigned to
-            assignments = sorted(list(self.worker_assignments[worker_id]))
-        
-            # Check pairs of dates for gap violations
+            # Use indices to safely modify the list while iterating conceptually
+            indices_to_check = list(range(len(workers_assigned)))
+            processed_pairs = set() # Avoid redundant checks/fixes if multiple pairs exist
+
+            for i in indices_to_check:
+                 if i >= len(workers_assigned): continue # List size might change
+                 worker1_id = workers_assigned[i]
+                 if worker1_id is None: continue # Slot might have been cleared by a previous fix
+
+                 for j in range(i + 1, len(workers_assigned)):
+                      if j >= len(workers_assigned): continue # List size might change
+                      worker2_id = workers_assigned[j]
+                      if worker2_id is None: continue # Slot might have been cleared
+
+                      pair = tuple(sorted((worker1_id, worker2_id)))
+                      if pair in processed_pairs: continue # Already handled this pair
+
+                      # Check if workers are incompatible using the schedule_builder method
+                      if self.schedule_builder._are_workers_incompatible(worker1_id, worker2_id):
+                          incompatibility_issues += 1 # Count issue regardless of fix success
+                          processed_pairs.add(pair) # Mark pair as processed
+                          logging.warning(f"VALIDATION: Found incompatible workers {worker1_id} and {worker2_id} on {date}")
+
+                          # Remove one of the workers (preferably one with more assignments)
+                          w1_count = len(self.worker_assignments.get(worker1_id, set()))
+                          w2_count = len(self.worker_assignments.get(worker2_id, set()))
+
+                          worker_to_remove = worker1_id if w1_count >= w2_count else worker2_id
+                          try:
+                              # Find the post index IN THE ORIGINAL schedule[date] list
+                              post_to_remove = self.schedule[date].index(worker_to_remove)
+
+                              # Remove the worker from schedule
+                              self.schedule[date][post_to_remove] = None
+
+                              # Remove from assignments tracking
+                              if worker_to_remove in self.worker_assignments:
+                                  self.worker_assignments[worker_to_remove].discard(date) # Use discard
+
+                              # --- ADDED: Update Tracking Data ---
+                              self._update_tracking_data(worker_to_remove, date, post_to_remove, removing=True)
+                              # --- END ADDED ---
+
+                              fixes_made += 1
+                              logging.warning(f"VALIDATION: Removed worker {worker_to_remove} from {date} Post {post_to_remove} to fix incompatibility")
+
+                              # Update the local workers_assigned list for subsequent checks on the same date
+                              if worker_to_remove == worker1_id:
+                                   workers_assigned[i] = None # Mark as None in local list
+                              else:
+                                   workers_assigned[j] = None # Mark as None in local list
+
+                          except ValueError:
+                               logging.error(f"VALIDATION FIX ERROR: Worker {worker_to_remove} not found in schedule for {date} during fix.")
+                          except Exception as e:
+                               logging.error(f"VALIDATION FIX ERROR: Unexpected error removing {worker_to_remove} from {date}: {e}")
+
+        # 2. Check for minimum gap violations (Ensure this also calls _update_tracking_data)
+        for worker_id in list(self.worker_assignments.keys()): # Iterate over copy of keys
+            assignments = sorted(list(self.worker_assignments.get(worker_id, set()))) # Use .get
+
+            indices_to_remove_gap = [] # Store (date, post) to remove after checking all pairs
+
             for i in range(len(assignments) - 1):
                 date1 = assignments[i]
-                date2 = assignments[i+1]  # Next chronological assignment
+                date2 = assignments[i+1]
                 days_between = (date2 - date1).days
-                    
-                # Check for minimum gap based on configuration
+
                 min_days_between = self.gap_between_shifts + 1
+                # Add specific part-time logic if needed here, e.g., based on worker data
+
                 if days_between < min_days_between:
                     gap_issues += 1
                     logging.warning(f"VALIDATION: Found gap violation for worker {worker_id}: only {days_between} days between {date1} and {date2}, minimum required: {min_days_between}")
-                    
-                    # Remove the later assignment
-                    post = self.schedule[date2].index(worker_id)
-                    self.schedule[date2][post] = None
-                    self.worker_assignments[worker_id].remove(date2)
-                
-                    fixes_made += 1
-                    logging.warning(f"VALIDATION: Removed worker {worker_id} from {date2} to fix gap violation")
+
+                    # Mark the later assignment for removal
+                    try:
+                         # Find post index for date2
+                         if date2 in self.schedule and worker_id in self.schedule[date2]:
+                              post_to_remove_gap = self.schedule[date2].index(worker_id)
+                              indices_to_remove_gap.append((date2, post_to_remove_gap))
+                         else:
+                              logging.error(f"VALIDATION FIX ERROR (GAP): Worker {worker_id} assignment for {date2} not found in schedule.")
+                    except ValueError:
+                         logging.error(f"VALIDATION FIX ERROR (GAP): Worker {worker_id} not found in schedule list for {date2}.")
+
+            # Now perform removals for gap violations
+            for date_rem, post_rem in indices_to_remove_gap:
+                 if date_rem in self.schedule and len(self.schedule[date_rem]) > post_rem and self.schedule[date_rem][post_rem] == worker_id:
+                      self.schedule[date_rem][post_rem] = None
+                      self.worker_assignments[worker_id].discard(date_rem)
+                      # --- ADDED: Update Tracking Data ---
+                      self._update_tracking_data(worker_id, date_rem, post_rem, removing=True)
+                      # --- END ADDED ---
+                      fixes_made += 1
+                      logging.warning(f"VALIDATION: Removed worker {worker_id} from {date_rem} Post {post_rem} to fix gap violation")
+                 else:
+                      logging.warning(f"VALIDATION FIX SKIP (GAP): State changed, worker {worker_id} no longer at {date_rem} Post {post_rem}.")
+
     
         # 3. Run the reconcile method to ensure data consistency
         if self._reconcile_schedule_tracking():
