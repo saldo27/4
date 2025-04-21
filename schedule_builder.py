@@ -1136,7 +1136,7 @@ class ScheduleBuilder:
 
         if made_change_in_pass:
             self._save_current_as_best()
-        return made_change_in_pa
+        return made_change_in_pass
     
     def _find_swap_candidate(self, worker_W_id, conflict_date, conflict_post):
         """
