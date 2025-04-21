@@ -1128,14 +1128,15 @@ class ScheduleBuilder:
                 if swap_found: break # Break from worker_W loop
 
             if not swap_found:
-                logging.debug(f"Could not find direct fill or swap for empty shift on {date.strftime('%Y-%m-%d')} post {post}")ft on {date.strftime('%Y-%m-%d')} post {post}.")
+                 # FIX: Removed extraneous text after the closing parenthesis
+                logging.debug(f"Could not find direct fill or swap for empty shift on {date.strftime('%Y-%m-%d')} post {post}")
         # --- End of loop for remaining_empty_shifts ---
 
         logging.info(f"--- Finished Pass 2: Attempted swaps. Total shifts filled in this run (direct + swap): {shifts_filled_count} ---")
 
         if made_change_in_pass:
             self._save_current_as_best()
-        return made_change_in_pass
+        return made_change_in_pa
     
     def _find_swap_candidate(self, worker_W_id, conflict_date, conflict_post):
         """
