@@ -597,8 +597,6 @@ class ScheduleBuilder:
                  logging.debug(f"Sim Check Fail: Double booking {worker_id} on {date}")
                  return False
 
-            # --- ADDED CONSTRAINTS using simulated_assignments ---
-
             sorted_sim_assignments = sorted(list(simulated_assignments.get(worker_id, [])))
 
             # 7. Friday-Monday Check (Only if gap constraint allows 3 days, i.e., gap_between_shifts == 1)
@@ -1359,10 +1357,18 @@ class ScheduleBuilder:
                     for candidate_worker, candidate_score in candidates:
                         worker_id = candidate_worker['id']
 
-                        # *** EXPLICIT INCOMPATIBILITY CHECK ***
-                        # Check against ALL workers currently assigned to this date
+                        # *** DEBUG LOGGING - START ***
                         current_assignments_on_date = [w for w in self.schedule.get(date, []) if w is not None]
-                        if not self._check_incompatibility_with_list(worker_id, current_assignments_on_date):
+                        logging.debug(f"CHECKING: Date={date}, Post={post}, Candidate={worker_id}, CurrentlyAssigned={current_assignments_on_date}")
+                        # *** DEBUG LOGGING - END ***
+
+                        # *** EXPLICIT INCOMPATIBILITY CHECK ***
+                        # Temporarily add logging INSIDE the check function call might also help, or log its result explicitly
+                        is_compatible = self._check_incompatibility_with_list(worker_id, current_assignments_on_date)
+                        logging.debug(f"  -> Incompatibility Check Result: {is_compatible}") # Log the result
+
+                        # if not self._check_incompatibility_with_list(worker_id, current_assignments_on_date):
+                        if not is_compatible: # Use the variable to make logging easier
                             logging.debug(f"  Skipping candidate {worker_id} for post {post} on {date}: Incompatible with current assignments on this date.")
                             continue # Try next candidate
 
