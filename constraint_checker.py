@@ -35,63 +35,65 @@ class ConstraintChecker:
     
     def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
-        Check if two workers are incompatible based on the 'incompatible_with' list.
+        Check if two workers are incompatible based SOLELY on the 'incompatible_with' list.
         """
         try:
             if worker1_id == worker2_id:
-                return False  # A worker isn't incompatible with themselves
+                return False
 
-            # Get workers' data
             worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
             worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
 
             if not worker1 or not worker2:
                 logging.warning(f"Could not find worker data for {worker1_id} or {worker2_id} during incompatibility check.")
-                return False # Cannot determine incompatibility if data is missing
+                return False # Cannot determine incompatibility
 
             # Check 'incompatible_with' list in both directions
+            # Ensure the lists contain IDs (handle potential variations if needed)
             incompatible_list1 = worker1.get('incompatible_with', [])
             incompatible_list2 = worker2.get('incompatible_with', [])
 
-            # Ensure the lists contain IDs (handle potential variations if needed)
-            # Assuming IDs are strings or comparable types
+            # Perform the check - assuming IDs are stored directly in the list
             is_incompatible = (worker2_id in incompatible_list1) or \
                               (worker1_id in incompatible_list2)
 
+            # Optional: Add debug log if needed
             if is_incompatible:
-                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible based on 'incompatible_with' list.")
+                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible ('incompatible_with').")
+
             return is_incompatible
 
         except Exception as e:
             logging.error(f"Error checking worker incompatibility between {worker1_id} and {worker2_id}: {str(e)}")
-            return False  # Default to compatible in case of error        
+            return False # Default to compatible on error
+ 
 
     def _check_incompatibility(self, worker_id, date):
-        """Check if worker is incompatible with already assigned workers"""
+        """Check if worker is incompatible with already assigned workers on a specific date"""
         try:
-            if date not in self.schedule:
-                return True
+            # Use the schedule reference from self.scheduler
+            if date not in self.scheduler.schedule:
+                return True # No one assigned, compatible
 
-            # Get the worker's data
-            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
-            if not worker:
-                logging.error(f"Worker {worker_id} not found in workers_data")
-                return False
-    
-            # Check against all workers already assigned to this date
-            for assigned_id in self.schedule[date]:
-                if assigned_id is None:
+            # Get the list of workers already assigned
+            assigned_workers_list = self.scheduler.schedule.get(date, [])
+
+            # Check the target worker against each assigned worker
+            for assigned_id in assigned_workers_list:
+                if assigned_id is None or assigned_id == worker_id:
                     continue
-                
-                if self._are_workers_incompatible(worker_id, assigned_id):
-                    logging.warning(f"Workers {worker_id} and {assigned_id} are incompatible - cannot assign to {date}")
-                    return False
 
-            return True
+                # Use the corrected core incompatibility check
+                if self._are_workers_incompatible(worker_id, assigned_id):
+                    logging.debug(f"Incompatibility Violation: {worker_id} cannot work with {assigned_id} on {date}")
+                    return False # Found incompatibility
+
+            return True # No incompatibilities found
 
         except Exception as e:
-            logging.error(f"Error checking incompatibility for worker {worker_id}: {str(e)}")
-            return False
+            logging.error(f"Error checking incompatibility for worker {worker_id} on {date}: {str(e)}")
+            return False # Fail safe - assume incompatible on error
+
 
     def _check_gap_constraint(self, worker_id, date, min_gap):
         """Check minimum gap between assignments"""
