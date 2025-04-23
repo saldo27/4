@@ -1276,6 +1276,37 @@ class ScheduleBuilder:
                 
                     # Sort candidates by score (descending)
                     candidates.sort(key=lambda x: x[1], reverse=True)
+
+                    # --- REVISED ASSIGNMENT LOGIC ---
+                    assigned_this_post = False
+                    for candidate_worker, candidate_score in candidates:
+                        worker_id = candidate_worker['id']
+
+                        # *** ADD EXPLICIT INCOMPATIBILITY CHECK ***
+                        if not self._check_incompatibility(worker_id, date):
+                            logging.debug(f"  Skipping candidate {worker_id} for post {post} on {date}: Incompatible with current assignments on this date.")
+                            continue # Try next candidate
+
+                        # *** If compatible, assign this worker ***
+                        # Ensure list is long enough (might be needed if post > len(self.schedule[date])-1)
+                        while len(self.schedule[date]) <= post:
+                             self.schedule[date].append(None)
+
+                        self.schedule[date][post] = worker_id # Assign to the correct post index
+                        self.worker_assignments.setdefault(worker_id, set()).add(date) # Use setdefault for safety
+                        self.scheduler._update_tracking_data(worker_id, date, post)
+
+                        logging.info(f"Assigned worker {worker_id} to {date.strftime('%d-%m-%Y')}, post {post} (Score: {candidate_score:.2f}, Relax: {relax_level})")
+                        assigned_this_post = True
+                        break # Found a compatible worker for this post, break candidate loop
+
+                    if assigned_this_post:
+                        break # Success at this relaxation level, break relaxation loop
+
+                    # If loop finishes without assigning (no compatible candidates found at this relax level)
+                    # logging.debug(f"No compatible candidate found for post {post} at relax level {relax_level}")
+
+            # --- END REVISED ASSIGNMENT LOGIC ---
                 
                     # Group candidates with similar scores (within 10% of max score)
                     max_score = candidates[0][1]
@@ -1296,9 +1327,25 @@ class ScheduleBuilder:
                     logging.info(f"Assigned worker {worker_id} to {date.strftime('%d-%m-%Y')}, post {post}")
                     break  # Success at this relaxation level
             else:
-                # If we've tried all relaxation levels and still failed, leave shift unfilled
-                self.schedule[date].append(None)
-                logging.debug(f"No suitable worker found for {date.strftime('%Y-%m-%d')}, post {post} - shift unfilled")
+                # If we've tried all relaxation levels and still haven't assigned
+            if not assigned_this_post:
+                 # Ensure list is long enough before appending None
+                 while len(self.schedule[date]) <= post:
+                      self.schedule[date].append(None)
+                 # Only append None if the slot doesn't exist or is still None
+                 if len(self.schedule[date]) == post or self.schedule[date][post] is None:
+                      if len(self.schedule[date]) == post:
+                           self.schedule[date].append(None)
+                      else: # Slot exists but might have been filled by mandatory, double-check
+                           if self.schedule[date][post] is None:
+                                # It's genuinely empty, log unfilled
+                                logging.warning(f"No suitable worker found for {date.strftime('%d-%m-%Y')}, post {post} - shift unfilled after all checks.")
+                           # else: it was filled by something else (e.g. mandatory), which is fine.
+
+        # --- Ensure schedule[date] list has the correct length ---
+        # This might be needed if some posts were skipped entirely
+        while len(self.schedule[date]) < self.num_shifts:
+             self.schedule[date].append(None)unfilled")
 
     def _get_candidates(self, date, post, relaxation_level=0):
         """
