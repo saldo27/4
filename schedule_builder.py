@@ -2181,15 +2181,25 @@ class ScheduleBuilder:
                      logging.debug(f"Constraint check failed (direct): Incompatibility between {worker1_id} and {worker2_id} on {date}")
                      return False
                     
-         # Now check individual worker constraints (gap, weekend limits, etc.)           
-         for post, worker_id in enumerate(assignments):
-              if worker_id is not None:
-                   # Use relaxation_level=0 for strict checks during improvement phases
-                   # Assuming _check_constraints uses live data from self.scheduler
-                   if not self.scheduler.constraint_checker._check_constraints(worker_id, date, skip_constraints=False): # Check if this method exists and works
-                        # logging.debug(f\"LIVE Constraint check failed for {worker_id} on {date} post {post} during swap check.\")
-                        return False
-         return True
+        # Now check individual worker constraints (gap, weekend limits, etc.)           
+        Now check individual worker constraints (gap, weekend limits, etc.)
+        for post, worker_id in enumerate(assignments_on_date): # <<< FIX: Was 'assignments'
+            if worker_id is not None:
+                # Use relaxation_level=0 for strict checks during improvement phases
+                # Assuming _check_constraints uses live data from self.scheduler
+                # Ensure the constraint checker method exists and is correctly referenced
+                    try:
+                        if not self.scheduler.constraint_checker._check_constraints(worker_id, date, post_idx=post, skip_constraints=False):
+                            # logging.debug(f"LIVE Constraint check failed for {worker_id} on {date} post {post} during swap check.")
+                                return False
+                            except AttributeError:
+                                logging.error("Constraint checker or _check_constraints method not found during swap validation.")
+                                return False # Fail validation if checker is missing
+                            except Exception as e_constr:
+                                logging.error(f"Error calling constraint checker for {worker_id} on {date}: {e_constr}", exc_info=True)
+                                return False # Fail validation on error
+
+        return True # All checks passed for this date
 
     def _improve_weekend_distribution(self):
         """
