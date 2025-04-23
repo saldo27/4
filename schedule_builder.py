@@ -698,6 +698,12 @@ class ScheduleBuilder:
             if self._is_worker_unavailable(worker_id, date) or worker_id in self.schedule.get(date, []):
                 return float('-inf')
             
+            # Check incompatibility against workers already assigned on this date (excluding the current post being considered)
+            already_assigned_on_date = [w for idx, w in enumerate(self.schedule.get(date, [])) if w is not None and idx != post]
+            if not self._check_incompatibility_with_list(worker_id, already_assigned_on_date):
+                 logging.debug(f"Score check fail: Worker {worker_id} incompatible on {date}")
+                 return float('-inf')
+            
             # --- Check for mandatory shifts ---
             worker_data = worker
             mandatory_days = worker_data.get('mandatory_days', [])
