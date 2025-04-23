@@ -963,24 +963,24 @@ class ScheduleBuilder:
                 assignments_for_date = processed_mandatory[current_date]
                 logging.debug(f"Processing mandatory shifts for {current_date}: {assignments_for_date}")
 
-            for post_idx, worker_id in assignments_for_date.items():
+                for post_idx, worker_id in assignments_for_date.items():
                     # Basic validation
                     if worker_id not in self.scheduler.worker_ids: # Assuming worker_ids exists
                         logging.warning(f"Mandatory shift worker '{worker_id}' on {current_date} (Post {post_idx}) not found. Skipping.")
                         continue
 
-                # Initialize schedule for the date if needed
-                if current_date not in self.scheduler.schedule:
+                    # Initialize schedule for the date if needed
+                    if current_date not in self.scheduler.schedule:
                         self.scheduler.schedule[current_date] = [None] * self.num_shifts
                         
-                # Check if slot is already taken (maybe by another mandatory shift)
-                if self.scheduler.schedule[current_date][post_idx] is not None:
+                    # Check if slot is already taken (maybe by another mandatory shift)
+                    if self.scheduler.schedule[current_date][post_idx] is not None:
                         logging.warning(f"Mandatory shift slot {current_date} (Post {post_idx}) already filled. Skipping.")
                         continue
 
-                # Check constraints (IMPORTANT!)
-                # Use relaxation_level=1 or higher initially for mandatory if needed
-                if self.scheduler.constraint_checker._check_constraints(worker_id, current_date, post_idx, skip_constraints=False):
+                    # Check constraints (IMPORTANT!)
+                    # Use relaxation_level=1 or higher initially for mandatory if needed
+                    if self.scheduler.constraint_checker._check_constraints(worker_id, current_date, post_idx, skip_constraints=False):
                          logging.info(f"Assigning mandatory shift: {current_date} Post {post_idx} -> Worker {worker_id}")
                          self.scheduler.schedule[current_date][post_idx] = worker_id
                          self.scheduler._update_tracking_data(worker_id, current_date, post_idx) # Ensure correct args and method
