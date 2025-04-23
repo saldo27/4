@@ -1310,15 +1310,31 @@ class ScheduleBuilder:
             relaxation_level: Level of constraint relaxation (0=strict, 1=moderate, 2=lenient)
         """
         candidates = []
-    
         logging.debug(f"Looking for candidates for {date.strftime('%d-%m-%Y')}, post {post}")
-    
+
+        # Get workers already assigned to other posts on this date
+        already_assigned_on_date = [w for idx, w in enumerate(self.schedule.get(date, [])) if w is not None and idx != post]
+
         for worker in self.workers_data:
             worker_id = worker['id']
-        
-            # Debug log for each worker check
             logging.debug(f"Checking worker {worker_id} for {date.strftime('%d-%m-%Y')}")
-        
+
+            # --- PRE-FILTERING ---
+            # Skip if already assigned to this date (redundant with score check, but safe)
+            if worker_id in self.schedule.get(date, []):
+                 logging.debug(f"  Worker {worker_id} skipped - already assigned to {date.strftime('%d-%m-%Y')}")
+                 continue
+
+            # Skip if unavailable
+            if self._is_worker_unavailable(worker_id, date):
+                 logging.debug(f"  Worker {worker_id} skipped - unavailable on {date.strftime('%d-%m-%Y')}")
+                 continue
+
+            # *** ADDED: Explicit Incompatibility Check BEFORE scoring ***
+            # Never relax incompatibility constraint
+            if not self._check_incompatibility_with_list(worker_id, already_assigned_on_date):
+                 logging.debug(f"  Worker {worker_id} skipped - incompatible with already assigned workers on {date.strftime('%d-%m-%Y')}")
+                 continue
             # Skip if max shifts reached
             if len(self.worker_assignments[worker_id]) >= self.max_shifts_per_worker:
                 logging.debug(f"Worker {worker_id} skipped - max shifts reached: {len(self.worker_assignments[worker_id])}/{self.max_shifts_per_worker}")
@@ -2113,7 +2129,20 @@ class ScheduleBuilder:
     def _check_all_constraints_for_date(self, date):
          """ Checks all constraints for all workers assigned on a given date. """
          if date not in self.scheduler.schedule: return True # No assignments, no violations
-         assignments = self.scheduler.schedule[date]
+
+         assignments_on_date = self.scheduler.schedule[date]
+         workers_present = [w for w in assignments_on_date if w is not None]
+
+         # *** ADDED: Direct check for pairwise incompatibility on this date ***
+         for i in range(len(workers_present)):
+             for j in range(i + 1, len(workers_present)):
+                 worker1_id = workers_present[i]
+                 worker2_id = workers_present[j]
+                 if self._are_workers_incompatible(worker1_id, worker2_id):
+                     logging.debug(f"Constraint check failed (direct): Incompatibility between {worker1_id} and {worker2_id} on {date}")
+                     return False
+                    
+         # Now check individual worker constraints (gap, weekend limits, etc.)           
          for post, worker_id in enumerate(assignments):
               if worker_id is not None:
                    # Use relaxation_level=0 for strict checks during improvement phases
