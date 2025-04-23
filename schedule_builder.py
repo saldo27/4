@@ -2166,40 +2166,50 @@ class ScheduleBuilder:
          return valid_from and valid_to
 
     def _check_all_constraints_for_date(self, date):
-         """ Checks all constraints for all workers assigned on a given date. """
-         if date not in self.scheduler.schedule: return True # No assignments, no violations
+        """ Checks all constraints for all workers assigned on a given date. """
+        # Indent level 1
+        if date not in self.scheduler.schedule:
+            return True # No assignments, no violations
 
-         assignments_on_date = self.scheduler.schedule[date]
-         workers_present = [w for w in assignments_on_date if w is not None]
+        assignments_on_date = self.scheduler.schedule[date]
+        workers_present = [w for w in assignments_on_date if w is not None]
 
-         # *** ADDED: Direct check for pairwise incompatibility on this date ***
-         for i in range(len(workers_present)):
-             for j in range(i + 1, len(workers_present)):
-                 worker1_id = workers_present[i]
-                 worker2_id = workers_present[j]
-                 if self._are_workers_incompatible(worker1_id, worker2_id):
-                     logging.debug(f"Constraint check failed (direct): Incompatibility between {worker1_id} and {worker2_id} on {date}")
-                     return False
-                    
-        # Now check individual worker constraints (gap, weekend limits, etc.)           
-        Now check individual worker constraints (gap, weekend limits, etc.)
-        for post, worker_id in enumerate(assignments_on_date): # <<< FIX: Was 'assignments'
+        # Direct check for pairwise incompatibility on this date
+        for i in range(len(workers_present)):
+            # Indent level 2
+            for j in range(i + 1, len(workers_present)):
+                # Indent level 3
+                worker1_id = workers_present[i]
+                worker2_id = workers_present[j]
+                if self._are_workers_incompatible(worker1_id, worker2_id):
+                    # Indent level 4
+                    logging.debug(f"Constraint check failed (direct): Incompatibility between {worker1_id} and {worker2_id} on {date}")
+                    return False
+
+        # Now check individual worker constraints (gap, weekend limits, etc.)
+        for post, worker_id in enumerate(assignments_on_date):
+            # Indent level 2
             if worker_id is not None:
-                # Use relaxation_level=0 for strict checks during improvement phases
+                # Indent level 3
                 # Assuming _check_constraints uses live data from self.scheduler
                 # Ensure the constraint checker method exists and is correctly referenced
-                    try:
-                        if not self.scheduler.constraint_checker._check_constraints(worker_id, date, post_idx=post, skip_constraints=False):
-                            # logging.debug(f"LIVE Constraint check failed for {worker_id} on {date} post {post} during swap check.")
-                                return False
-                            except AttributeError:
-                                logging.error("Constraint checker or _check_constraints method not found during swap validation.")
-                                return False # Fail validation if checker is missing
-                            except Exception as e_constr:
-                                logging.error(f"Error calling constraint checker for {worker_id} on {date}: {e_constr}", exc_info=True)
-                                return False # Fail validation on error
+                try:
+                    # Indent level 4
+                    if not self.scheduler.constraint_checker._check_constraints(worker_id, date, post_idx=post, skip_constraints=False):
+                        # Indent level 5
+                        # logging.debug(f"LIVE Constraint check failed for {worker_id} on {date} post {post} during swap check.")
+                        return False
+                except AttributeError:
+                    # Indent level 4 (aligned with try)
+                    logging.error("Constraint checker or _check_constraints method not found during swap validation.")
+                    return False # Fail validation if checker is missing
+                except Exception as e_constr:
+                    # Indent level 4 (aligned with try)
+                    logging.error(f"Error calling constraint checker for {worker_id} on {date}: {e_constr}", exc_info=True)
+                    return False # Fail validation on error
 
-        return True # All checks passed for this date
+        # Indent level 1 (aligned with the initial 'if' and 'for' loops)
+        return True
 
     def _improve_weekend_distribution(self):
         """
