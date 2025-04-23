@@ -478,31 +478,35 @@ class ScheduleBuilder:
         self._update_tracking_data(worker_id, date, post)
         return True
     
-    def _can_swap_assignments(self, worker_id, date1, post1, date2, post2):
+    def _can_swap_assignments(self, worker_id, date_from, post_from, date_to, post_to):
         """
         Checks if moving worker_id from (date_from, post_from) to (date_to, post_to) is valid.
         Uses deepcopy for safer simulation.
         """
         # --- Simulation Setup ---
-        # Create deep copies of the schedule for the affected dates and the worker's assignments
-        # Only copy what's necessary to reduce overhead, but full copies are safer to start
+        # Create deep copies of the schedule and assignments
         try:
+            # Use scheduler's references for deepcopy
             simulated_schedule = copy.deepcopy(self.scheduler.schedule)
             simulated_assignments = copy.deepcopy(self.scheduler.worker_assignments)
 
             # --- Simulate the Swap ---
             # 1. Check if 'from' state is valid before simulating removal
             if date_from not in simulated_schedule or \
-                len(simulated_schedule[date_from]) <= post_from or \
-                simulated_schedule[date_from][post_from] != worker_id or \
-                worker_id not in simulated_assignments or \
-                date_from not in simulated_assignments[worker_id]:
+               len(simulated_schedule[date_from]) <= post_from or \
+               simulated_schedule[date_from][post_from] != worker_id or \
+               worker_id not in simulated_assignments or \
+               date_from not in simulated_assignments[worker_id]:
                     logging.warning(f"_can_swap_assignments: Initial state invalid for removing {worker_id} from {date_from}|P{post_from}. Aborting check.")
                     return False # Cannot simulate if initial state is wrong
 
             # 2. Simulate removing worker from 'from' position
             simulated_schedule[date_from][post_from] = None
             simulated_assignments[worker_id].remove(date_from)
+            # Clean up empty set for worker if needed
+            if not simulated_assignments[worker_id]:
+                 del simulated_assignments[worker_id]
+
 
             # 3. Simulate adding worker to 'to' position
             # Ensure target list exists and is long enough in the simulation
@@ -513,63 +517,56 @@ class ScheduleBuilder:
             # Check if target slot is empty in simulation before placing
             if simulated_schedule[date_to][post_to] is not None:
                 logging.debug(f"_can_swap_assignments: Target slot {date_to}|P{post_to} is not empty in simulation. Aborting check.")
-                # No need to rollback simulation, just return False
                 return False
 
             simulated_schedule[date_to][post_to] = worker_id
             simulated_assignments.setdefault(worker_id, set()).add(date_to)
 
             # --- Check Constraints on Simulated State ---
-            # We need a way to check constraints using the SIMULATED data.
-            # Modify constraint checking helpers or pass simulated data to them.
-            # For now, let's assume _check_all_constraints_for_date can accept simulated data (needs modification)
-
-            # This requires _check_all_constraints_for_date and its dependencies
-            # (_check_constraints, _check_incompatibility, etc.) to accept optional
-            # schedule/assignment dictionaries.
-
-            # --- TEMPORARY: Using original checks as placeholder ---
-            # valid_from = self._check_all_constraints_for_date(date_from) # Needs simulated data
-            # valid_to = self._check_all_constraints_for_date(date_to)   # Needs simulated data
-            # --- Replace with checks on simulated_schedule & simulated_assignments ---
-
-            # --- Placeholder Check (using _can_assign_worker on the original state, less accurate but avoids deep modification) ---
-            # This is NOT ideal, as it doesn't check the state *after* the removal from date_from,
-            # but it avoids modifying the constraint checkers for now.
-            # A proper fix requires passing simulated state to checkers.
-
-            # Check if worker can be assigned to the target *after* simulating removal from source
-            # This uses the simulated_assignments but original schedule for incompatibility check, which is imperfect.
+            # Check if the worker can be assigned to the target slot considering the simulated state
             can_assign_to_target = self._check_constraints_on_simulated(
                 worker_id, date_to, post_to, simulated_schedule, simulated_assignments
             )
 
             # Also check if the source date is still valid *without* the worker
+            # (e.g., maybe removing the worker caused an issue for others on date_from)
             source_date_still_valid = self._check_all_constraints_for_date_simulated(
                 date_from, simulated_schedule, simulated_assignments
             )
 
-            is_valid_swap = can_assign_to_target and source_date_still_valid
+            # Also check if the target date remains valid *with* the worker added
+            target_date_still_valid = self._check_all_constraints_for_date_simulated(
+                 date_to, simulated_schedule, simulated_assignments
+            )
+
+
+            is_valid_swap = can_assign_to_target and source_date_still_valid and target_date_still_valid
 
             # --- End Simulation ---
             # No rollback needed as we operated on copies.
 
-            logging.debug(f"Swap Check: {worker_id} from {date_from}|P{post_from} to {date_to}|P{post_to}. Valid: {is_valid_swap} (Target OK: {can_assign_to_target}, Source OK: {source_date_still_valid})")
+            logging.debug(f"Swap Check: {worker_id} from {date_from}|P{post_from} to {date_to}|P{post_to}. Valid: {is_valid_swap} (Target OK: {can_assign_to_target}, Source OK: {source_date_still_valid}, TargetDate OK: {target_date_still_valid})")
             return is_valid_swap
 
         except Exception as e:
             logging.error(f"Error during _can_swap_assignments simulation for {worker_id}: {e}", exc_info=True)
             return False # Fail safe
 
+
     def _check_constraints_on_simulated(self, worker_id, date, post, simulated_schedule, simulated_assignments):
         """Checks constraints for a worker on a specific date using simulated data."""
         try:
+            # Get worker data for percentage check if needed later
+            worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
+            work_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
+
             # 1. Incompatibility (using simulated_schedule)
             if not self._check_incompatibility_simulated(worker_id, date, simulated_schedule):
                 logging.debug(f"Sim Check Fail: Incompatible {worker_id} on {date}")
                 return False
 
             # 2. Gap Constraint (using simulated_assignments)
+            # This helper already includes basic gap logic
             if not self._check_gap_constraint_simulated(worker_id, date, simulated_assignments):
                 logging.debug(f"Sim Check Fail: Gap constraint {worker_id} on {date}")
                 return False
@@ -580,24 +577,52 @@ class ScheduleBuilder:
                  return False
 
             # 4. Max Shifts (using simulated_assignments)
+            # Use scheduler's max_shifts_per_worker config
             if len(simulated_assignments.get(worker_id, set())) > self.max_shifts_per_worker:
                  logging.debug(f"Sim Check Fail: Max shifts {worker_id}")
                  return False
 
-            # 5. Basic Availability (Check simulated schedule for double booking on same date)
-            if worker_id in simulated_schedule.get(date, []):
-                 # This check might be redundant if the calling logic prevents it, but safer here.
-                 # Ensure it doesn't count the 'post' being checked if it was pre-filled in simulation.
-                 count = 0
-                 for assigned_worker in simulated_schedule.get(date, []):
-                      if assigned_worker == worker_id:
-                           count += 1
-                 if count > 1: # If worker appears more than once on this date in simulation
-                      logging.debug(f"Sim Check Fail: Double booking {worker_id} on {date}")
-                      return False
+            # 5. Basic Availability (Check if worker is unavailable fundamentally)
+            if self._is_worker_unavailable(worker_id, date):
+                 logging.debug(f"Sim Check Fail: Worker {worker_id} fundamentally unavailable on {date}")
+                 return False
 
-            # Add other checks as needed (Friday-Monday, 7/14 day pattern using simulated_assignments)
-            # ...
+            # 6. Double Booking Check (using simulated_schedule)
+            count = 0
+            for assigned_post, assigned_worker in enumerate(simulated_schedule.get(date, [])):
+                 if assigned_worker == worker_id:
+                      if assigned_post != post: # Don't count the slot we are checking
+                           count += 1
+            if count > 0:
+                 logging.debug(f"Sim Check Fail: Double booking {worker_id} on {date}")
+                 return False
+
+            # --- ADDED CONSTRAINTS using simulated_assignments ---
+
+            sorted_sim_assignments = sorted(list(simulated_assignments.get(worker_id, [])))
+
+            # 7. Friday-Monday Check (Only if gap constraint allows 3 days, i.e., gap_between_shifts == 1)
+            # Apply strictly during simulation checks
+            if self.scheduler.gap_between_shifts == 1 and work_percentage >= 100: # Typically only for full-time
+                 for prev_date in sorted_sim_assignments:
+                      if prev_date == date: continue
+                      days_between = abs((date - prev_date).days)
+                      if days_between == 3:
+                           # Check if one is Friday (4) and the other is Monday (0)
+                           if ((prev_date.weekday() == 4 and date.weekday() == 0) or \
+                               (date.weekday() == 4 and prev_date.weekday() == 0)):
+                               logging.debug(f"Sim Check Fail: Friday-Monday conflict for {worker_id} between {prev_date} and {date}")
+                               return False
+
+            # 8. 7/14 Day Pattern Check (Same day of week in consecutive weeks)
+            # Apply strictly during simulation checks (as relaxation isn't usually passed here)
+            for prev_date in sorted_sim_assignments:
+                 if prev_date == date: continue
+                 days_between = abs((date - prev_date).days)
+                 # Check for 7, 14, 21 etc. day differences AND same weekday
+                 if days_between > 0 and days_between % 7 == 0 and date.weekday() == prev_date.weekday():
+                      logging.debug(f"Sim Check Fail: 7/14 day pattern conflict for {worker_id} between {prev_date} and {date}")
+                      return False
 
             return True # All checks passed on simulated data
         except Exception as e:
@@ -606,18 +631,29 @@ class ScheduleBuilder:
 
     def _check_all_constraints_for_date_simulated(self, date, simulated_schedule, simulated_assignments):
          """ Checks all constraints for all workers assigned on a given date in the SIMULATED schedule. """
-         if date not in simulated_schedule: return True
+         if date not in simulated_schedule: return True # Date might not exist in sim if empty
+
          assignments_on_date = simulated_schedule[date]
+
+         # Check pairwise incompatibility first for the whole date
+         workers_present = [w for w in assignments_on_date if w is not None]
+         for i in range(len(workers_present)):
+              for j in range(i + 1, len(workers_present)):
+                   worker1_id = workers_present[i]
+                   worker2_id = workers_present[j]
+                   if self._are_workers_incompatible(worker1_id, worker2_id):
+                        logging.debug(f"Simulated state invalid: Incompatibility between {worker1_id} and {worker2_id} on {date}")
+                        return False
+
+         # Then check individual constraints for each worker
          for post, worker_id in enumerate(assignments_on_date):
               if worker_id is not None:
-                   # Check this worker's assignment using the simulated state
+                   # Check this worker's assignment using the simulated state helper
                    if not self._check_constraints_on_simulated(worker_id, date, post, simulated_schedule, simulated_assignments):
                         # logging.debug(f"Simulated state invalid: Constraint fail for {worker_id} on {date} post {post}")
-                        return False
+                        return False # Constraint failed for this worker in the simulated state
          return True
-
-    # --- Need simulated versions of incompatibility, gap, weekend checks ---
-    # Example:
+        
     def _check_incompatibility_simulated(self, worker_id, date, simulated_schedule):
         """Check incompatibility using the simulated schedule."""
         assigned_workers_list = simulated_schedule.get(date, [])
@@ -626,54 +662,90 @@ class ScheduleBuilder:
 
     def _check_gap_constraint_simulated(self, worker_id, date, simulated_assignments):
          """Check gap constraint using simulated assignments."""
+         # Use scheduler's gap config
+         min_days_between = self.scheduler.gap_between_shifts + 1
+         # Add part-time adjustment if needed
+         worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
+         work_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
+         if work_percentage < 70: # Example threshold for part-time adjustment
+             min_days_between = max(min_days_between, self.scheduler.gap_between_shifts + 2)
+
          assignments = sorted(list(simulated_assignments.get(worker_id, [])))
-         if assignments:
-              # Use scheduler's gap config
-              min_days_between = self.scheduler.gap_between_shifts + 1
-              # Add part-time logic if needed
-              for prev_date in assignments:
-                   days_between = abs((date - prev_date).days)
-                   if days_between < min_days_between:
-                        return False
-                   # Add Friday-Monday / 7-14 day checks if needed here too
+
+         for prev_date in assignments:
+              if prev_date == date: continue # Don't compare date to itself
+              days_between = abs((date - prev_date).days)
+              if days_between < min_days_between:
+                   return False
+              # Add Friday-Monday / 7-14 day checks if needed here too, using relaxation_level=0 logic
+              if self.scheduler.gap_between_shifts == 1 and work_percentage >= 100:
+                   if days_between == 3:
+                       if ((prev_date.weekday() == 4 and date.weekday() == 0) or \
+                           (date.weekday() == 4 and prev_date.weekday() == 0)):
+                           return False
+              # if days_between in [7, 14, 21]: return False # Optional strict weekly pattern check
+
          return True
 
     def _would_exceed_weekend_limit_simulated(self, worker_id, date, simulated_assignments):
         """Check weekend limit using simulated assignments."""
         # Check if date is a weekend/holiday
-        is_target_weekend = date.weekday() >= 4 or date in self.scheduler.holidays # Use scheduler's holidays
+        # Use scheduler's holidays
+        is_target_weekend = self.scheduler.date_utils.is_weekend_day(date) or date in self.scheduler.holidays
         if not is_target_weekend:
             return False
 
-        # Get simulated weekend assignments
-        sim_weekend_assignments = [
+        # Get simulated weekend assignments including the target date
+        sim_weekend_assignments = {
             d for d in simulated_assignments.get(worker_id, [])
-            if (d.weekday() >= 4 or d in self.scheduler.holidays)
-        ]
-        # Check if date is already counted
-        if date not in sim_weekend_assignments:
-             sim_weekend_assignments.append(date)
-        sim_weekend_assignments.sort()
+            if (self.scheduler.date_utils.is_weekend_day(d) or d in self.scheduler.holidays)
+        }
+        # Add the current date being checked if it's a weekend/holiday
+        sim_weekend_assignments.add(date)
+        sorted_sim_weekends = sorted(list(sim_weekend_assignments))
+
 
         # Apply window check logic (e.g., max N in 21 days)
-        max_window_size = 21
         # Use scheduler's max weekend config
         max_weekend_count = self.scheduler.max_consecutive_weekends
         # Add part-time adjustment if needed
+        worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
+        work_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
+        if work_percentage < 100:
+             max_weekend_count = max(1, int(self.scheduler.max_consecutive_weekends * work_percentage / 100))
 
-        for i in range(len(sim_weekend_assignments)):
-            window_start = sim_weekend_assignments[i]
-            window_end = window_start + timedelta(days=max_window_size)
-            count_in_window = sum(1 for d in sim_weekend_assignments if window_start <= d <= window_end)
+        # Check different window sizes if needed, e.g., 3 weekends in a row?
+        # Simple check: count consecutive weekend *days*
+        max_consecutive_days = 3 # Example: Allow Sat/Sun/Mon-Holiday but not Fri/Sat/Sun
+        consecutive_count = 0
+        for i, d in enumerate(sorted_sim_weekends):
+             if i > 0 and (d - sorted_sim_weekends[i-1]).days == 1:
+                  consecutive_count += 1
+             else:
+                  consecutive_count = 1
+             if consecutive_count > max_consecutive_days:
+                  # This check might be too strict, depending on rules
+                  # return True # Exceeds consecutive weekend day limit
+                  pass # Disable strict consecutive day check for now
+
+
+        # Check: Max weekends in any 3-week (21 day) rolling window
+        window_days = 21
+        for i in range(len(sorted_sim_weekends)):
+            window_start_date = sorted_sim_weekends[i]
+            # Find weekends within the window starting from window_start_date
+            count_in_window = 0
+            for d in sorted_sim_weekends[i:]: # Only need to check dates from i onwards
+                 if (d - window_start_date).days < window_days:
+                      count_in_window += 1
+                 else:
+                      break # Dates are sorted, no need to check further
             if count_in_window > max_weekend_count:
+                logging.debug(f"Sim Check Fail: Weekend limit exceeded for {worker_id}. Found {count_in_window} in window starting {window_start_date} (Limit: {max_weekend_count})")
                 return True # Exceeds limit
 
         return False # Limit not exceeded
-
-    # IMPORTANT: Ensure _check_all_constraints_for_date is removed or renamed
-    #            if you implement _check_all_constraints_for_date_simulated fully.
-    #            Keep the original for now if the simulated version isn't complete.
-
+    
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
         Calculate score for a worker assignment with optional relaxation of constraints
