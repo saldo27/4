@@ -991,11 +991,11 @@ class ScheduleBuilder:
                     logging.info(f"Assigning mandatory shift: {current_date} Post {post_idx} -> Worker {worker_id}")
                     self.scheduler.schedule[current_date][post_idx] = worker_id
                     # Update tracking data immediately
-                        self.scheduler._update_tracking_data(worker_id, current_date, post_idx)
-                        assigned_count += 1
-                    else:
-                        logging.warning(f"Could not assign mandatory shift for {worker_id} on {current_date} (Post {post_idx}) due to constraint violations (Relaxation 1).")
-                    # Consider raising an error here if mandatory shifts MUST be assigned
+                    self.scheduler._update_tracking_data(worker_id, current_date, post_idx)
+                    assigned_count += 1
+                else:
+                    logging.warning(f"Could not assign mandatory shift for {worker_id} on {current_date} (Post {post_idx}) due to constraint violations (Relaxation 1).")
+                # Consider raising an error here if mandatory shifts MUST be assigned
 
             current_date += timedelta(days=1)
         
