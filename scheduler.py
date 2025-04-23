@@ -23,6 +23,7 @@ class Scheduler:
     # Methods
     def __init__(self, config):
         """Initialize the scheduler with configuration"""
+        logging.info("Scheduler initialized")
         try:
             # Initialize date_utils FIRST, before calling any method that might need it
             self.date_utils = DateTimeUtils()
@@ -37,6 +38,22 @@ class Scheduler:
             self.num_shifts = config['num_shifts']
             self.workers_data = config['workers_data']
             self.holidays = config.get('holidays', [])
+
+            # --- START: Build incompatibility lists ---
+            incompatible_worker_ids = {
+                worker['id'] for worker in self.workers_data if worker.get('is_incompatible', False)
+            }
+            logging.debug(f"Identified incompatible worker IDs: {incompatible_worker_ids}")
+
+            for worker in self.workers_data:
+                worker_id = worker['id']
+                # Initialize the list
+                worker['incompatible_with'] = []
+                if worker.get('is_incompatible', False):
+                    # If this worker is incompatible, add all *other* incompatible workers to its list
+                    worker['incompatible_with'] = list(incompatible_worker_ids - {worker_id}) # Exclude self
+                logging.debug(f"Worker {worker_id} incompatible_with list: {worker['incompatible_with']}")
+            # --- END: Build incompatibility lists ---
         
             # Get the new configurable parameters with defaults
             self.gap_between_shifts = config.get('gap_between_shifts', 1)
@@ -48,7 +65,16 @@ class Scheduler:
             self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
             self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
-            
+
+            # Initialize tracking data structures
+            self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
+            self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data}
+            self.worker_post_counts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
+            self.worker_weekday_counts = {w['id']: {d: 0 for d in range(7)} for w in self.workers_data}
+            self.worker_holiday_counts = {w['id']: 0 for w in self.workers_data}
+            # Store last assignment date for gap checks
+            self.last_assignment_date = {w['id']: None for w in self.workers_data}
+                      
             # Initialize worker targets
             for worker in self.workers_data:
                 if 'target_shifts' not in worker:
@@ -90,6 +116,10 @@ class Scheduler:
             self._calculate_target_shifts()
 
             self._log_initialization()
+
+            # Ensure ScheduleBuilder receives the updated self.workers_data
+            self.builder = ScheduleBuilder(self)
+    
 
         except Exception as e:
             logging.error(f"Initialization error: {str(e)}")

@@ -676,7 +676,7 @@ class WorkerDetailsScreen(Screen):
             'work_percentage': float(self.work_percentage.text or '100'),
             'mandatory_days': self.mandatory_days.text.strip(),
             'days_off': self.days_off.text.strip(),
-            'is_incompatible': self.incompatible_checkbox.active
+            'is_incompatible': self.incompatible_checkbox.active # <<< Saves a boolean flag
         }
 
         # Initialize workers_data if needed
