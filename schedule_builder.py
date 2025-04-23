@@ -970,7 +970,8 @@ class ScheduleBuilder:
             for post_idx, worker_id in assignments_for_date.items():
                 # Basic validation
                 if worker_id not in self.scheduler.worker_ids:
-                    logging.warning(f"Mandatory shift worker '{worker_id}' on {current_date} (Post {post_idx}) not found in workers data. Skipping.")                        continue
+                    logging.warning(f"Mandatory shift worker '{worker_id}' on {current_date} (Post {post_idx}) not found in workers data. Skipping.")
+                    continue
                     if post_idx < 0 or post_idx >= self.num_shifts:
                         logging.warning(f"Mandatory shift post index {post_idx} for worker '{worker_id}' on {current_date} is out of range (0-{self.num_shifts-1}). Skipping.")
                         continue
@@ -982,14 +983,14 @@ class ScheduleBuilder:
                 # Check if slot is already taken (maybe by another mandatory shift)
                 if self.scheduler.schedule[current_date][post_idx] is not None:
                     logging.warning(f"Mandatory shift slot {current_date} (Post {post_idx}) is already filled by {self.scheduler.schedule[current_date][post_idx]}. Skipping assignment for {worker_id}.")
-                        continue
+                    continue
 
                 # Check constraints (IMPORTANT!)
                 # Use relaxation_level=1 or higher initially for mandatory if needed
                 if self.scheduler._check_constraints(worker_id, current_date, post_idx, relaxation_level=1):
                     logging.info(f"Assigning mandatory shift: {current_date} Post {post_idx} -> Worker {worker_id}")
                     self.scheduler.schedule[current_date][post_idx] = worker_id
-                        # Update tracking data immediately
+                    # Update tracking data immediately
                         self.scheduler._update_tracking_data(worker_id, current_date, post_idx)
                         assigned_count += 1
                     else:
