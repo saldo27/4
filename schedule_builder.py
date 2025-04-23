@@ -1251,101 +1251,93 @@ class ScheduleBuilder:
     
     def _assign_day_shifts_with_relaxation(self, date, attempt_number=0, relaxation_level=0):
         """Assign shifts for a given date with optional constraint relaxation"""
-        logging.debug(f"Assigning shifts for {date.strftime('%d-%m-%Y')} (relaxation level: {relaxation_level})")
-    
+        logging.debug(f"Assigning shifts for {date.strftime('%d-%m-%Y')} (attempt: {attempt_number}, initial relax: {relaxation_level})")
+
+        # Ensure the date entry exists and is a list
         if date not in self.schedule:
             self.schedule[date] = []
+        # Ensure it's padded to current length if it exists but is shorter than previous post assignments
+        # (This shouldn't happen often but safeguards against potential inconsistencies)
+        current_len = len(self.schedule.get(date, []))
+        max_post_assigned_prev = -1
+        if current_len > 0:
+             max_post_assigned_prev = current_len -1
 
-        remaining_shifts = self.num_shifts - len(self.schedule[date])
-    
-        # Debug log to see how many shifts need to be assigned
-        logging.debug(f"Need to assign {remaining_shifts} shifts for {date.strftime('%d-%m-%Y')}")
 
-        for post in range(len(self.schedule[date]), self.num_shifts):
+        # Determine starting post index. If schedule[date] already has items, start from the next index.
+        start_post = len(self.schedule.get(date, []))
+
+        for post in range(start_post, self.num_shifts):
+            assigned_this_post = False
             # Try each relaxation level until we succeed or run out of options
-            for relax_level in range(relaxation_level + 1):
+            for relax_level in range(relaxation_level + 1): # Start from specified level up to max (usually 0)
                 candidates = self._get_candidates(date, post, relax_level)
-            
-                # Debug log to see how many candidates were found
+
                 logging.debug(f"Found {len(candidates)} candidates for {date.strftime('%d-%m-%Y')}, post {post}, relax level {relax_level}")
-            
+
                 if candidates:
-                    # Log each candidate for debugging
-                    for i, (worker, score) in enumerate(candidates[:3]):  # Just log first 3 to avoid clutter
-                        logging.debug(f"Candidate {i+1}: Worker {worker['id']} with score {score}")
-                
+                    # Log top candidates if needed
+                    # for i, (worker, score) in enumerate(candidates[:3]):
+                    #     logging.debug(f"  Candidate {i+1}: Worker {worker['id']} with score {score:.2f}")
+
                     # Sort candidates by score (descending)
                     candidates.sort(key=lambda x: x[1], reverse=True)
 
-                    # --- REVISED ASSIGNMENT LOGIC ---
-                    assigned_this_post = False
+                    # --- Try assigning the first compatible candidate ---
                     for candidate_worker, candidate_score in candidates:
                         worker_id = candidate_worker['id']
 
-                        # *** ADD EXPLICIT INCOMPATIBILITY CHECK ***
-                        if not self._check_incompatibility(worker_id, date):
+                        # *** EXPLICIT INCOMPATIBILITY CHECK ***
+                        # Check against ALL workers currently assigned to this date
+                        current_assignments_on_date = [w for w in self.schedule.get(date, []) if w is not None]
+                        if not self._check_incompatibility_with_list(worker_id, current_assignments_on_date):
                             logging.debug(f"  Skipping candidate {worker_id} for post {post} on {date}: Incompatible with current assignments on this date.")
                             continue # Try next candidate
 
                         # *** If compatible, assign this worker ***
-                        # Ensure list is long enough (might be needed if post > len(self.schedule[date])-1)
+                        # Ensure list is long enough before assigning by index
                         while len(self.schedule[date]) <= post:
                              self.schedule[date].append(None)
 
-                        self.schedule[date][post] = worker_id # Assign to the correct post index
-                        self.worker_assignments.setdefault(worker_id, set()).add(date) # Use setdefault for safety
-                        self.scheduler._update_tracking_data(worker_id, date, post)
+                        # Double check slot is still None before assigning (paranoid check)
+                        if self.schedule[date][post] is None:
+                            self.schedule[date][post] = worker_id # Assign to the correct post index
+                            self.worker_assignments.setdefault(worker_id, set()).add(date)
+                            self.scheduler._update_tracking_data(worker_id, date, post)
 
-                        logging.info(f"Assigned worker {worker_id} to {date.strftime('%d-%m-%Y')}, post {post} (Score: {candidate_score:.2f}, Relax: {relax_level})")
-                        assigned_this_post = True
-                        break # Found a compatible worker for this post, break candidate loop
+                            logging.info(f"Assigned worker {worker_id} to {date.strftime('%d-%m-%Y')}, post {post} (Score: {candidate_score:.2f}, Relax: {relax_level})")
+                            assigned_this_post = True
+                            break # Found a compatible worker for this post, break candidate loop
+                        else:
+                            # This case should be rare if logic is correct, but log it
+                            logging.warning(f"  Slot {post} on {date} was unexpectedly filled before assigning candidate {worker_id}. Current value: {self.schedule[date][post]}")
+                            # Continue to the next candidate, as this one cannot be placed here anymore
+
 
                     if assigned_this_post:
                         break # Success at this relaxation level, break relaxation loop
+                    else:
+                        # If loop finishes without assigning (no compatible candidates found at this relax level)
+                        logging.debug(f"No compatible candidate found for post {post} at relax level {relax_level}")
+                else:
+                     logging.debug(f"No candidates found for post {post} at relax level {relax_level}")
 
-                    # If loop finishes without assigning (no compatible candidates found at this relax level)
-                    # logging.debug(f"No compatible candidate found for post {post} at relax level {relax_level}")
 
-            # --- END REVISED ASSIGNMENT LOGIC ---
-                
-                    # Group candidates with similar scores (within 10% of max score)
-                    max_score = candidates[0][1]
-                    top_candidates = [c for c in candidates if c[1] >= max_score * 0.9]
-                
-                    # Add some randomness to selection based on attempt number
-                    random.Random(attempt_number + date.toordinal() + post).shuffle(top_candidates)
-                
-                    # Select the first candidate
-                    best_worker = top_candidates[0][0]
-                    worker_id = best_worker['id']
-                
-                    # Assign the worker
-                    self.schedule[date].append(worker_id)
-                    self.worker_assignments[worker_id].add(date)
-                    self.scheduler._update_tracking_data(worker_id, date, post)
-                
-                    logging.info(f"Assigned worker {worker_id} to {date.strftime('%d-%m-%Y')}, post {post}")
-                    break  # Success at this relaxation level
-            else:
-                # If we've tried all relaxation levels and still haven't assigned
+            # --- Handle case where post remains unfilled after trying all relaxation levels ---
             if not assigned_this_post:
-                 # Ensure list is long enough before appending None
+                 # Ensure list is long enough before potentially assigning None
                  while len(self.schedule[date]) <= post:
                       self.schedule[date].append(None)
-                 # Only append None if the slot doesn't exist or is still None
-                 if len(self.schedule[date]) == post or self.schedule[date][post] is None:
-                      if len(self.schedule[date]) == post:
-                           self.schedule[date].append(None)
-                      else: # Slot exists but might have been filled by mandatory, double-check
-                           if self.schedule[date][post] is None:
-                                # It's genuinely empty, log unfilled
-                                logging.warning(f"No suitable worker found for {date.strftime('%d-%m-%Y')}, post {post} - shift unfilled after all checks.")
-                           # else: it was filled by something else (e.g. mandatory), which is fine.
 
-        # --- Ensure schedule[date] list has the correct length ---
-        # This might be needed if some posts were skipped entirely
-        while len(self.schedule[date]) < self.num_shifts:
-             self.schedule[date].append(None)unfilled")
+                 # Only log warning if the slot is genuinely still None
+                 if self.schedule[date][post] is None:
+                      logging.warning(f"No suitable worker found for {date.strftime('%d-%m-%Y')}, post {post} - shift unfilled after all checks.")
+                 # Else: it might have been filled by a mandatory assignment earlier, which is fine.
+
+        # --- Ensure schedule[date] list has the correct final length ---
+        # Pad with None if necessary, e.g., if initial assignment skipped posts
+        while len(self.schedule.get(date, [])) < self.num_shifts:
+             self.schedule.setdefault(date, []).append(None) # Use setdefault for safety if date somehow disappeared
 
     def _get_candidates(self, date, post, relaxation_level=0):
         """
