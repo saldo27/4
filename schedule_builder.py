@@ -188,20 +188,37 @@ class ScheduleBuilder:
 
         incompatible_with = worker_to_check_data.get('incompatible_with', [])
 
+        # *** ADD TYPE LOGGING HERE ***
+        logging.debug(f"  CHECKING_INTERNAL: Worker={worker_id_to_check} (Type: {type(worker_id_to_check)}), AgainstList={assigned_workers_list}, IncompListForCheckWorker={incompatible_with}")
+
         for assigned_id in assigned_workers_list:
-             if assigned_id is None or assigned_id == worker_id_to_check:
+             if assigned_id is None: # Removed redundant check assigned_id == worker_id_to_check due to type mismatch possibility
                   continue
-             # Check both directions for incompatibility
+
+             # *** ADD TYPE LOGGING FOR LOOP VARIABLES ***
+             logging.debug(f"    Comparing: Candidate {worker_id_to_check} (Type: {type(worker_id_to_check)}) vs Assigned {assigned_id} (Type: {type(assigned_id)})")
+
+             # Check 1: Is the assigned worker in the candidate's incompatible list?
+             # *** ADD TYPE LOGGING FOR CHECK 1 ***
+             logging.debug(f"      Check 1: Is {assigned_id} (Type: {type(assigned_id)}) in {incompatible_with}?")
              if assigned_id in incompatible_with:
-                  logging.debug(f"Incompatibility Check: {worker_id_to_check} cannot work with {assigned_id}")
+                  logging.debug(f"      -> YES. Incompatibility found.")
                   return False # Found incompatibility
 
-             # Also check if the assigned worker lists the worker_to_check as incompatible
+             # Check 2: Is the candidate in the assigned worker's incompatible list?
              assigned_worker_data = next((w for w in self.workers_data if w['id'] == assigned_id), None)
-             if assigned_worker_data and worker_id_to_check in assigned_worker_data.get('incompatible_with', []):
-                 logging.debug(f"Incompatibility Check: {assigned_id} cannot work with {worker_id_to_check}")
-                 return False # Found incompatibility
+             if assigned_worker_data:
+                 assigned_incompatible_list = assigned_worker_data.get('incompatible_with', [])
+                 # *** ADD TYPE LOGGING FOR CHECK 2 ***
+                 logging.debug(f"      Check 2: Is {worker_id_to_check} (Type: {type(worker_id_to_check)}) in {assigned_incompatible_list}?")
+                 if worker_id_to_check in assigned_incompatible_list:
+                     logging.debug(f"      -> YES. Incompatibility found.")
+                     return False # Found incompatibility
+             else:
+                 logging.warning(f"    Could not find data for assigned worker ID: {assigned_id}")
 
+
+        logging.debug(f"  CHECKING_INTERNAL: Worker={worker_id_to_check} vs List={assigned_workers_list} -> OK (No incompatibility detected)")
         return True # No incompatibilities found
 
     def _check_incompatibility(self, worker_id, date):
