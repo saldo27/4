@@ -940,30 +940,32 @@ class ScheduleBuilder:
         """Assigns mandatory shifts based on both configuration and worker mandatory_days."""
         logging.info("Starting mandatory guard assignment...")
         assigned_count = 0
-    
+
         # PART 1: Process mandatory shifts from configuration (existing logic)
         mandatory_shifts_config = self.scheduler.config.get('mandatory_shifts', {})
         worker_ids_set = set(w['id'] for w in self.workers_data)
-    
-        if mandatory_shifts_config:
-            # Ensure dates are datetime objects if they are strings
-            processed_mandatory = {}
-            for date_str, assignments in mandatory_shifts.items():
-                try:
-                    date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-                     # Ensure posts are integers
-                    processed_assignments = {int(post): worker for post, worker in assignments.items()}
-                    processed_mandatory[date_obj] = processed_assignments
-                except ValueError as e:
-                    logging.error(f"Invalid date format or post index in mandatory_shifts for '{date_str}': {e}")
-                    continue # Skip invalid entries
 
-        # Iterate through the schedule date range
-        current_date = self.scheduler.start_date
-        while current_date <= self.scheduler.end_date:
-            if current_date in processed_mandatory:
-                assignments_for_date = processed_mandatory[current_date]
-                logging.debug(f"Processing mandatory shifts for {current_date}: {assignments_for_date}")
+        processed_mandatory = {} # Initialize before the if block
+
+            if mandatory_shifts_config:
+                # Ensure dates are datetime objects if they are strings
+                # processed_mandatory = {} # REMOVED from here
+                for date_str, assignments in mandatory_shifts_config.items(): # CORRECTED variable name here
+                    try:
+                        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                        # Ensure posts are integers
+                        processed_assignments = {int(post): worker for post, worker in assignments.items()}
+                        processed_mandatory[date_obj] = processed_assignments
+                    except ValueError as e:
+                        logging.error(f"Invalid date format or post index in mandatory_shifts for '{date_str}': {e}")
+                        continue # Skip invalid entries
+
+            # Iterate through the schedule date range
+            current_date = self.scheduler.start_date
+            while current_date <= self.scheduler.end_date:
+                if current_date in processed_mandatory: # This check is now safe
+                    assignments_for_date = processed_mandatory[current_date]
+                    logging.debug(f"Processing mandatory shifts for {current_date}: {assignments_for_date}")
 
                 for post_idx, worker_id in assignments_for_date.items():
                     # Basic validation
