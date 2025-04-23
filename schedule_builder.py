@@ -1548,32 +1548,52 @@ class ScheduleBuilder:
                         # logging.debug(f"  [Relaxed Check] Worker {worker_id} is a candidate for {date} post {post} with score {score}")
 
 
-                # --- Assignment logic (using candidates from relaxed check) ---
+                # --- Start of Replacement Block ---
+                assigned_this_post_pass1 = False # New flag for this specific post
                 if candidates:
                     candidates.sort(key=lambda x: x[1], reverse=True)
-                    best_worker = candidates[0][0]
-                    worker_id = best_worker['id']
 
-                    # Assign the worker (directly modify scheduler's data)
-                    self.scheduler.schedule[date][post] = worker_id
-                    self.scheduler.worker_assignments.setdefault(worker_id, set()).add(date)
-                    self.scheduler._update_tracking_data(worker_id, date, post) # Call scheduler's update method
+                    # --- Loop through candidates and perform final check ---
+                    for candidate_worker, candidate_score in candidates:
+                        worker_id = candidate_worker['id']
 
-                    logging.info(f"[Relaxed Direct Fill] Filled empty shift on {date.strftime('%Y-%m-%d')} post {post} with worker {worker_id}")
-                    shifts_filled_count += 1
-                    made_change_in_pass = True
-                else:
-                    # If no candidate found, keep for swap attempt
+                        # *** FINAL INCOMPATIBILITY CHECK before assignment ***
+                        current_assignments_on_date = [w for w in self.scheduler.schedule.get(date, []) if w is not None]
+                        # Use the list check helper
+                        if not self._check_incompatibility_with_list(worker_id, current_assignments_on_date):
+                            logging.debug(f"  [Relaxed Direct Fill] Skipping candidate {worker_id} for post {post} on {date}: Incompatible with current assignments.")
+                            continue # Try next candidate
+
+                        # *** If compatible, assign this worker ***
+                        # Ensure list is long enough (should already be handled by outer logic, but safer)
+                        while len(self.scheduler.schedule[date]) <= post:
+                            self.scheduler.schedule[date].append(None)
+
+                        # Double check slot is still None
+                        if self.scheduler.schedule[date][post] is None:
+                            self.scheduler.schedule[date][post] = worker_id # Assign to the correct post index
+                            self.scheduler.worker_assignments.setdefault(worker_id, set()).add(date)
+                            self.scheduler._update_tracking_data(worker_id, date, post)
+
+                            logging.info(f"[Relaxed Direct Fill] Filled empty shift on {date.strftime('%Y-%m-%d')} post {post} with worker {worker_id} (Score: {candidate_score:.2f})")
+                            shifts_filled_count += 1
+                            made_change_in_pass = True
+                            assigned_this_post_pass1 = True
+                            break # Found a compatible worker for this post, break candidate loop
+                        else:
+                            logging.warning(f"  [Relaxed Direct Fill] Slot {post} on {date} was unexpectedly filled before assigning candidate {worker_id}.")
+                            # Continue to next candidate if slot got filled concurrently somehow
+
+                    # --- End candidate loop ---
+
+                # If no compatible candidate was found after checking all
+                if not assigned_this_post_pass1:
                     remaining_empty_shifts.append((date, post))
-                    logging.debug(f"Could not find direct candidate (relaxed+incomp) for {date.strftime('%Y-%m-%d')}.")
-                                  
-            elif date in self.scheduler.schedule and len(self.scheduler.schedule[date]) > post and self.scheduler.schedule[date][post] is not None:
-                 pass
-            else:
-                 logging.warning(f"Could not access schedule slot for {date.strftime('%Y-%m-%d')} post {post} during relaxed direct fill attempt.")
-                 remaining_empty_shifts.append((date, post))
-
-
+                    # Ensure the slot exists before logging absence
+                    if date not in self.scheduler.schedule or len(self.scheduler.schedule[date]) <= post or self.scheduler.schedule[date][post] is None:
+                         logging.debug(f"Could not find compatible direct candidate (relaxed+incomp) for {date.strftime('%Y-%m-%d')} post {post}.")
+                    # else: Slot got filled by something else during checks, which is odd but possible
+           
         # --- Pass 2: Swap Attempt (Uses Stricter Checks via _can_assign_worker and _find_swap_candidate) ---
         if not remaining_empty_shifts:
              logging.info(f"--- Finished Pass 1: Filled {shifts_filled_count} shifts directly. No remaining empty shifts. ---")
