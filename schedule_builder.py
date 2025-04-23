@@ -960,6 +960,7 @@ class ScheduleBuilder:
                          can_assign_mandatory = False
 
                     # 5. Check incompatibility with workers ALREADY assigned today
+                    #    Explicitly use the builder's helper which uses the list check
                     if can_assign_mandatory and not self._check_incompatibility(worker_id, current_date):
                          reason = "Incompatible with already assigned worker(s)"
                          can_assign_mandatory = False
