@@ -373,13 +373,13 @@ class ScheduleBuilder:
                         if w1_shifts > w2_shifts:
                             self.schedule[date][post1] = None
                             self.worker_assignments[worker1_id].remove(date)
-                            self._update_worker_stats(worker1_id, date, removing=True)
+                            self.scheduler._update_tracking_data(worker1_id, date, post1, removing=True)
                             violations_fixed += 1
                             logging.info(f"Removed worker {worker1_id} from {date.strftime('%d-%m-%Y')} to fix incompatibility")
                         else:
                             self.schedule[date][post2] = None
                             self.worker_assignments[worker2_id].remove(date)
-                            self._update_worker_stats(worker2_id, date, removing=True)
+                            self.scheduler._update_tracking_data(worker2_id, date, post2, removing=True)
                             violations_fixed += 1
                             logging.info(f"Removed worker {worker2_id} from {date.strftime('%d-%m-%Y')} to fix incompatibility")
     
@@ -544,25 +544,47 @@ class ScheduleBuilder:
             return False # Fail safe
 
     def _check_constraints_on_simulated(self, worker_id, date, post, simulated_schedule, simulated_assignments):
-        """Checks constraints for a worker on a specific date using simulated data."""
-        # This method needs to replicate the checks from _can_assign_worker or _check_constraints,
-        # but using the passed-in simulated_schedule and simulated_assignments.
-        # 1. Basic Availability (already handled by simulation caller conceptually)
-        # 2. Incompatibility (using simulated_schedule)
-        if not self._check_incompatibility_simulated(worker_id, date, simulated_schedule):
-            return False
-        # 3. Gap Constraint (using simulated_assignments)
-        if not self._check_gap_constraint_simulated(worker_id, date, simulated_assignments):
-            return False
-        # 4. Weekend Limit (using simulated_assignments)
-        if self._would_exceed_weekend_limit_simulated(worker_id, date, simulated_assignments):
-             return False
-        # 5. Max Shifts (using simulated_assignments)
-        if len(simulated_assignments.get(worker_id, set())) > self.max_shifts_per_worker:
-             return False
-        # Add other relevant checks (e.g., Friday-Monday, 7/14 day pattern) using simulated_assignments
-    
-        return True # All checks passed on simulated data
+        \"\"\"Checks constraints for a worker on a specific date using simulated data.\"\"\"
+        try:
+            # 1. Incompatibility (using simulated_schedule)
+            if not self._check_incompatibility_simulated(worker_id, date, simulated_schedule):
+                logging.debug(f"Sim Check Fail: Incompatible {worker_id} on {date}")
+                return False
+
+            # 2. Gap Constraint (using simulated_assignments)
+            if not self._check_gap_constraint_simulated(worker_id, date, simulated_assignments):
+                logging.debug(f"Sim Check Fail: Gap constraint {worker_id} on {date}")
+                return False
+
+            # 3. Weekend Limit (using simulated_assignments)
+            if self._would_exceed_weekend_limit_simulated(worker_id, date, simulated_assignments):
+                 logging.debug(f"Sim Check Fail: Weekend limit {worker_id} on {date}")
+                 return False
+
+            # 4. Max Shifts (using simulated_assignments)
+            if len(simulated_assignments.get(worker_id, set())) > self.max_shifts_per_worker:
+                 logging.debug(f"Sim Check Fail: Max shifts {worker_id}")
+                 return False
+
+            # 5. Basic Availability (Check simulated schedule for double booking on same date)
+            if worker_id in simulated_schedule.get(date, []):
+                 # This check might be redundant if the calling logic prevents it, but safer here.
+                 # Ensure it doesn't count the 'post' being checked if it was pre-filled in simulation.
+                 count = 0
+                 for assigned_worker in simulated_schedule.get(date, []):
+                      if assigned_worker == worker_id:
+                           count += 1
+                 if count > 1: # If worker appears more than once on this date in simulation
+                      logging.debug(f"Sim Check Fail: Double booking {worker_id} on {date}")
+                      return False
+
+            # Add other checks as needed (Friday-Monday, 7/14 day pattern using simulated_assignments)
+            # ...
+
+            return True # All checks passed on simulated data
+        except Exception as e:
+            logging.error(f"Error during _check_constraints_on_simulated for {worker_id} on {date}: {e}", exc_info=True)
+            return False # Fail safe
 
     def _check_all_constraints_for_date_simulated(self, date, simulated_schedule, simulated_assignments):
          """ Checks all constraints for all workers assigned on a given date in the SIMULATED schedule. """
