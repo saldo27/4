@@ -945,12 +945,9 @@ class ScheduleBuilder:
         mandatory_shifts_config = self.scheduler.config.get('mandatory_shifts', {})
         worker_ids_set = set(w['id'] for w in self.workers_data)
 
-        processed_mandatory = {} # Initialize before the if block
-
+        processed_mandatory = {}
         if mandatory_shifts_config:
-            # Ensure dates are datetime objects if they are strings
-            # processed_mandatory = {} # REMOVED from here
-            for date_str, assignments in mandatory_shifts_config.items(): # CORRECTED variable name here
+            for date_str, assignments in mandatory_shifts_config.items():
                 try:
                     date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
                     # Ensure posts are integers
@@ -958,47 +955,39 @@ class ScheduleBuilder:
                     processed_mandatory[date_obj] = processed_assignments
                 except ValueError as e:
                     logging.error(f"Invalid date format or post index in mandatory_shifts for '{date_str}': {e}")
-                    continue # Skip invalid entries
-
+                    continue 
         # Iterate through the schedule date range
         current_date = self.scheduler.start_date
         while current_date <= self.scheduler.end_date:
-            if current_date in processed_mandatory: # This check is now safe
+            if current_date in processed_mandatory:
                 assignments_for_date = processed_mandatory[current_date]
                 logging.debug(f"Processing mandatory shifts for {current_date}: {assignments_for_date}")
 
             for post_idx, worker_id in assignments_for_date.items():
-                # Basic validation
-                if worker_id not in self.scheduler.worker_ids:
-                    logging.warning(f"Mandatory shift worker '{worker_id}' on {current_date} (Post {post_idx}) not found in workers data. Skipping.")
-                    continue
-                    if post_idx < 0 or post_idx >= self.num_shifts:
-                        logging.warning(f"Mandatory shift post index {post_idx} for worker '{worker_id}' on {current_date} is out of range (0-{self.num_shifts-1}). Skipping.")
+                    # Basic validation
+                    if worker_id not in self.scheduler.worker_ids: # Assuming worker_ids exists
+                        logging.warning(f"Mandatory shift worker '{worker_id}' on {current_date} (Post {post_idx}) not found. Skipping.")
                         continue
 
                 # Initialize schedule for the date if needed
                 if current_date not in self.scheduler.schedule:
-                    self.scheduler.schedule[current_date] = [None] * self.num_shifts
-
+                        self.scheduler.schedule[current_date] = [None] * self.num_shifts
+                        
                 # Check if slot is already taken (maybe by another mandatory shift)
                 if self.scheduler.schedule[current_date][post_idx] is not None:
-                    logging.warning(f"Mandatory shift slot {current_date} (Post {post_idx}) is already filled by {self.scheduler.schedule[current_date][post_idx]}. Skipping assignment for {worker_id}.")
-                    continue
+                        logging.warning(f"Mandatory shift slot {current_date} (Post {post_idx}) already filled. Skipping.")
+                        continue
 
                 # Check constraints (IMPORTANT!)
                 # Use relaxation_level=1 or higher initially for mandatory if needed
-                if self.scheduler._check_constraints(worker_id, current_date, post_idx, relaxation_level=1):
-                    logging.info(f"Assigning mandatory shift: {current_date} Post {post_idx} -> Worker {worker_id}")
-                    self.scheduler.schedule[current_date][post_idx] = worker_id
-                    # Update tracking data immediately
-                    self.scheduler._update_tracking_data(worker_id, current_date, post_idx)
-                    assigned_count += 1
-                else:
-                    logging.warning(f"Could not assign mandatory shift for {worker_id} on {current_date} (Post {post_idx}) due to constraint violations (Relaxation 1).")
-                # Consider raising an error here if mandatory shifts MUST be assigned
-
-            current_date += timedelta(days=1)
-        
+                if self.scheduler.constraint_checker._check_constraints(worker_id, current_date, post_idx, skip_constraints=False):
+                         logging.info(f"Assigning mandatory shift: {current_date} Post {post_idx} -> Worker {worker_id}")
+                         self.scheduler.schedule[current_date][post_idx] = worker_id
+                         self.scheduler._update_tracking_data(worker_id, current_date, post_idx) # Ensure correct args and method
+                         assigned_count += 1
+                    else:
+                         logging.warning(f"Could not assign mandatory shift for {worker_id} on {current_date} (Post {post_idx}) due to constraints.")
+                                 
         # PART 2: NEW LOGIC - Process mandatory_days from individual worker data
         logging.info("Processing mandatory shifts from worker mandatory_days...")
     
