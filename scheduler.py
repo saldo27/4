@@ -27,172 +27,133 @@ class Scheduler:
     """Main Scheduler class that coordinates all scheduling operations"""
     
     # Methods
-    def __init__(self, config):
+    def __init__(self, config_path='config.json', workers_path='workers.json', previous_schedule_path=None):
         """Initialize the scheduler with configuration"""
-        logging.info("Scheduler initialized")
+        logging.info(f"Initializing Scheduler with config='{config_path}', workers='{workers_path}', prev_schedule='{previous_schedule_path}'")
+        self.config_path = config_path
+        self.workers_path = workers_path
+        self.previous_schedule_path = previous_schedule_path
+
+        # --- Initialize components that DON'T depend on loaded config/data ---
+        self.date_utils = DateTimeUtils()
+        self.current_datetime = self.date_utils.get_spain_time() # Get current time early if needed
+        self.current_user = 'saldo27' # Or get dynamically if possible
+
+        # --- Initialize core data structures and default values ---
+        self.config = {}
+        self.workers_data = []
+        self.worker_ids = set()
+        self.schedule = {}
+        self.holidays = set()
+        self.start_date = None
+        self.end_date = None
+        self.num_shifts = 0
+        self.gap_between_shifts = 1 # Default, will be overridden by config
+        self.max_consecutive_weekends = 2 # Default, will be overridden by config
+        self.max_shifts_per_worker = 999 # Placeholder, calculated later
+
+        # Tracking data (will be properly initialized later)
+        self.worker_assignments = {}
+        self.worker_shift_counts = {}
+        self.worker_weekend_shifts = {} # Renamed from worker_weekend_counts for clarity if it tracks count
+        self.worker_posts = {}
+        self.last_assignment_date = {}
+        self.consecutive_shifts = {}
+        self.worker_weekdays = {}
+        self.worker_holiday_counts = {} # Keep if distinct from weekend shifts
+        self.worker_target_percentages = {} # For workload balancing
+        self.constraint_skips = {} # Initialize if used
+
+        # Best schedule state
+        self.best_schedule_state = None
+
+        # --- Initialize Helper Modules (stubs or basic init) ---
+        # DataManager needs paths, DateUtils
+        self.data_manager = DataManager(self.config_path, self.workers_path, self.previous_schedule_path, self.date_utils)
+        # Others initialized inside the try block after data is loaded
+        self.constraint_checker = None
+        self.schedule_builder = None
+        self.validator = None
+        self.visualizer = None
+        self.reporter = None
+        # self.stats = None # Initialize if StatisticsCalculator is used
+        # self.eligibility_tracker = None # Initialize if WorkerEligibilityTracker is used
+
+        # --- Main Initialization Logic (Handles potential errors) ---
         try:
-            # Initialize date_utils FIRST, before calling any method that might need it
-            self.date_utils = DateTimeUtils()
-    
-            # Then validate the configuration
-            self._validate_config(config)
-        
-            # Core data structures
-            self.config = {}
-            self.workers_data = []
-            self.worker_ids = set()
-            self.schedule = {} # {date: [worker_id_post0, worker_id_post1, ...]}
-            self.holidays = set()
-            self.start_date = None
-            self.end_date = None
-            self.num_shifts = 0 # Number of shifts (posts) per day
+            # 1. Load Config
+            self.config = self.data_manager.load_config()
+            logging.info("Configuration loaded successfully.")
 
-            # --- START: Build incompatibility lists ---
-            incompatible_worker_ids = {
-                worker['id'] for worker in self.workers_data if worker.get('is_incompatible', False)
-            }
-            logging.debug(f"Identified incompatible worker IDs: {incompatible_worker_ids}")
+            # 2. Validate Config (NOW that it's loaded)
+            self._validate_config(self.config) # Pass the loaded config
+            logging.info("Configuration validated.")
 
-            for worker in self.workers_data:
-                worker_id = worker['id']
-                # Initialize the list
-                worker['incompatible_with'] = []
-                if worker.get('is_incompatible', False):
-                    # If this worker is incompatible, add all *other* incompatible workers to its list
-                    worker['incompatible_with'] = list(incompatible_worker_ids - {worker_id}) # Exclude self
-                logging.debug(f"Worker {worker_id} incompatible_with list: {worker['incompatible_with']}")
-            # --- END: Build incompatibility lists ---
-        
-            # Get the new configurable parameters with defaults
-            self.gap_between_shifts = config.get('gap_between_shifts', 1)
-            self.max_consecutive_weekends = config.get('max_consecutive_weekends', 2)
-    
-            # Initialize tracking dictionaries
-            self.schedule = {}
-            self.worker_assignments = {w['id']: set() for w in self.workers_data}
-            self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
-            self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
-            self.worker_weekends = {w['id']: [] for w in self.workers_data}
+            # 3. Configure Logging (based on validated config)
+            self._configure_logging()
 
-            # Initialize tracking data structures
-            self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
-            self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data}
-            self.worker_post_counts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
-            self.worker_weekday_counts = {w['id']: {d: 0 for d in range(7)} for w in self.workers_data}
-            self.worker_holiday_counts = {w['id']: 0 for w in self.workers_data}
-            # Store last assignment date for gap checks
-            self.last_assignment_date = {w['id']: None for w in self.workers_data}
-            # <<< --- ADDED: Target Percentage Attribute --- >>>
-            self.worker_target_percentages = {} # {worker_id: target_percentage_float (0.0-1.0)}
+            # 4. Define Schedule Period & Core Params (from validated config)
+            self._define_schedule_period() # Sets self.start_date, self.end_date
+            self.num_shifts = self.config.get('shifts_per_day', 1) # Example: Get from config
+            self.gap_between_shifts = self.config.get('gap_between_shifts', 1)
+            self.max_consecutive_weekends = self.config.get('max_consecutive_weekends', 2)
+            logging.info(f"Schedule period: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}")
 
-            # Best schedule found during optimization
-            self.best_schedule_state = None # Stores the complete state of the best schedule          
-            # Initialize worker targets
-            for worker in self.workers_data:
-                if 'target_shifts' not in worker:
-                    worker['target_shifts'] = 0
+            # 5. Load Holidays
+            self.holidays = self.data_manager.load_holidays(self.config, self.start_date, self.end_date)
+            logging.info(f"Holidays loaded: {len(self.holidays)} days.")
 
-            # Set current time and user
-            self.date_utils = DateTimeUtils()
-            self.current_datetime = self.date_utils.get_spain_time()
-            self.current_user = 'saldo27'
-        
-            # Add max_shifts_per_worker calculation
-            total_days = (self.end_date - self.start_date).days + 1
-            total_shifts = total_days * self.num_shifts
-            num_workers = len(self.workers_data)
-            self.max_shifts_per_worker = (total_shifts // num_workers) + 2  # Add some flexibility
+            # 6. Initialize ConstraintChecker (needs holidays, gap, etc.)
+            self.constraint_checker = ConstraintChecker(self)
+            logging.info("ConstraintChecker initialized.")
 
-            # Track constraint skips
-            self.constraint_skips = {
-                w['id']: {
-                    'gap': [],
-                    'incompatibility': [],
-                    'reduced_gap': []  # For part-time workers
-                } for w in self.workers_data
-            }
-        
-            # Initialize helper modules
-            self.stats = StatisticsCalculator(self)
-            self.constraint_checker = ConstraintChecker(self)  
-            self.data_manager = DataManager(self)
+            # 7. Load Workers Data
+            self.workers_data = self.data_manager.load_workers_data()
+            self.worker_ids = {w['id'] for w in self.workers_data}
+            if not self.workers_data:
+                 raise DataError("No worker data loaded. Cannot proceed.")
+            logging.info(f"Worker data loaded for {len(self.workers_data)} workers.")
+
+            # 8. Preprocess Worker Data (incl. incompatibility, work_dates etc.)
+            self._preprocess_worker_data() # This should set 'incompatible_with' lists
+            logging.info("Worker data preprocessed.")
+
+            # 9. Calculate Target Percentages & Max Shifts
+            self._calculate_target_percentages()
+            self._calculate_max_shifts_per_worker() # Calculate after workers and period known
+            self._calculate_target_shifts() # Calculate absolute targets if needed
+            logging.info("Worker target percentages and shift limits calculated.")
+
+            # 10. Initialize Remaining Components
             self.schedule_builder = ScheduleBuilder(self)
-            self.eligibility_tracker = WorkerEligibilityTracker(
-                self.workers_data,
-                self.holidays,
-                self.gap_between_shifts,
-                self.max_consecutive_weekends
-            )
-            self.validator = None # Initialized after data loading
-            self.visualizer = None # Initialized after data loading
-            self.reporter = None # Initialized after data loading
+            self.validator = ScheduleValidator(self) # Assuming these exist
+            self.visualizer = ScheduleVisualizer(self)
+            self.reporter = Reporting(self)
+            # self.stats = StatisticsCalculator(self) # If used
+            # self.eligibility_tracker = WorkerEligibilityTracker(...) # If used, needs relevant data
+            logging.info("Scheduler components (Builder, Validator, etc.) initialized.")
 
-            # Calculate targets before proceeding
-            self._calculate_target_shifts()
+            # 11. Initialize Tracking Data Structures (based on loaded workers)
+            self.initialize_tracking_data() # Make sure this initializes all needed tracking dicts correctly
+            logging.info("Tracking data structures initialized.")
 
-            self._log_initialization()
+            # 12. Load Previous Schedule (Optional)
+            if self.previous_schedule_path:
+                previous_schedule_data = self.data_manager.load_previous_schedule()
+                # TODO: Integrate previous schedule data if needed
+                logging.info("Previous schedule data loaded (integration pending).")
 
-            # Ensure ScheduleBuilder receives the updated self.workers_data
-            self.builder = ScheduleBuilder(self)
-    
+            # 13. Initialize Schedule Structure
+            self.schedule = self._initialize_schedule_structure()
+            logging.info("Schedule structure initialized.")
 
-            # Load configuration and data
-            try:
-                # Load config first as other components might depend on it
-                self.config = self.data_manager.load_config()
-                logging.info("Configuration loaded successfully.")
-                self._configure_logging() # Configure logging based on loaded config
-
-                # Define schedule period based on config
-                self._define_schedule_period()
-
-                # Load holidays based on config and period
-                self.holidays = self.data_manager.load_holidays(self.config, self.start_date, self.end_date)
-                logging.info(f"Holidays loaded: {len(self.holidays)} days.")
-
-                # Initialize ConstraintChecker now that config and holidays are loaded
-                self.constraint_checker = ConstraintChecker(self) # Pass self (scheduler)
-                logging.info("ConstraintChecker initialized.")
-
-                # Load worker data
-                self.workers_data = self.data_manager.load_workers_data()
-                self.worker_ids = {w['id'] for w in self.workers_data} # Populate worker IDs set
-                self._preprocess_worker_data() # Calculate work_dates etc.
-                logging.info(f"Worker data loaded and preprocessed for {len(self.workers_data)} workers.")
-
-                # <<< --- ADDED: Calculate target percentages after loading worker data --- >>>
-                self._calculate_target_percentages()
-
-                # Initialize other components that depend on loaded data
-                self.schedule_builder = ScheduleBuilder(self)
-                self.validator = ScheduleValidator(self)
-                self.visualizer = ScheduleVisualizer(self)
-                self.reporter = Reporting(self)
-                logging.info("Scheduler components (Builder, Validator, Visualizer, Reporter) initialized.")
-
-                # Initialize tracking data structures based on loaded workers
-                self.initialize_tracking_data()
-                logging.info("Tracking data structures initialized.")
-
-                # Load previous schedule if path provided
-                if self.previous_schedule_path:
-                    previous_schedule_data = self.data_manager.load_previous_schedule()
-                    # TODO: Integrate previous schedule data (e.g., for constraints like consecutive shifts crossing period boundaries)
-                    logging.info("Previous schedule data loaded (integration pending).")
-
-                # Initialize the schedule structure for the period
-                self.schedule = self._initialize_schedule_structure()
-                logging.info("Schedule structure initialized.")
-
-            except (ConfigError, DataError) as e:
-                 logging.error(f"Initialization failed due to configuration or data error: {e}", exc_info=True)
-                 # Propagate the error or handle it to prevent scheduler use
-                 raise SchedulerError(f"Scheduler initialization failed: {e}") from e
-            except Exception as e:
-                logging.error(f"Unexpected error during Scheduler initialization: {e}", exc_info=True)
-                raise SchedulerError(f"Unexpected error during Scheduler initialization: {e}") from e
-
-                logging.info("Scheduler initialized successfully.")
+        # --- Error Handling for Initialization ---
+        except (ConfigError, DataError) as e:
+             logging.error(f"Initialization failed due to configuration or data error: {e}", exc_info=True)
+             raise SchedulerError(f"Scheduler initialization failed: {e}") from e
+        except Exception as e:
+            logging.error(f"Unexpected error during Scheduler initialization: {e}", exc_info=True)
+            raise SchedulerError(f"Unexpected error during Scheduler initialization: {e}") from e
 
         
     def _validate_config(self, config):
