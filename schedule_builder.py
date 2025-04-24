@@ -43,7 +43,7 @@ class ScheduleBuilder:
         self.worker_posts = scheduler.worker_posts
         self.worker_weekdays = scheduler.worker_weekdays
         self.worker_weekends = scheduler.worker_weekends
-        self.constraint_skips = scheduler.constraint_skips
+        # self.constraint_skips = scheduler.constraint_skips
         self.max_shifts_per_worker = scheduler.max_shifts_per_worker
 
         logging.info("ScheduleBuilder initialized")
