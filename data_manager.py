@@ -1,3 +1,4 @@
+# Imports
 from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING
@@ -7,6 +8,18 @@ import os
 
 if TYPE_CHECKING:
     from scheduler import Scheduler # Corrected type hint if needed
+
+# E.g., near the top of data_manager.py or imported from a constants file
+DEFAULT_CONFIG = {
+    "start_date": None, # Or sensible defaults
+    "end_date": None,
+    "num_shifts": 1,
+    "shifts_per_day": 1, # Make sure keys match what scheduler expects
+    "gap_between_shifts": 1,
+    "max_consecutive_weekends": 2,
+    "holidays": [],
+    # ... other necessary default config keys and values ...
+}
 
 class DataManager:
     """Handles data management and tracking for the scheduler"""
@@ -40,23 +53,32 @@ class DataManager:
         logging.info("DataManager initialized")
 
     def load_config(self):
-        """Loads the main configuration file."""
+        """
+        Loads the main configuration file.
+        If the file doesn't exist, logs a warning and returns a default config dictionary.
+        """
         config_path = self.scheduler.config_path
         logging.info(f"Attempting to load configuration from: {config_path}")
-        if not os.path.exists(config_path):
-            logging.error(f"Configuration file not found at {config_path}")
-            raise ConfigError(f"Configuration file not found: {config_path}")
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config_data = json.load(f)
-            logging.debug("Configuration file loaded successfully.")
-            return config_data
-        except json.JSONDecodeError as e:
-            logging.error(f"Error decoding JSON from config file {config_path}: {e}")
-            raise ConfigError(f"Invalid JSON in configuration file: {config_path} - {e}") from e
-        except Exception as e:
-            logging.error(f"Failed to read config file {config_path}: {e}")
-            raise ConfigError(f"Could not read configuration file: {config_path} - {e}") from e
+
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                logging.info(f"Configuration file loaded successfully from {config_path}.")
+                # Optional: You could merge defaults with loaded data here if needed
+                # merged_config = {**DEFAULT_CONFIG, **config_data}
+                # return merged_config
+                return config_data
+            except json.JSONDecodeError as e:
+                logging.error(f"Error decoding JSON from config file {config_path}: {e}")
+                raise ConfigError(f"Invalid JSON in configuration file: {config_path} - {e}") from e
+            except Exception as e:
+                logging.error(f"Failed to read config file {config_path}: {e}")
+                raise ConfigError(f"Could not read configuration file: {config_path} - {e}") from e
+        else:
+            # File does not exist, return the default config
+            logging.warning(f"Configuration file not found at {config_path}. Using default configuration.")
+            return DEFAULT_CONFIG.copy() # Return a copy to prevent modification of 
 
     def load_workers_data(self):
         """Loads worker data from the specified JSON file."""
