@@ -127,26 +127,45 @@ class DataManager:
             return default_copy
 
     def load_workers_data(self):
-        """Loads worker data from the specified JSON file."""
-        workers_path = self.scheduler.workers_path
-        logging.info(f"Attempting to load workers data from: {workers_path}")
-        if not os.path.exists(workers_path):
-            logging.error(f"Workers data file not found at {workers_path}")
-            raise DataError(f"Workers data file not found: {workers_path}")
-        try:
-            with open(workers_path, 'r', encoding='utf-8') as f:
-                workers_data = json.load(f)
-            if not isinstance(workers_data, list):
-                 raise DataError(f"Workers data file {workers_path} should contain a JSON list.")
-            logging.debug(f"Workers data loaded successfully. Found {len(workers_data)} workers.")
-            return workers_data
-        except json.JSONDecodeError as e:
-            logging.error(f"Error decoding JSON from workers file {workers_path}: {e}")
-            raise DataError(f"Invalid JSON in workers data file: {workers_path} - {e}") from e
-        except Exception as e:
-            logging.error(f"Failed to read workers file {workers_path}: {e}")
-            raise DataError(f"Could not read workers data file: {workers_path} - {e}") from e
+        """
+        Loads worker data directly from the already loaded scheduler configuration dictionary.
+        """
+        logging.info("Attempting to load workers data from scheduler config...")
 
+        # --- Get worker data from the config dictionary ---
+        # The config should have been loaded by load_config before this method is called
+        if not hasattr(self.scheduler, 'config') or not self.scheduler.config:
+             logging.error("Scheduler config not loaded before trying to load workers data.")
+             raise DataError("Cannot load workers data: Scheduler configuration is missing.")
+
+        workers_data = self.scheduler.config.get('workers_data') # Use .get for safety
+
+        # --- Validate the retrieved data ---
+        if workers_data is None:
+            logging.error("Workers data ('workers_data' key) not found in the loaded configuration.")
+            raise DataError("Workers data not found in configuration.")
+
+        if not isinstance(workers_data, list):
+            logging.error(f"Workers data in configuration is not a list (type: {type(workers_data)}).")
+            raise DataError("Invalid format for workers data in configuration: Expected a list.")
+
+        if not workers_data:
+            logging.warning("Workers data list in configuration is empty.")
+            # Depending on requirements, you might raise an error or return an empty list.
+            # Let's raise an error for now, as scheduling usually requires workers.
+            raise DataError("Workers data list in configuration is empty.")
+
+        # --- Basic validation of worker entries ---
+        for i, worker in enumerate(workers_data):
+             if not isinstance(worker, dict):
+                  raise DataError(f"Invalid worker entry at index {i}: Expected a dictionary, got {type(worker)}.")
+             if 'id' not in worker:
+                  raise DataError(f"Invalid worker entry at index {i}: Missing 'id' key.")
+             # Add more checks if needed (e.g., expected keys, types)
+
+        logging.info(f"Successfully loaded {len(workers_data)} workers from configuration.")
+        return workers_data
+    
     def load_holidays(self, config, start_date, end_date):
         """Loads and parses holidays from config or a separate file."""
         # This example assumes holidays are LIST OF STRINGS "DD-MM-YYYY" in the config
