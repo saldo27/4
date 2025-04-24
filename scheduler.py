@@ -56,7 +56,7 @@ class Scheduler:
         self.worker_weekdays = {}
         self.worker_holiday_counts = {} # Keep if distinct from weekend shifts
         self.worker_target_percentages = {} # For workload balancing
-        #self.constraint_skips = {} # Initialize if used
+        # self.constraint_skips = {} # Initialize if used
 
         # Best schedule state
         self.best_schedule_state = None
@@ -253,7 +253,8 @@ class Scheduler:
         self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
         self.worker_holiday_counts = {w['id']: 0 for w in self.workers_data}
         # Initialize constraint_skips if used
-        # self.constraint_skips = {w['id']: {'gap': [], 'incompatibility': [], 'reduced_gap': []} for w in self.workers_data}
+        # self.constraint_skips = {w['id']: {'gap': [], 'incompatibility': [], 'reduced_gap': []} for w in self.workers_data} # <--- UNCOMMENT THIS LINE
+        self.constraint_skips = {w['id']: {'gap': [], 'incompatibility': [], 'reduced_gap': []} for w in self.workers_data} # <--- UNCOMMENTED
         logging.debug("Tracking data structures initialized.")
             
     def _log_initialization(self):
