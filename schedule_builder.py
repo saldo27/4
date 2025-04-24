@@ -556,78 +556,84 @@ class ScheduleBuilder:
         # logging.debug(f"Shifts found for worker {worker_id}: {[(d.strftime('%Y-%m-%d'), p) for d, p in shifts]}") # Optional detailed logging
         return shifts
     
-    def _can_swap_assignments(self, worker_id, date_from, post_from, date_to, post_to):
+    def _can_swap_assignments(self, worker1_id, worker2_id, date1, post1, date2, post2):
         """
-        Checks if moving worker_id from (date_from, post_from) to (date_to, post_to) is valid.
-        Uses deepcopy for safer simulation.
+        Checks if swapping worker1 on (date1, post1) with worker2 on (date2, post2)
+        is valid using a robust simulation.
         """
+        logging.debug(f"  Checking swap validity: {worker1_id}({date1.strftime('%d/%m')}-P{post1}) <-> {worker2_id}({date2.strftime('%d/%m')}-P{post2})")
+
         # --- Simulation Setup ---
-        # Create deep copies of the schedule and assignments
         try:
-            # Use scheduler's references for deepcopy
+            # Deep copy critical data structures from the scheduler
             simulated_schedule = copy.deepcopy(self.scheduler.schedule)
             simulated_assignments = copy.deepcopy(self.scheduler.worker_assignments)
 
-            # --- Simulate the Swap ---
-            # 1. Check if 'from' state is valid before simulating removal
-            if date_from not in simulated_schedule or \
-               len(simulated_schedule[date_from]) <= post_from or \
-               simulated_schedule[date_from][post_from] != worker_id or \
-               worker_id not in simulated_assignments or \
-               date_from not in simulated_assignments[worker_id]:
-                    logging.warning(f"_can_swap_assignments: Initial state invalid for removing {worker_id} from {date_from}|P{post_from}. Aborting check.")
-                    return False # Cannot simulate if initial state is wrong
-
-            # 2. Simulate removing worker from 'from' position
-            simulated_schedule[date_from][post_from] = None
-            simulated_assignments[worker_id].remove(date_from)
-            # Clean up empty set for worker if needed
-            if not simulated_assignments[worker_id]:
-                 del simulated_assignments[worker_id]
-
-
-            # 3. Simulate adding worker to 'to' position
-            # Ensure target list exists and is long enough in the simulation
-            simulated_schedule.setdefault(date_to, [None] * self.num_shifts)
-            while len(simulated_schedule[date_to]) <= post_to:
-                simulated_schedule[date_to].append(None)
-
-            # Check if target slot is empty in simulation before placing
-            if simulated_schedule[date_to][post_to] is not None:
-                logging.debug(f"_can_swap_assignments: Target slot {date_to}|P{post_to} is not empty in simulation. Aborting check.")
+            # --- Verify Initial State (Before Simulation) ---
+            if date1 not in simulated_schedule or len(simulated_schedule[date1]) <= post1 or simulated_schedule[date1][post1] != worker1_id:
+                logging.warning(f"Swap Check Invalid State: Worker {worker1_id} not found at {date1}|P{post1}")
                 return False
+            if date2 not in simulated_schedule or len(simulated_schedule[date2]) <= post2 or simulated_schedule[date2][post2] != worker2_id:
+                logging.warning(f"Swap Check Invalid State: Worker {worker2_id} not found at {date2}|P{post2}")
+                return False
+            if worker1_id not in simulated_assignments or date1 not in simulated_assignments[worker1_id]:
+                 logging.warning(f"Swap Check Invalid State: Assignment tracking missing for {worker1_id} on {date1}")
+                 return False
+            if worker2_id not in simulated_assignments or date2 not in simulated_assignments[worker2_id]:
+                 logging.warning(f"Swap Check Invalid State: Assignment tracking missing for {worker2_id} on {date2}")
+                 return False
 
-            simulated_schedule[date_to][post_to] = worker_id
-            simulated_assignments.setdefault(worker_id, set()).add(date_to)
+            # --- Simulate the Swap ---
+            # Place worker2 into worker1's old slot
+            simulated_schedule[date1][post1] = worker2_id
+            simulated_assignments.setdefault(worker2_id, set()).add(date1)
+            simulated_assignments.setdefault(worker1_id, set()).remove(date1) # W1 leaves date1
+
+            # Place worker1 into worker2's old slot
+            simulated_schedule[date2][post2] = worker1_id
+            simulated_assignments.setdefault(worker1_id, set()).add(date2)
+            simulated_assignments.setdefault(worker2_id, set()).remove(date2) # W2 leaves date2
+
 
             # --- Check Constraints on Simulated State ---
-            # Check if the worker can be assigned to the target slot considering the simulated state
-            can_assign_to_target = self._check_constraints_on_simulated(
-                worker_id, date_to, post_to, simulated_schedule, simulated_assignments
+            # Check worker1 at their new position (date2, post2)
+            check1 = self._check_constraints_on_simulated(
+                worker1_id, date2, post2, simulated_schedule, simulated_assignments
             )
+            if not check1:
+                 logging.debug(f"    Swap invalid: Worker {worker1_id} fails constraints at new pos {date2.strftime('%d/%m')}|P{post2}")
+                 return False
 
-            # Also check if the source date is still valid *without* the worker
-            # (e.g., maybe removing the worker caused an issue for others on date_from)
-            source_date_still_valid = self._check_all_constraints_for_date_simulated(
-                date_from, simulated_schedule, simulated_assignments
+            # Check worker2 at their new position (date1, post1)
+            check2 = self._check_constraints_on_simulated(
+                worker2_id, date1, post1, simulated_schedule, simulated_assignments
             )
+            if not check2:
+                 logging.debug(f"    Swap invalid: Worker {worker2_id} fails constraints at new pos {date1.strftime('%d/%m')}|P{post1}")
+                 return False
 
-            # Also check if the target date remains valid *with* the worker added
-            target_date_still_valid = self._check_all_constraints_for_date_simulated(
-                 date_to, simulated_schedule, simulated_assignments
+            # Check if date1 remains valid overall after the swap
+            check_date1 = self._check_all_constraints_for_date_simulated(
+                 date1, simulated_schedule, simulated_assignments
             )
+            if not check_date1:
+                 logging.debug(f"    Swap invalid: Date {date1.strftime('%d/%m')} becomes invalid after swap.")
+                 return False
 
+            # Check if date2 remains valid overall after the swap
+            check_date2 = self._check_all_constraints_for_date_simulated(
+                 date2, simulated_schedule, simulated_assignments
+            )
+            if not check_date2:
+                 logging.debug(f"    Swap invalid: Date {date2.strftime('%d/%m')} becomes invalid after swap.")
+                 return False
 
-            is_valid_swap = can_assign_to_target and source_date_still_valid and target_date_still_valid
-
-            # --- End Simulation ---
-            # No rollback needed as we operated on copies.
-
-            logging.debug(f"Swap Check: {worker_id} from {date_from}|P{post_from} to {date_to}|P{post_to}. Valid: {is_valid_swap} (Target OK: {can_assign_to_target}, Source OK: {source_date_still_valid}, TargetDate OK: {target_date_still_valid})")
-            return is_valid_swap
+            # If all checks pass
+            logging.debug("    Swap simulation successful and constraints met.")
+            return True
 
         except Exception as e:
-            logging.error(f"Error during _can_swap_assignments simulation for {worker_id}: {e}", exc_info=True)
+            logging.error(f"Error during _can_swap_assignments (two-worker swap) simulation: {e}", exc_info=True)
             return False # Fail safe
 
 
@@ -739,28 +745,25 @@ class ScheduleBuilder:
     def _check_gap_constraint_simulated(self, worker_id, date, simulated_assignments):
          """Check gap constraint using simulated assignments."""
          # Use scheduler's gap config
-         min_days_between = self.scheduler.gap_between_shifts + 1
-         # Add part-time adjustment if needed
          worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
-         work_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
-         if work_percentage < 70: # Example threshold for part-time adjustment
+         wmin_days_between = self.scheduler.gap_between_shifts + 1
+         ork_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
+         if work_percentage < 70: # Example threshold
              min_days_between = max(min_days_between, self.scheduler.gap_between_shifts + 2)
 
          assignments = sorted(list(simulated_assignments.get(worker_id, [])))
 
          for prev_date in assignments:
-              if prev_date == date: continue # Don't compare date to itself
+              if prev_date == date: continue
               days_between = abs((date - prev_date).days)
               if days_between < min_days_between:
                    return False
-              # Add Friday-Monday / 7-14 day checks if needed here too, using relaxation_level=0 logic
+              # Add Fri/Mon check if needed
               if self.scheduler.gap_between_shifts == 1 and work_percentage >= 100:
                    if days_between == 3:
                        if ((prev_date.weekday() == 4 and date.weekday() == 0) or \
                            (date.weekday() == 4 and prev_date.weekday() == 0)):
                            return False
-              # if days_between in [7, 14, 21]: return False # Optional strict weekly pattern check
-
          return True
 
     def _would_exceed_weekend_limit_simulated(self, worker_id, date, simulated_assignments):
@@ -821,6 +824,26 @@ class ScheduleBuilder:
                 return True # Exceeds limit
 
         return False # Limit not exceeded
+
+    def _perform_swap(self, worker1_id, worker2_id, date1, post1, date2, post2):
+        """Performs the swap in the schedule and updates all necessary tracking data."""
+        # Swap in schedule
+        self.scheduler.schedule[date1][post1] = worker2_id
+        self.scheduler.schedule[date2][post2] = worker1_id
+
+        # Update worker_assignments sets (if used)
+        if worker1_id in self.scheduler.worker_assignments:
+             self.scheduler.worker_assignments[worker1_id].discard(date1)
+             self.scheduler.worker_assignments[worker1_id].add(date2)
+        if worker2_id in self.scheduler.worker_assignments:
+             self.scheduler.worker_assignments[worker2_id].discard(date2)
+             self.scheduler.worker_assignments[worker2_id].add(date1)
+
+        # !!! CRITICAL: Update all detailed tracking data via the scheduler's method !!!
+        self.scheduler._update_tracking_data(worker1_id, date1, post1, removing=True)
+        self.scheduler._update_tracking_data(worker2_id, date2, post2, removing=True)
+        self.scheduler._update_tracking_data(worker2_id, date1, post1, removing=False)
+        self.scheduler._update_tracking_data(worker1_id, date2, post2, removing=False)
     
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
