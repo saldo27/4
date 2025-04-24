@@ -58,7 +58,7 @@ class DataManager:
         self.worker_holiday_counts = getattr(scheduler, 'worker_holiday_counts', {})
         self.worker_target_percentages = getattr(scheduler, 'worker_target_percentages', {})
 
-        logging.info("DataManager initialized") # Keep or adjust log message
+        logging.info("DataManager initialized") ge
 
 
     def load_config(self):
@@ -76,48 +76,51 @@ class DataManager:
             logging.info(f"Configuration file loaded successfully from {config_path}.")
 
             # --- Convert date strings to datetime objects ---
-            date_format = "%Y-%m-%d" # Assuming YYYY-MM-DD format
+            date_format = "%d-%m-%Y" )
+            logging.debug(f"Using date format for parsing: {date_format}") 
 
             # Convert start_date and end_date
             for key in ['start_date', 'end_date']:
                 if key in config_data and isinstance(config_data[key], str):
                     try:
-                        # Convert to datetime objects (time part defaults to 00:00:00)
+                        # Convert to datetime objects
                         config_data[key] = datetime.strptime(config_data[key], date_format)
-                        logging.debug(f"Converted {key} string to datetime: {config_data[key]}")
+                        logging.debug(f"Converted {key} string '{config_data[key].strftime(date_format)}' to datetime") # Use format in log
                     except ValueError:
-                        logging.error(f"Invalid date format for {key}: {config_data[key]}. Expected YYYY-MM-DD.")
-                        raise ConfigError(f"Invalid date format for {key}: {config_data[key]}. Expected YYYY-MM-DD.")
+                        error_msg = f"Invalid date format for {key}: {config_data[key]}. Expected {date_format}."
+                        logging.error(error_msg)
+                        raise ConfigError(error_msg) # Use updated error message
 
-            # --- Convert holidays list ---
+            # Convert holidays list
             if 'holidays' in config_data:
                 if isinstance(config_data['holidays'], list):
                     converted_holidays = []
                     for holiday_str in config_data['holidays']:
                         if isinstance(holiday_str, str):
                             try:
-                                # Convert to date objects (time is irrelevant for holidays)
+                                # Convert to date objects
                                 holiday_date = datetime.strptime(holiday_str, date_format).date()
                                 converted_holidays.append(holiday_date)
                             except ValueError:
-                                logging.error(f"Invalid date format for holiday: {holiday_str}. Expected YYYY-MM-DD.")
-                                raise ConfigError(f"Invalid date format for holiday: {holiday_str}. Expected YYYY-MM-DD.")
+                                error_msg = f"Invalid date format for holiday: {holiday_str}. Expected {date_format}."
+                                logging.error(error_msg)
+                                raise ConfigError(error_msg) # Use updated error message
                         elif isinstance(holiday_str, date):
-                             # Already a date object, keep it
                              converted_holidays.append(holiday_str)
                         elif isinstance(holiday_str, datetime):
-                             # If it's a datetime object, convert to date
                              converted_holidays.append(holiday_str.date())
                         else:
-                            logging.error(f"Invalid holiday entry type: {type(holiday_str)}. Expected date string (YYYY-MM-DD) or date/datetime object.")
-                            raise ConfigError(f"Invalid holiday entry type: {type(holiday_str)}. Expected date string (YYYY-MM-DD).")
+                            error_msg = f"Invalid holiday entry type: {type(holiday_str)}. Expected date string ({date_format}) or date/datetime object."
+                            logging.error(error_msg)
+                            raise ConfigError(error_msg) # Use updated error message
                     config_data['holidays'] = converted_holidays
-                    logging.debug(f"Converted holidays list to date objects: {config_data['holidays']}")
+                    logging.debug(f"Converted holidays list to date objects: {len(config_data['holidays'])} items") # Adjusted log
                 else:
-                    logging.error(f"'holidays' key found in config, but it's not a list (type: {type(config_data['holidays'])}).")
-                    raise ConfigError("'holidays' must be a list of date strings (YYYY-MM-DD).")
+                    error_msg = f"'holidays' key found in config, but it's not a list (type: {type(config_data['holidays'])})."
+                    logging.error(error_msg)
+                    raise ConfigError(error_msg)
 
-            logging.info("Configuration loaded successfully.")
+            logging.info("Configuration dates parsed successfully.") 
             return config_data
 
         except json.JSONDecodeError as e:
@@ -125,7 +128,6 @@ class DataManager:
             raise ConfigError(f"Invalid JSON in config file: {config_path} - {e}") from e
         except Exception as e:
             logging.error(f"Failed to read or process config file {config_path}: {e}", exc_info=True)
-            # Catch specific ConfigErrors raised above, otherwise wrap others
             if isinstance(e, ConfigError):
                 raise
             raise ConfigError(f"Could not process config file: {config_path} - {e}") from e
