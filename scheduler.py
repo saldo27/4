@@ -66,7 +66,7 @@ class Scheduler:
         self.data_manager = DataManager(self)
 
         # DataManager needs paths, DateUtils
-        try: # ADD THIS TRY BLOCK
+        try: 
             self.data_manager = DataManager(self)
             logging.info("DataManager initialized successfully.") # ADD Log success
         except Exception as dm_init_error: # ADD THIS EXCEPT BLOCK
@@ -117,14 +117,12 @@ class Scheduler:
             logging.info(f"Worker data loaded for {len(self.workers_data)} workers.")
 
             # 8. Preprocess Worker Data (incl. incompatibility, work_dates etc.)
-            self._preprocess_worker_data() # This should set 'incompatible_with' lists
+            self._prepare_worker_data()
             logging.info("Worker data preprocessed.")
-
-            self.constraint_checker = None 
-
+          
             # 9. Calculate Target Percentages & Max Shifts
             self._calculate_target_percentages()
-            self._calculate_max_shifts_per_worker() # Calculate after workers and period known
+            #self._calculate_max_shifts_per_worker() # Calculate after workers and period known
             self._calculate_target_shifts() # Calculate absolute targets if needed
             logging.info("Worker target percentages and shift limits calculated.")
 
@@ -1332,7 +1330,7 @@ class Scheduler:
         - Handle other default values
         """
         logging.info("Preparing worker data...")
-    
+
         for worker in self.workers_data:
             # Handle empty work periods - default to full schedule period
             if 'work_periods' not in worker or not worker['work_periods'].strip():
@@ -1340,8 +1338,10 @@ class Scheduler:
                 end_str = self.end_date.strftime('%d-%m-%Y')
                 worker['work_periods'] = f"{start_str} - {end_str}"
                 logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
+            # Add any other necessary preparation steps here in the future
+
             
-    def generate_schedule(self, max_improvement_loops=30):
+    def generate_schedule(self, max_improvement_loops=50):
         """
         Generates the duty schedule.
 
