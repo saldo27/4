@@ -1,40 +1,108 @@
-# Imports
 from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING
-from exceptions import SchedulerError
+from exceptions import SchedulerError, ConfigError, DataError # <-- Make sure ConfigError, DataError are imported if used
+import json 
+import os 
+
 if TYPE_CHECKING:
-    from scheduler import Schedulerr
+    from scheduler import Scheduler # Corrected type hint if needed
 
 class DataManager:
     """Handles data management and tracking for the scheduler"""
-    
+
     # Methods
     def __init__(self, scheduler: 'Scheduler'):
         """
         Initialize the data manager
-        
+
         Args:
             scheduler: The main Scheduler object
         """
         self.scheduler = scheduler
-        
+
         # Store references to frequently accessed attributes
+        # Ensure these attributes exist on the scheduler object when DataManager is initialized
         self.schedule = scheduler.schedule
         self.worker_assignments = scheduler.worker_assignments
         self.worker_posts = scheduler.worker_posts
         self.worker_weekdays = scheduler.worker_weekdays
         self.worker_weekends = scheduler.worker_weekend_shifts
-        self.num_shifts = scheduler.num_shifts
-        self.workers_data = scheduler.workers_data
-        
+        self.num_shifts = scheduler.num_shifts # Might be initialized later in Scheduler
+        self.workers_data = scheduler.workers_data # Might be initialized later in Scheduler
+
         # Flag to track if data integrity has been verified
         self.data_integrity_verified = False
-        
+
         # Initialize monthly targets structure
         self.monthly_targets = {}
-        
+
         logging.info("DataManager initialized")
+
+    def load_config(self):
+        """Loads the main configuration file."""
+        config_path = self.scheduler.config_path
+        logging.info(f"Attempting to load configuration from: {config_path}")
+        if not os.path.exists(config_path):
+            logging.error(f"Configuration file not found at {config_path}")
+            raise ConfigError(f"Configuration file not found: {config_path}")
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+            logging.debug("Configuration file loaded successfully.")
+            return config_data
+        except json.JSONDecodeError as e:
+            logging.error(f"Error decoding JSON from config file {config_path}: {e}")
+            raise ConfigError(f"Invalid JSON in configuration file: {config_path} - {e}") from e
+        except Exception as e:
+            logging.error(f"Failed to read config file {config_path}: {e}")
+            raise ConfigError(f"Could not read configuration file: {config_path} - {e}") from e
+
+    def load_workers_data(self):
+        """Loads worker data from the specified JSON file."""
+        workers_path = self.scheduler.workers_path
+        logging.info(f"Attempting to load workers data from: {workers_path}")
+        if not os.path.exists(workers_path):
+            logging.error(f"Workers data file not found at {workers_path}")
+            raise DataError(f"Workers data file not found: {workers_path}")
+        try:
+            with open(workers_path, 'r', encoding='utf-8') as f:
+                workers_data = json.load(f)
+            if not isinstance(workers_data, list):
+                 raise DataError(f"Workers data file {workers_path} should contain a JSON list.")
+            logging.debug(f"Workers data loaded successfully. Found {len(workers_data)} workers.")
+            return workers_data
+        except json.JSONDecodeError as e:
+            logging.error(f"Error decoding JSON from workers file {workers_path}: {e}")
+            raise DataError(f"Invalid JSON in workers data file: {workers_path} - {e}") from e
+        except Exception as e:
+            logging.error(f"Failed to read workers file {workers_path}: {e}")
+            raise DataError(f"Could not read workers data file: {workers_path} - {e}") from e
+
+    def load_holidays(self, config, start_date, end_date):
+        """Loads and parses holidays from config or a separate file."""
+        # Placeholder: Implement logic based on how holidays are stored (e.g., in config or separate file)
+        # This example assumes holidays are a list of "DD-MM" strings in the config
+        holidays_config = config.get('holidays', [])
+        holidays = set()
+        current_year = start_date.year
+        end_year = end_date.year
+
+        while current_year <= end_year:
+             for holiday_str in holidays_config:
+                 try:
+                     # Assuming format "DD-MM"
+                     day, month = map(int, holiday_str.split('-'))
+                     holiday_date = datetime(current_year, month, day).date()
+                     # Only add if within the schedule range
+                     if start_date <= holiday_date <= end_date:
+                         holidays.add(holiday_date)
+                 except ValueError:
+                     logging.warning(f"Invalid holiday format found: {holiday_str}. Expected DD-MM.")
+             current_year += 1
+
+        logging.debug(f"Parsed {len(holidays)} holidays within the schedule range.")
+        return holidays
         
     def ensure_data_integrity(self):
         """Check and fix data integrity between scheduler data structures"""
