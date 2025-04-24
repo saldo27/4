@@ -1,0 +1,5 @@
+Good afternoon.   Overall, I am quite happy with the performance of the application.  But there are a few things we need to adjust:
+1- The number of shifts assigned on weekends/holidays should be similar in all workers = Percentage of working day *weekends assigned +/-1.
+2- The number of shifts assigned in the last position must be similar among all workers = shifts assigned / number of shifts per day +/- 1.
+
+Perhaps when the system performs the swaps it does not take this into account.  Please check the entire repository.

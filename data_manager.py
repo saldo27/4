@@ -1,212 +1,40 @@
 # Imports
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING
-from exceptions import SchedulerError, ConfigError, DataError # <-- Make sure ConfigError, DataError are imported if used
-import json 
-import os 
-
+from exceptions import SchedulerError
 if TYPE_CHECKING:
-    from scheduler import Scheduler # Corrected type hint if needed
-
-# E.g., near the top of data_manager.py or imported from a constants file
-DEFAULT_CONFIG = {
-    "start_date": None, # Or sensible defaults
-    "end_date": None,
-    "num_shifts": 1,
-    "shifts_per_day": 1, # Make sure keys match what scheduler expects
-    "gap_between_shifts": 1,
-    "max_consecutive_weekends": 2,
-    "holidays": [],
-    # ... other necessary default config keys and values ...
-}
+    from scheduler import Schedulerr
 
 class DataManager:
     """Handles data management and tracking for the scheduler"""
-
-    # Methods
-    def __init__(self, scheduler):
-        """
-        Initialize the DataManager.
-
-        Args:
-            scheduler: The main Scheduler instance.
-        """
-        self.scheduler = scheduler # Keep a reference to the scheduler
-        # --- Initialize attributes by copying from scheduler IF they exist ---
-        # Use .get() or hasattr() for safety, especially during initialization order
-        self.config = getattr(scheduler, 'config', {}) # Get config if exists
-        self.workers_data = getattr(scheduler, 'workers_data', [])
-        self.worker_ids = getattr(scheduler, 'worker_ids', set())
-        self.schedule = getattr(scheduler, 'schedule', {})
-        self.holidays = getattr(scheduler, 'holidays', set())
-        self.start_date = getattr(scheduler, 'start_date', None)
-        self.end_date = getattr(scheduler, 'end_date', None)
-        self.num_shifts = getattr(scheduler, 'num_shifts', 0)
-        self.gap_between_shifts = getattr(scheduler, 'gap_between_shifts', 1)
-        self.max_consecutive_weekends = getattr(scheduler, 'max_consecutive_weekends', 2)
-
-        # --- Tracking data copies ---
-        self.worker_assignments = getattr(scheduler, 'worker_assignments', {})
-        self.worker_shift_counts = getattr(scheduler, 'worker_shift_counts', {})
-        # self.worker_weekends = scheduler.worker_weekend_shifts # <--- CHANGE THIS LINE (line 43)
-        self.worker_weekends = getattr(scheduler, 'worker_weekends', {}) # <--- TO THIS (Use correct name and getattr)
-        self.worker_posts = getattr(scheduler, 'worker_posts', {})
-        self.last_assignment_date = getattr(scheduler, 'last_assignment_date', {})
-        self.consecutive_shifts = getattr(scheduler, 'consecutive_shifts', {})
-        self.worker_weekdays = getattr(scheduler, 'worker_weekdays', {})
-        self.worker_holiday_counts = getattr(scheduler, 'worker_holiday_counts', {})
-        self.worker_target_percentages = getattr(scheduler, 'worker_target_percentages', {})
-
-        logging.info("DataManager initialized") 
-
-    def load_config(self):
-        """Loads configuration from the specified JSON file."""
-        config_path = self.scheduler.config_path
-        logging.info(f"Attempting to load configuration from: {config_path}")
-
-        if not os.path.exists(config_path):
-            logging.error(f"Configuration file not found at {config_path}")
-            raise ConfigError(f"Configuration file not found: {config_path}")
-
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config_data = json.load(f)
-            logging.info(f"Configuration file loaded successfully from {config_path}.")
-
-            # --- Convert date strings to datetime objects ---
-            date_format = ("%d-%m-%Y" )
-            logging.debug(f"Using date format for parsing: {date_format}") 
-
-            # Convert start_date and end_date
-            for key in ['start_date', 'end_date']:
-                if key in config_data and isinstance(config_data[key], str):
-                    try:
-                        # Convert to datetime objects
-                        config_data[key] = datetime.strptime(config_data[key], date_format)
-                        logging.debug(f"Converted {key} string '{config_data[key].strftime(date_format)}' to datetime") # Use format in log
-                    except ValueError:
-                        error_msg = f"Invalid date format for {key}: {config_data[key]}. Expected {date_format}."
-                        logging.error(error_msg)
-                        raise ConfigError(error_msg) # Use updated error message
-
-            # Convert holidays list
-            if 'holidays' in config_data:
-                if isinstance(config_data['holidays'], list):
-                    converted_holidays = []
-                    for holiday_str in config_data['holidays']:
-                        if isinstance(holiday_str, str):
-                            try:
-                                # Convert to date objects
-                                holiday_date = datetime.strptime(holiday_str, date_format).date()
-                                converted_holidays.append(holiday_date)
-                            except ValueError:
-                                error_msg = f"Invalid date format for holiday: {holiday_str}. Expected {date_format}."
-                                logging.error(error_msg)
-                                raise ConfigError(error_msg) # Use updated error message
-                        elif isinstance(holiday_str, date):
-                             converted_holidays.append(holiday_str)
-                        elif isinstance(holiday_str, datetime):
-                             converted_holidays.append(holiday_str.date())
-                        else:
-                            error_msg = f"Invalid holiday entry type: {type(holiday_str)}. Expected date string ({date_format}) or date/datetime object."
-                            logging.error(error_msg)
-                            raise ConfigError(error_msg) # Use updated error message
-                    config_data['holidays'] = converted_holidays
-                    logging.debug(f"Converted holidays list to date objects: {len(config_data['holidays'])} items") # Adjusted log
-                else:
-                    error_msg = f"'holidays' key found in config, but it's not a list (type: {type(config_data['holidays'])})."
-                    logging.error(error_msg)
-                    raise ConfigError(error_msg)
-
-            logging.info("Configuration dates parsed successfully.") 
-            return config_data
-
-        except json.JSONDecodeError as e:
-            logging.error(f"Error decoding JSON from config file {config_path}: {e}")
-            raise ConfigError(f"Invalid JSON in config file: {config_path} - {e}") from e
-        except Exception as e:
-            logging.error(f"Failed to read or process config file {config_path}: {e}", exc_info=True)
-            if isinstance(e, ConfigError):
-                raise
-            raise ConfigError(f"Could not process config file: {config_path} - {e}") from e
-
-    def load_workers_data(self):
-        """
-        Loads worker data directly from the already loaded scheduler configuration dictionary.
-        """
-        logging.info("Attempting to load workers data from scheduler config...")
-
-        # --- Get worker data from the config dictionary ---
-        # The config should have been loaded by load_config before this method is called
-        if not hasattr(self.scheduler, 'config') or not self.scheduler.config:
-             logging.error("Scheduler config not loaded before trying to load workers data.")
-             raise DataError("Cannot load workers data: Scheduler configuration is missing.")
-
-        workers_data = self.scheduler.config.get('workers_data') # Use .get for safety
-
-        # --- Validate the retrieved data ---
-        if workers_data is None:
-            logging.error("Workers data ('workers_data' key) not found in the loaded configuration.")
-            raise DataError("Workers data not found in configuration.")
-
-        if not isinstance(workers_data, list):
-            logging.error(f"Workers data in configuration is not a list (type: {type(workers_data)}).")
-            raise DataError("Invalid format for workers data in configuration: Expected a list.")
-
-        if not workers_data:
-            logging.warning("Workers data list in configuration is empty.")
-            # Depending on requirements, you might raise an error or return an empty list.
-            # Let's raise an error for now, as scheduling usually requires workers.
-            raise DataError("Workers data list in configuration is empty.")
-
-        # --- Basic validation of worker entries ---
-        for i, worker in enumerate(workers_data):
-             if not isinstance(worker, dict):
-                  raise DataError(f"Invalid worker entry at index {i}: Expected a dictionary, got {type(worker)}.")
-             if 'id' not in worker:
-                  raise DataError(f"Invalid worker entry at index {i}: Missing 'id' key.")
-             # Add more checks if needed (e.g., expected keys, types)
-
-        logging.info(f"Successfully loaded {len(workers_data)} workers from configuration.")
-        return workers_data
     
-    def load_holidays(self, config, start_date, end_date):
-        """Loads and parses holidays from config or a separate file."""
-        # This example assumes holidays are LIST OF STRINGS "DD-MM-YYYY" in the config
-        # It now correctly parses them into date objects.
-        holidays_config = config.get('holidays', []) # Get the list of strings from config
-        holidays = set()
-        date_format = "%d-%m-%Y" # Match the format used
-
-        if not isinstance(start_date, datetime) or not isinstance(end_date, datetime):
-             logging.error("load_holidays requires start_date and end_date to be datetime objects.")
-             # Handle this error appropriately, maybe return empty set or raise
-             return holidays # Return empty set for now
-
-        # Convert datetime to date for comparison if needed, or compare directly
-        start_date_date = start_date.date()
-        end_date_date = end_date.date()
-
-        for holiday_str in holidays_config:
-             if isinstance(holiday_str, str): # Check if it's a string to parse
-                 try:
-                     # Parse using the correct format
-                     holiday_dt = datetime.strptime(holiday_str, date_format)
-                     holiday_date = holiday_dt.date() # Get the date part
-
-                     # Only add if within the schedule range (inclusive)
-                     if start_date_date <= holiday_date <= end_date_date:
-                         holidays.add(holiday_date)
-                 except ValueError:
-                     logging.warning(f"Invalid holiday format found in config: '{holiday_str}'. Expected {date_format}.")
-                 except TypeError:
-                     logging.warning(f"Invalid type for holiday found in config: '{holiday_str}' ({type(holiday_str)}). Expected string.")
-             else:
-                  logging.warning(f"Non-string item found in holidays list: {holiday_str}. Skipping.")
-
-        logging.debug(f"Parsed {len(holidays)} holidays within the schedule range.")
-        return holidays
+    # Methods
+    def __init__(self, scheduler: 'Scheduler'):
+        """
+        Initialize the data manager
+        
+        Args:
+            scheduler: The main Scheduler object
+        """
+        self.scheduler = scheduler
+        
+        # Store references to frequently accessed attributes
+        self.schedule = scheduler.schedule
+        self.worker_assignments = scheduler.worker_assignments
+        self.worker_posts = scheduler.worker_posts
+        self.worker_weekdays = scheduler.worker_weekdays
+        self.worker_weekends = scheduler.worker_weekends
+        self.num_shifts = scheduler.num_shifts
+        self.workers_data = scheduler.workers_data
+        
+        # Flag to track if data integrity has been verified
+        self.data_integrity_verified = False
+        
+        # Initialize monthly targets structure
+        self.monthly_targets = {}
+        
+        logging.info("DataManager initialized")
         
     def ensure_data_integrity(self):
         """Check and fix data integrity between scheduler data structures"""

@@ -318,7 +318,7 @@ class SetupScreen(Screen):
             }
         
             # Notify user
-            self.show_message('Introduce los datos de cada médico')
+            self.show_message('Introduce los datos de los médicos')
     
         except Exception as e:
             self.show_error(f"Error saving configuration: {str(e)}")
@@ -492,13 +492,13 @@ class WorkerDetailsScreen(Screen):
         self.form_layout.add_widget(self.mandatory_days)
 
         # Days Off
-        self.form_layout.add_widget(Label(text='Días Fuera:'))
+        self.form_layout.add_widget(Label(text='Días fuera:'))
         self.days_off = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.days_off)
 
         # Incompatibility Checkbox - Updated Layout
         checkbox_label = Label(
-            text='Incompatibilidad:',
+            text='Incompatible:',
             size_hint_y=None,
             height=40
         )
@@ -711,7 +711,7 @@ class WorkerDetailsScreen(Screen):
             self.prev_btn.disabled = False
         
             if current_index + 1 == total_workers - 1:
-                self.next_btn.text = 'Finaliza'
+                self.next_btn.text = 'Finish'
         else:
             # We're at the last worker, generate schedule
             self.generate_schedule()
@@ -740,9 +740,9 @@ class WorkerDetailsScreen(Screen):
         
         # Update button text based on position
         if current_index == app.schedule_config.get('num_workers', 0) - 1:
-            self.next_btn.text = 'Finaliza'
+            self.next_btn.text = 'Finish'
         else:
-            self.next_btn.text = 'Siguiente'
+            self.next_btn.text = 'Next'
             
         # Disable Previous button if on first worker
         self.prev_btn.disabled = (current_index == 0)
@@ -754,124 +754,41 @@ class WorkerDetailsScreen(Screen):
         popup.open()
 
     def generate_schedule(self):
-        """
-        Validates final worker data, saves config to a temporary file,
-        instantiates the Scheduler with the temp file path, generates the schedule,
-        and transitions to the calendar view.
-        """
         app = App.get_running_app()
-
-        # --- 1. Final Validation and Save ---
-        # First, ensure the current worker's data is valid and saved
-        if not self.validate_worker_data():
-            self.show_error("Please fix errors before generating the schedule.")
-            return
-        # Save the potentially updated data for the *last* worker entered
-        self.save_worker_data(None) # Use the existing save logic
-
         try:
-            print("DEBUG: generate_schedule - Starting schedule generation process...")
+            print("DEBUG: generate_schedule - Starting schedule generation...") # <<< ADD
+            scheduler = Scheduler(app.schedule_config)
+            success = scheduler.generate_schedule()  # This returns True/False
 
-            # --- 2. Prepare and Save Config to Temporary File ---
-            temp_config_path = 'temp_config.json' # Define the temporary file path
+            if not success:  # Schedule generation failed
+                raise ValueError("Failed to generate schedule - validation errors detected")
 
-            # Prepare a copy of the config data suitable for JSON serialization
-            config_to_save = {}
-            if hasattr(app, 'schedule_config') and app.schedule_config:
-                 config_to_save = app.schedule_config.copy() # Work on a copy
-            else:
-                 # Handle case where config might be missing (though unlikely at this stage)
-                 self.show_error("Configuration data is missing.")
-                 return
+            # Get the actual schedule from the scheduler object
+            schedule = scheduler.schedule
 
-            # Convert datetime objects to strings (using DD-MM-YYYY format as used elsewhere)
-            # Important: DataManager.load_config needs to expect this format when reading!
-            date_format = "%d-%m-%Y"
-            if 'start_date' in config_to_save and isinstance(config_to_save['start_date'], datetime):
-                config_to_save['start_date'] = config_to_save['start_date'].strftime(date_format)
-            if 'end_date' in config_to_save and isinstance(config_to_save['end_date'], datetime):
-                config_to_save['end_date'] = config_to_save['end_date'].strftime(date_format)
-            if 'holidays' in config_to_save:
-                # Ensure holidays are also strings in the correct format
-                config_to_save['holidays'] = [
-                    d.strftime(date_format) for d in config_to_save.get('holidays', []) if isinstance(d, datetime)
-                ]
-            # Workers data should already be serializable if loaded/saved correctly
+            if not schedule:  # Schedule is empty
+                raise ValueError("Generated schedule is empty")
 
-            # Remove non-serializable or unnecessary items if they exist
-            config_to_save.pop('schedule', None) # Don't save the old schedule
-            # config_to_save.pop('current_worker_index', None) # Probably not needed by Scheduler
+            app.schedule_config['schedule'] = schedule
+            print("DEBUG: generate_schedule - Schedule generated and saved to config.") # <<< ADD
 
-            # Save the prepared config data to the temporary JSON file
-            try:
-                with open(temp_config_path, 'w', encoding='utf-8') as f:
-                    json.dump(config_to_save, f, indent=2)
-                print(f"DEBUG: Saved current config snapshot to {temp_config_path}")
-            except Exception as save_err:
-                 # Log the specific error during saving
-                 print(f"DEBUG: ERROR saving temporary config file '{temp_config_path}': {save_err}")
-                 logging.error(f"Failed to save temporary config to {temp_config_path}", exc_info=True)
-                 # Show user-friendly error
-                 self.show_error(f"Failed to prepare config file: {save_err}")
-                 return # Stop execution if saving fails
-
-            # --- 3. Instantiate Scheduler with File Path ---
-            print(f"DEBUG: Instantiating Scheduler with config_path='{temp_config_path}'")
-            # Call Scheduler with the *path* to the temporary file
-            # Also pass other necessary paths if the constructor expects them
-            scheduler = Scheduler(
-                config_path=temp_config_path,
-                workers_path='workers.json', # Assuming this is your workers file name
-                previous_schedule_path=None # Or provide path if needed
-            )
-            print("DEBUG: Scheduler instantiated.")
-
-            # --- 4. Generate Schedule ---
-            print("DEBUG: Calling scheduler.generate_schedule()...")
-            success = scheduler.generate_schedule() # This should return True/False
-            print(f"DEBUG: scheduler.generate_schedule() returned: {success}")
-
-            if not success:
-                # If generate_schedule itself indicates failure (e.g., returns False)
-                # It might have logged details internally. We show a generic message.
-                print("DEBUG: Schedule generation reported failure (returned False).")
-                # Check scheduler logs for specific reasons
-                self.show_error("Schedule generation failed. Check logs for details.")
-                return # Stop if generation failed
-
-            # --- 5. Retrieve and Store Generated Schedule ---
-            # Get the actual schedule dictionary from the scheduler instance
-            generated_schedule_dict = scheduler.schedule
-            print(f"DEBUG: Retrieved schedule from scheduler (is empty: {not generated_schedule_dict})")
-
-            if not generated_schedule_dict:
-                # If the schedule dictionary is empty after generation
-                print("DEBUG: Generated schedule dictionary is empty!")
-                self.show_error("Schedule generation completed, but the resulting schedule is empty.")
-                return # Stop if the result is empty
-
-            # Store the generated schedule back into the app's config (potentially overwriting old one)
-            # Important: The keys should be datetime.date objects, ensure scheduler provides this format
-            app.schedule_config['schedule'] = generated_schedule_dict
-            print("DEBUG: generate_schedule - Generated schedule saved back to app.schedule_config.")
-
-            # --- 6. Show Success and Transition ---
             popup = Popup(title='Success',
                          content=Label(text='Schedule generated successfully!'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
-            print("DEBUG: generate_schedule - Success popup opened.")
+            print("DEBUG: generate_schedule - Success popup opened.") # <<< ADD
 
-            print("DEBUG: generate_schedule - Preparing to switch to calendar_view...")
+            # --- Transition Point ---
+            print("DEBUG: generate_schedule - Preparing to switch to calendar_view...") # <<< ADD
             self.manager.current = 'calendar_view'
-            print("DEBUG: generate_schedule - Switched manager.current to calendar_view.")
+            print("DEBUG: generate_schedule - Switched manager.current to calendar_view.") # <<< ADD
+            # --- End Transition Point ---
 
         except Exception as e:
-            # Catch any other unexpected errors during the process
             error_message = f"Failed to generate schedule: {str(e)}"
-            print(f"DEBUG: generate_schedule - UNEXPECTED ERROR: {error_message}")
-            logging.error(error_message, exc_info=True) # Log the full traceback
-            self.show_error(error_message) # Show error to the user
+            print(f"DEBUG: generate_schedule - ERROR: {error_message}") # <<< ADD ERROR PRINT
+            logging.error(error_message, exc_info=True) # Keep logging
+            self.show_error(error_message)
         
     def clear_inputs(self):
         self.worker_id.text = ''
