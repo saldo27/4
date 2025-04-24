@@ -75,7 +75,7 @@ class DataManager:
             logging.info(f"Configuration file loaded successfully from {config_path}.")
 
             # --- Convert date strings to datetime objects ---
-            date_format = "%d-%m-%Y" )
+            date_format = ("%d-%m-%Y" )
             logging.debug(f"Using date format for parsing: {date_format}") 
 
             # Convert start_date and end_date
