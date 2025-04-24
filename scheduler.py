@@ -144,26 +144,38 @@ class Scheduler:
             logging.info("Scheduler components (Builder, Validator, etc.) initialized.")
 
             # 11. Initialize Tracking Data Structures (based on loaded workers)
-            self.initialize_tracking_data() # Make sure this initializes all needed tracking dicts correctly
+            self.initialize_tracking_data()
             logging.info("Tracking data structures initialized.")
 
-            # 12. Load Previous Schedule (Optional)
-            if self.previous_schedule_path:
-                previous_schedule_data = self.data_manager.load_previous_schedule()
-                # TODO: Integrate previous schedule data if needed
-                logging.info("Previous schedule data loaded (integration pending).")
-
+            # 12. Load Previous Schedule (if applicable)
+            self.load_previous_schedule() # This method exists in DataManager, called via Scheduler wrapper
+            logging.info("Previous schedule processed (if provided).")
+            
             # 13. Initialize Schedule Structure
-            self.schedule = self._initialize_schedule_structure()
-            logging.info("Schedule structure initialized.")
-         
+            # self.schedule = self._initialize_schedule_structure() # <--- REPLACE THIS LINE (line 157)
+            logging.debug("Initializing empty schedule structure...")
+            schedule_structure = {}
+            current_date = self.start_date
+            while current_date <= self.end_date:
+                # Initialize each day with a list of None values for each shift
+                schedule_structure[current_date] = [None] * self.num_shifts
+                current_date += timedelta(days=1)
+            self.schedule = schedule_structure
+            logging.info(f"Initialized schedule structure for {len(self.schedule)} days.")
+
+            # 14. Log Initialization Complete
+            self._log_initialization_summary()
+            logging.info("Scheduler initialized successfully.")
+
+                     
         # --- Error Handling for Initialization ---
         except (ConfigError, DataError) as e:
              logging.error(f"Initialization failed due to configuration or data error: {e}", exc_info=True)
              raise SchedulerError(f"Scheduler initialization failed: {e}") from e
         except Exception as e:
-            logging.error(f"Unexpected error during Scheduler initialization: {e}", exc_info=True)
-            raise SchedulerError(f"Unexpected error during Scheduler initialization: {e}") from e
+             logging.error(f"Unexpected error during Scheduler initialization: {e}", exc_info=True)
+             # Wrap unexpected errors in SchedulerError for consistent handling upstream
+             raise SchedulerError(f"Unexpected error during Scheduler initialization: {e}") from e
         
     def _validate_config(self, config):
         """
@@ -1602,6 +1614,29 @@ class Scheduler:
                 raise e
             else:
                 raise SchedulerError(f"Failed during finalization: {str(e)}")
+            
+    def load_previous_schedule(self):
+        """Loads and potentially integrates a previous schedule."""
+        # This method likely calls self.data_manager.load_previous_schedule()
+        # Ensure DataManager handles the logic of loading and merging if necessary
+        try:
+            # Assuming data_manager handles the actual loading/merging into self.schedule
+            self.data_manager.load_previous_schedule()
+        except Exception as e:
+            logging.error(f"Error loading previous schedule: {e}", exc_info=True)
+            # Decide if this should be a fatal error or just a warning
+            # raise SchedulerError(f"Failed to load previous schedule: {e}") from e
+
+    def _log_initialization_summary(self):
+        """Logs a summary of the key parameters after initialization."""
+        logging.info("--- Scheduler Initialization Summary ---")
+        logging.info(f"Period: {self.start_date.strftime('%Y-%m-%d')} to {self.end_date.strftime('%Y-%m-%d')}")
+        logging.info(f"Shifts per day: {self.num_shifts}")
+        logging.info(f"Workers: {len(self.workers_data)}")
+        logging.info(f"Holidays: {len(self.holidays)}")
+        logging.info(f"Schedule Days: {len(self.schedule)}")
+        logging.info("--------------------------------------")
+        
     def log_schedule_summary(self, title="Schedule Summary"):
         """ Helper method to log key statistics about the current schedule state. """
         logging.info(f"--- {title} ---")
