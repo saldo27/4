@@ -259,6 +259,23 @@ class ScheduleBuilder:
     
         return worker2_id in incompatible_with_1 or worker1_id in incompatible_with_2 
 
+    def _is_weekend_or_holiday(self, date):
+        """
+        Checks if a given date is a weekend (Sat/Sun) or a defined holiday.
+        Delegates the check to the ConstraintChecker.
+        """
+        try:
+            # Assuming self.constraint_checker is initialized and has the is_weekend_day method
+            # which correctly checks date.weekday() >= 5 or date in self.holidays
+            return self.constraint_checker.is_weekend_day(date)
+        except AttributeError:
+            logging.error("ConstraintChecker or is_weekend_day method not found. Falling back to basic check.")
+            # Fallback logic (less ideal as it duplicates logic)
+            return date.weekday() >= 5 or date in self.holidays
+        except Exception as e:
+             logging.error(f"Error checking if date is weekend/holiday: {e}", exc_info=True)
+             return False # Fail safe
+
     def _would_exceed_weekend_limit(self, worker_id, date):
         """
         Check if adding this date would exceed the worker's weekend limit
@@ -503,7 +520,8 @@ class ScheduleBuilder:
 
         total_schedule_wh_shifts = sum(
             1 for date, assignments in self.scheduler.schedule.items()
-            if self._is_weekend_or_holiday(date)
+            # Ensure this line calls the newly added helper method
+            if self._is_weekend_or_holiday(date) # <<< Check this call uses the correct name
             for worker in assignments if worker is not None
         )
 
@@ -2429,7 +2447,8 @@ class ScheduleBuilder:
             }
             worker_weekend_counts = {w['id']: 0 for w in self.workers_data}
             for date, assignments in self.scheduler.schedule.items():
-                if self._is_weekend_or_holiday(date): # Use the correct helper
+                # Ensure this line calls the newly added helper method
+                if self._is_weekend_or_holiday(date): # <<< Check this call uses the correct name
                     for worker_id in assignments:
                         if worker_id is not None and worker_id in worker_weekend_counts:
                             worker_weekend_counts[worker_id] += 1
@@ -2482,7 +2501,7 @@ class ScheduleBuilder:
 
                     # Iterate through over_worker's W/H shifts and under_worker's non-W/H shifts
                     for date_over, post_over in over_shifts:
-                        if not self._is_weekend_or_holiday(date_over):
+                        if not self._is_weekend_or_holiday(date_over): 
                             continue # We only want to move W/H shifts *from* the over-assigned worker
 
                         for date_under, post_under in under_shifts:
