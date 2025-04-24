@@ -42,14 +42,14 @@ class Scheduler:
         self.start_date = None
         self.end_date = None
         self.num_shifts = 0
-        self.gap_between_shifts = 1 # Default, will be overridden by config
+        self.gap_between_shifts = 3 # Default, will be overridden by config
         self.max_consecutive_weekends = 2 # Default, will be overridden by config
         self.max_shifts_per_worker = 999 # Placeholder, calculated later
 
         # Tracking data (will be properly initialized later)
         self.worker_assignments = {}
         self.worker_shift_counts = {}
-        self.worker_weekend_shifts = {} # Renamed from worker_weekend_counts for clarity if it tracks count
+        self.worker_weekend = {} # Renamed from worker_weekend_counts for clarity if it tracks count
         self.worker_posts = {}
         self.last_assignment_date = {}
         self.consecutive_shifts = {}
@@ -80,6 +80,11 @@ class Scheduler:
         self.stats = None # Initialize if StatisticsCalculator is used
         self.eligibility_tracker = None # Initialize if WorkerEligibilityTracker is used
 
+        # --- ADDED: Ensure initialize_tracking_data initializes worker_weekends correctly ---
+        # If initialize_tracking_data is defined later, make sure it includes:
+        self.worker_weekends = {w['id']: [] for w in self.workers_data}
+        # If it's not defined, this initial {} might be okay, but initializing with empty lists is safer.
+                
         # --- Main Initialization Logic (Handles potential errors) ---
         try:
             # 1. Load Config
@@ -127,8 +132,8 @@ class Scheduler:
             logging.info("Worker target percentages and shift limits calculated.")
 
             # 10. Initialize Remaining Components
-            self.schedule_builder = ScheduleBuilder(self)
-            self.reporter = Reporting(self)
+            self.schedule_builder = ScheduleBuilder(self) # This line should now work
+            # self.reporter = Reporting(self) # This class seems missing based on previous code, comment out if needed
             self.stats = StatisticsCalculator(self) # If used
             self.eligibility_tracker = WorkerEligibilityTracker(...) # If used, needs relevant data
             logging.info("Scheduler components (Builder, Validator, etc.) initialized.")
@@ -235,7 +240,22 @@ class Scheduler:
             for holiday in config['holidays']:
                 if not isinstance(holiday, datetime):
                     raise SchedulerError("Each holiday must be a datetime object")
-                
+
+    def initialize_tracking_data(self):
+        """Initializes dictionaries used for tracking worker assignments and stats."""
+        logging.debug("Initializing tracking data structures...")
+        self.worker_assignments = {w['id']: set() for w in self.workers_data}
+        self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
+        self.worker_weekends = {w['id']: [] for w in self.workers_data} # Initialize correctly
+        self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
+        self.last_assignment_date = {w['id']: None for w in self.workers_data}
+        self.consecutive_shifts = {w['id']: 0 for w in self.workers_data}
+        self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
+        self.worker_holiday_counts = {w['id']: 0 for w in self.workers_data}
+        # Initialize constraint_skips if used
+        # self.constraint_skips = {w['id']: {'gap': [], 'incompatibility': [], 'reduced_gap': []} for w in self.workers_data}
+        logging.debug("Tracking data structures initialized.")
+            
     def _log_initialization(self):
         """Log initialization parameters"""
         logging.info("Scheduler initialized with:")
