@@ -1344,7 +1344,7 @@ class Scheduler:
                      logging.info("Improvement Loop: Balanced last post assignments.")
                      improvement_made_in_cycle = True
 
-                if self.schedule_builder._improve_weekend_distribution():
+                if self.schedule_builder.improve_weekend_distribution():
                      logging.info("Improvement Loop: Improved weekend distribution.")
                      improvement_made_in_cycle = True
 
