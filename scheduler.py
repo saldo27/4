@@ -91,9 +91,6 @@ class Scheduler:
             self._validate_config(self.config) # Pass the loaded config
             logging.info("Configuration validated.")
 
-            # 3. Configure Logging (based on validated config)
-            self._configure_logging()
-
             # 4. Define Schedule Period & Core Params (from validated config)
             self._define_schedule_period() # Sets self.start_date, self.end_date
             self.num_shifts = self.config.get('shifts_per_day', 1) # Example: Get from config
