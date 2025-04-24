@@ -318,7 +318,7 @@ class SetupScreen(Screen):
             }
         
             # Notify user
-            self.show_message('Introduce los datos de los médicos')
+            self.show_message('Introduce los datos de cada médico')
     
         except Exception as e:
             self.show_error(f"Error saving configuration: {str(e)}")
@@ -492,13 +492,13 @@ class WorkerDetailsScreen(Screen):
         self.form_layout.add_widget(self.mandatory_days)
 
         # Days Off
-        self.form_layout.add_widget(Label(text='Días fuera:'))
+        self.form_layout.add_widget(Label(text='Días Fuera:'))
         self.days_off = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.days_off)
 
         # Incompatibility Checkbox - Updated Layout
         checkbox_label = Label(
-            text='Incompatible:',
+            text='Incompatibilidad:',
             size_hint_y=None,
             height=40
         )
