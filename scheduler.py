@@ -136,63 +136,63 @@ class Scheduler:
             self.builder = ScheduleBuilder(self)
     
 
-        # Load configuration and data
-        try:
-            # Load config first as other components might depend on it
-            self.config = self.data_manager.load_config()
-            logging.info("Configuration loaded successfully.")
-            self._configure_logging() # Configure logging based on loaded config
+            # Load configuration and data
+            try:
+                # Load config first as other components might depend on it
+                self.config = self.data_manager.load_config()
+                logging.info("Configuration loaded successfully.")
+                self._configure_logging() # Configure logging based on loaded config
 
-            # Define schedule period based on config
-            self._define_schedule_period()
+                # Define schedule period based on config
+                self._define_schedule_period()
 
-            # Load holidays based on config and period
-            self.holidays = self.data_manager.load_holidays(self.config, self.start_date, self.end_date)
-            logging.info(f"Holidays loaded: {len(self.holidays)} days.")
+                # Load holidays based on config and period
+                self.holidays = self.data_manager.load_holidays(self.config, self.start_date, self.end_date)
+                logging.info(f"Holidays loaded: {len(self.holidays)} days.")
 
-            # Initialize ConstraintChecker now that config and holidays are loaded
-            self.constraint_checker = ConstraintChecker(self) # Pass self (scheduler)
-            logging.info("ConstraintChecker initialized.")
+                # Initialize ConstraintChecker now that config and holidays are loaded
+                self.constraint_checker = ConstraintChecker(self) # Pass self (scheduler)
+                logging.info("ConstraintChecker initialized.")
 
-            # Load worker data
-            self.workers_data = self.data_manager.load_workers_data()
-            self.worker_ids = {w['id'] for w in self.workers_data} # Populate worker IDs set
-            self._preprocess_worker_data() # Calculate work_dates etc.
-            logging.info(f"Worker data loaded and preprocessed for {len(self.workers_data)} workers.")
+                # Load worker data
+                self.workers_data = self.data_manager.load_workers_data()
+                self.worker_ids = {w['id'] for w in self.workers_data} # Populate worker IDs set
+                self._preprocess_worker_data() # Calculate work_dates etc.
+                logging.info(f"Worker data loaded and preprocessed for {len(self.workers_data)} workers.")
 
-            # <<< --- ADDED: Calculate target percentages after loading worker data --- >>>
-            self._calculate_target_percentages()
+                # <<< --- ADDED: Calculate target percentages after loading worker data --- >>>
+                self._calculate_target_percentages()
 
-            # Initialize other components that depend on loaded data
-            self.schedule_builder = ScheduleBuilder(self)
-            self.validator = ScheduleValidator(self)
-            self.visualizer = ScheduleVisualizer(self)
-            self.reporter = Reporting(self)
-            logging.info("Scheduler components (Builder, Validator, Visualizer, Reporter) initialized.")
+                # Initialize other components that depend on loaded data
+                self.schedule_builder = ScheduleBuilder(self)
+                self.validator = ScheduleValidator(self)
+                self.visualizer = ScheduleVisualizer(self)
+                self.reporter = Reporting(self)
+                logging.info("Scheduler components (Builder, Validator, Visualizer, Reporter) initialized.")
 
-            # Initialize tracking data structures based on loaded workers
-            self.initialize_tracking_data()
-            logging.info("Tracking data structures initialized.")
+                # Initialize tracking data structures based on loaded workers
+                self.initialize_tracking_data()
+                logging.info("Tracking data structures initialized.")
 
-            # Load previous schedule if path provided
-            if self.previous_schedule_path:
-                previous_schedule_data = self.data_manager.load_previous_schedule()
-                # TODO: Integrate previous schedule data (e.g., for constraints like consecutive shifts crossing period boundaries)
-                logging.info("Previous schedule data loaded (integration pending).")
+                # Load previous schedule if path provided
+                if self.previous_schedule_path:
+                    previous_schedule_data = self.data_manager.load_previous_schedule()
+                    # TODO: Integrate previous schedule data (e.g., for constraints like consecutive shifts crossing period boundaries)
+                    logging.info("Previous schedule data loaded (integration pending).")
 
-            # Initialize the schedule structure for the period
-            self.schedule = self._initialize_schedule_structure()
-            logging.info("Schedule structure initialized.")
+                # Initialize the schedule structure for the period
+                self.schedule = self._initialize_schedule_structure()
+                logging.info("Schedule structure initialized.")
 
-        except (ConfigError, DataError) as e:
-             logging.error(f"Initialization failed due to configuration or data error: {e}", exc_info=True)
-             # Propagate the error or handle it to prevent scheduler use
-             raise SchedulerError(f"Scheduler initialization failed: {e}") from e
-        except Exception as e:
-            logging.error(f"Unexpected error during Scheduler initialization: {e}", exc_info=True)
-            raise SchedulerError(f"Unexpected error during Scheduler initialization: {e}") from e
+            except (ConfigError, DataError) as e:
+                 logging.error(f"Initialization failed due to configuration or data error: {e}", exc_info=True)
+                 # Propagate the error or handle it to prevent scheduler use
+                 raise SchedulerError(f"Scheduler initialization failed: {e}") from e
+            except Exception as e:
+                logging.error(f"Unexpected error during Scheduler initialization: {e}", exc_info=True)
+                raise SchedulerError(f"Unexpected error during Scheduler initialization: {e}") from e
 
-        logging.info("Scheduler initialized successfully.")
+                logging.info("Scheduler initialized successfully.")
 
         
     def _validate_config(self, config):
