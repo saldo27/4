@@ -63,7 +63,7 @@ class Scheduler:
 
         # --- Initialize Helper Modules (stubs or basic init) ---
         # DataManager needs paths, DateUtils
-        self.data_manager = DataManager(self.config_path, self.workers_path, self.previous_schedule_path, self.date_utils)
+        self.data_manager = DataManager(self)
         # Others initialized inside the try block after data is loaded
         self.constraint_checker = None
         self.schedule_builder = None
