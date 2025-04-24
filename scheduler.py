@@ -56,7 +56,7 @@ class Scheduler:
         self.worker_weekdays = {}
         self.worker_holiday_counts = {} # Keep if distinct from weekend shifts
         self.worker_target_percentages = {} # For workload balancing
-        self.constraint_skips = {} # Initialize if used
+        #self.constraint_skips = {} # Initialize if used
 
         # Best schedule state
         self.best_schedule_state = None
@@ -64,16 +64,26 @@ class Scheduler:
         # --- Initialize Helper Modules (stubs or basic init) ---
         # DataManager needs paths, DateUtils
         self.data_manager = DataManager(self)
+
+        # DataManager needs paths, DateUtils
+        try: # ADD THIS TRY BLOCK
+            self.data_manager = DataManager(self)
+            logging.info("DataManager initialized successfully.") # ADD Log success
+        except Exception as dm_init_error: # ADD THIS EXCEPT BLOCK
+            logging.error(f"CRITICAL ERROR: Failed to initialize DataManager: {dm_init_error}", exc_info=True)
+            # Re-raise immediately to stop initialization, making the root cause clear
+            raise SchedulerError(f"Failed to initialize DataManager: {dm_init_error}") from dm_init_error
         # Others initialized inside the try block after data is loaded
         self.constraint_checker = None
         self.schedule_builder = None
         self.reporter = None
-        # self.stats = None # Initialize if StatisticsCalculator is used
-        # self.eligibility_tracker = None # Initialize if WorkerEligibilityTracker is used
+        self.stats = None # Initialize if StatisticsCalculator is used
+        self.eligibility_tracker = None # Initialize if WorkerEligibilityTracker is used
 
         # --- Main Initialization Logic (Handles potential errors) ---
         try:
             # 1. Load Config
+            # This line should now only be reached if DataManager initialized successfully
             self.config = self.data_manager.load_config()
             logging.info("Configuration loaded successfully.")
 
@@ -110,6 +120,8 @@ class Scheduler:
             self._preprocess_worker_data() # This should set 'incompatible_with' lists
             logging.info("Worker data preprocessed.")
 
+            self.constraint_checker = None 
+
             # 9. Calculate Target Percentages & Max Shifts
             self._calculate_target_percentages()
             self._calculate_max_shifts_per_worker() # Calculate after workers and period known
@@ -119,8 +131,8 @@ class Scheduler:
             # 10. Initialize Remaining Components
             self.schedule_builder = ScheduleBuilder(self)
             self.reporter = Reporting(self)
-            # self.stats = StatisticsCalculator(self) # If used
-            # self.eligibility_tracker = WorkerEligibilityTracker(...) # If used, needs relevant data
+            self.stats = StatisticsCalculator(self) # If used
+            self.eligibility_tracker = WorkerEligibilityTracker(...) # If used, needs relevant data
             logging.info("Scheduler components (Builder, Validator, etc.) initialized.")
 
             # 11. Initialize Tracking Data Structures (based on loaded workers)
@@ -136,7 +148,7 @@ class Scheduler:
             # 13. Initialize Schedule Structure
             self.schedule = self._initialize_schedule_structure()
             logging.info("Schedule structure initialized.")
-
+         
         # --- Error Handling for Initialization ---
         except (ConfigError, DataError) as e:
              logging.error(f"Initialization failed due to configuration or data error: {e}", exc_info=True)
@@ -144,7 +156,6 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Unexpected error during Scheduler initialization: {e}", exc_info=True)
             raise SchedulerError(f"Unexpected error during Scheduler initialization: {e}") from e
-
         
     def _validate_config(self, config):
         """
