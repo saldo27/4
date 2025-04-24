@@ -58,8 +58,7 @@ class DataManager:
         self.worker_holiday_counts = getattr(scheduler, 'worker_holiday_counts', {})
         self.worker_target_percentages = getattr(scheduler, 'worker_target_percentages', {})
 
-        logging.info("DataManager initialized") ge
-
+        logging.info("DataManager initialized") 
 
     def load_config(self):
         """Loads configuration from the specified JSON file."""
