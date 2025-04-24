@@ -135,7 +135,12 @@ class Scheduler:
             self.schedule_builder = ScheduleBuilder(self) # This line should now work
             # self.reporter = Reporting(self) # This class seems missing based on previous code, comment out if needed
             self.stats = StatisticsCalculator(self) # If used
-            self.eligibility_tracker = WorkerEligibilityTracker(...) # If used, needs relevant data
+            self.eligibility_tracker = WorkerEligibilityTracker(
+                workers_data=self.workers_data,
+                holidays=self.holidays,
+                gap_between_shifts=self.gap_between_shifts,
+                max_consecutive_weekends=self.max_consecutive_weekends
+            ) 
             logging.info("Scheduler components (Builder, Validator, etc.) initialized.")
 
             # 11. Initialize Tracking Data Structures (based on loaded workers)
