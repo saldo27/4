@@ -123,7 +123,8 @@ class ScheduleBuilder:
         except AttributeError:
              # Handle case where date_utils might not be initialized yet (shouldn't happen here, but safety)
              logging.error("date_utils not available in scheduler during _is_mandatory check.")
-             return False    
+             return False
+            
     def _is_worker_unavailable(self, worker_id, date):
         """
         Check if a worker is unavailable on a specific date
@@ -494,6 +495,66 @@ class ScheduleBuilder:
         self.schedule[date][post] = worker_id
         self._update_tracking_data(worker_id, date, post)
         return True
+
+    def _calculate_target_weekend_holiday_shifts(self, worker_id):
+        """Calculates the target number of weekend/holiday shifts for a worker."""
+        worker_data = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        if not worker_data: return 0
+
+        total_schedule_wh_shifts = sum(
+            1 for date, assignments in self.scheduler.schedule.items()
+            if self._is_weekend_or_holiday(date)
+            for worker in assignments if worker is not None
+        )
+
+        # Ensure worker_target_percentages exists in scheduler
+        worker_target_percentage = self.scheduler.worker_target_percentages.get(worker_id, 0)
+
+        target = total_schedule_wh_shifts * worker_target_percentage
+        # logging.debug(f"Worker {worker_id}: Target W/H Shifts = {total_schedule_wh_shifts} * {worker_target_percentage:.2f} = {target:.2f}")
+        return target
+ 
+    def _calculate_target_last_post_shifts(self, worker_id):
+        """Calculates the target number of shifts in the last post for a worker."""
+        worker_data = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        if not worker_data:
+            return 0
+
+        last_post_index = self.scheduler.num_shifts - 1
+        if last_post_index < 0: return 0 # No shifts
+
+        total_schedule_last_post_shifts = sum(
+            1 for date in self.scheduler.schedule
+            if len(self.scheduler.schedule[date]) > last_post_index and self.scheduler.schedule[date][last_post_index] is not None
+        )
+
+        # Use the pre-calculated overall target shift percentage
+        worker_target_percentage = self.scheduler.worker_target_percentages.get(worker_id, 0)
+
+        target = total_schedule_last_post_shifts * worker_target_percentage
+        # logging.debug(f"Worker {worker_id}: Target Last Post Shifts = {total_schedule_last_post_shifts} * {worker_target_percentage:.2f} = {target:.2f}")
+        return target
+
+    def _get_worker_shifts(self, worker_id):
+        """
+        Retrieves a list of (date, post) tuples representing all shifts
+        currently assigned to the specified worker_id in the schedule.
+        """
+        shifts = []
+        # Access the schedule through the scheduler instance
+        schedule_data = self.scheduler.schedule
+        if not schedule_data:
+            logging.warning(f"_get_worker_shifts called with empty schedule data.")
+            return shifts
+
+        for date, assignments in schedule_data.items():
+            # assignments is a list like [worker_id_post0, worker_id_post1, ...]
+            for post_index, assigned_worker in enumerate(assignments):
+                if assigned_worker == worker_id:
+                    shifts.append((date, post_index))
+
+        # logging.debug(f"Shifts found for worker {worker_id}: {[(d.strftime('%Y-%m-%d'), p) for d, p in shifts]}") # Optional detailed logging
+        return shifts
     
     def _can_swap_assignments(self, worker_id, date_from, post_from, date_to, post_to):
         """
@@ -2323,142 +2384,146 @@ class ScheduleBuilder:
         # Indent level 1 (aligned with the initial 'if' and 'for' loops)
         return True
 
-    def _improve_weekend_distribution(self):
+    def improve_weekend_distribution(self): # <<< CORRECTED METHOD NAME
         """
-        Improve weekend distribution by balancing weekend shifts more evenly among workers
-        and attempting to resolve weekend overloads
+        Attempts to balance the distribution of weekend and holiday shifts
+        among workers based on their target percentages.
+        It tries to swap weekend/holiday shifts from over-assigned workers
+        with non-weekend/holiday shifts from under-assigned workers.
         """
-        logging.info("Attempting to improve weekend distribution")
-    
-        # Ensure data consistency before proceeding
-        self._ensure_data_integrity()
+        logging.info("Attempting to improve weekend/holiday distribution...")
+        self.scheduler.ensure_data_integrity("Start of Weekend Improvement") # Ensure counts are up-to-date
 
-        # Count weekend assignments for each worker by month
-        weekend_counts_by_month = {}
-        months = {}
-        current_date = self.start_date
-        while current_date <= self.end_date:
-            month_key = (current_date.year, current_date.month)
-            if month_key not in months: months[month_key] = []
-            months[month_key].append(current_date)
-            current_date += timedelta(days=1)
+        max_attempts = 25 # Limit iterations to prevent potential infinite loops
+        changes_made_overall = False
 
-        for month_key, dates in months.items():
-            weekend_counts = {}
-            for worker in self.workers_data:
-                worker_id = worker['id']
-                # Use scheduler references
-                weekend_count = sum(1 for date in dates if date in self.scheduler.worker_assignments.get(worker_id, set()) and self.date_utils.is_weekend_day(date))
-                weekend_counts[worker_id] = weekend_count
-            weekend_counts_by_month[month_key] = weekend_counts
-    
-        changes_made = 0
-    
-         # Identify months with overloaded workers
-        for month_key, weekend_counts in weekend_counts_by_month.items():
-            overloaded_workers = []
-            underloaded_workers = []
+        for attempt in range(max_attempts):
+            logging.debug(f"--- Weekend Balance Attempt {attempt + 1}/{max_attempts} ---")
 
-            for worker in self.workers_data:
-                worker_id = worker['id']
-                work_percentage = worker.get('work_percentage', 100)
-                max_weekends = self.max_consecutive_weekends # Use configured param
-                if work_percentage < 100:
-                    max_weekends = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
+            # 1. Calculate Targets and Current Counts
+            worker_weekend_targets = {
+                w['id']: self._calculate_target_weekend_holiday_shifts(w['id'])
+                for w in self.workers_data
+            }
+            worker_weekend_counts = {w['id']: 0 for w in self.workers_data}
+            for date, assignments in self.scheduler.schedule.items():
+                if self._is_weekend_or_holiday(date): # Use the correct helper
+                    for worker_id in assignments:
+                        if worker_id is not None and worker_id in worker_weekend_counts:
+                            worker_weekend_counts[worker_id] += 1
 
-                weekend_count = weekend_counts.get(worker_id, 0)
+            # 2. Identify Deviating Workers
+            over_assigned = []
+            under_assigned = []
+            deviation_threshold = 1.0 # How far from target triggers action (allows for rounding)
 
-                if weekend_count > max_weekends:
-                    overloaded_workers.append((worker_id, weekend_count, max_weekends))
-                elif weekend_count < max_weekends:
-                    available_slots = max_weekends - weekend_count
-                    underloaded_workers.append((worker_id, weekend_count, available_slots))
+            for worker_id, count in worker_weekend_counts.items():
+                target = worker_weekend_targets.get(worker_id, 0)
+                deviation = count - target
+                if deviation > deviation_threshold:
+                    over_assigned.append({'id': worker_id, 'deviation': deviation})
+                elif deviation < -deviation_threshold:
+                    under_assigned.append({'id': worker_id, 'deviation': deviation})
 
-            overloaded_workers.sort(key=lambda x: x[1] - x[2], reverse=True)
-            underloaded_workers.sort(key=lambda x: x[2], reverse=True)
+            # Sort by deviation magnitude
+            over_assigned.sort(key=lambda x: x['deviation'], reverse=True)
+            under_assigned.sort(key=lambda x: x['deviation'])
 
-            month_dates = months[month_key]
-            # Use scheduler reference for holidays
-            weekend_dates = [date for date in month_dates if self.date_utils.is_weekend_day(date) or date in self.scheduler.holidays]
+            logging.debug(f"Targets: { {k: round(v, 1) for k, v in worker_weekend_targets.items()} }")
+            logging.debug(f"Counts: {worker_weekend_counts}")
+            logging.debug(f"Over-assigned (W/H): {over_assigned}")
+            logging.debug(f"Under-assigned (W/H): {under_assigned}")
 
-            # Try to redistribute weekend shifts
-            for over_worker_id, over_count, over_limit in overloaded_workers:
-                if not underloaded_workers: break # No one to give shifts to
+            if not over_assigned or not under_assigned:
+                logging.info(f"Weekend/Holiday distribution seems balanced after {attempt} attempts.")
+                break # Exit if no significant deviations
 
-                # Iterate through potential dates to move FROM
-                possible_dates_to_move = [wd for wd in weekend_dates if over_worker_id in self.scheduler.schedule.get(wd, [])]
-                random.shuffle(possible_dates_to_move) # Randomize
+            # 3. Find and Execute Best Swap for this Attempt
+            best_swap_found_this_attempt = None
+            best_improvement_score = 0 # Higher is better (represents reduction in total deviation)
 
-                for weekend_date in possible_dates_to_move:
+            for over_worker in over_assigned:
+                over_id = over_worker['id']
+                current_over_dev = over_worker['deviation']
 
-                    # --- ADDED MANDATORY CHECK ---
-                    if self._is_mandatory(over_worker_id, weekend_date):
-                        logging.debug(f"Cannot move worker {over_worker_id} from mandatory weekend shift on {weekend_date.strftime('%Y-%m-%d')} for balancing.")
-                        continue # Skip this date for this worker
-                    # --- END ADDED CHECK ---
+                # Optimization: If a swap was already found, don't check lower-priority over-assigned workers
+                if best_swap_found_this_attempt:
+                    break
 
-                    # Find the post this worker is assigned to
-                    try:
-                        # Use scheduler reference
-                        post = self.scheduler.schedule[weekend_date].index(over_worker_id)
-                    except (ValueError, KeyError, IndexError):
-                         logging.warning(f"Inconsistency finding post for {over_worker_id} on {weekend_date} during weekend balance.")
-                         continue # Skip if schedule state is inconsistent
+                for under_worker in under_assigned:
+                    under_id = under_worker['id']
+                    current_under_dev = under_worker['deviation']
 
-                    swap_done_for_date = False
-                    # Try to find a suitable replacement (underloaded worker X)
-                    for under_worker_id, _, _ in underloaded_workers:
-                        # Skip if X is already assigned on this date
-                        # Use scheduler reference
-                        if under_worker_id in self.scheduler.schedule[weekend_date]:
-                            continue
+                    # Get potential shifts for swapping
+                    over_shifts = self._get_worker_shifts(over_id)
+                    under_shifts = self._get_worker_shifts(under_id)
 
-                        # Check if X can be assigned to this shift (using strict check)
-                        if self._can_assign_worker(under_worker_id, weekend_date, post):
-                            # Make the swap (directly modify scheduler's data)
-                            self.scheduler.schedule[weekend_date][post] = under_worker_id
-                            self.scheduler.worker_assignments[over_worker_id].remove(weekend_date)
-                            self.scheduler.worker_assignments.setdefault(under_worker_id, set()).add(weekend_date)
+                    # Iterate through over_worker's W/H shifts and under_worker's non-W/H shifts
+                    for date_over, post_over in over_shifts:
+                        if not self._is_weekend_or_holiday(date_over):
+                            continue # We only want to move W/H shifts *from* the over-assigned worker
 
-                            # Update tracking data for BOTH workers
-                            self.scheduler._update_tracking_data(over_worker_id, weekend_date, post, removing=True)
-                            self.scheduler._update_tracking_data(under_worker_id, weekend_date, post)
+                        for date_under, post_under in under_shifts:
+                            if self._is_weekend_or_holiday(date_under):
+                                continue # We only want to move non-W/H shifts *from* the under-assigned worker
 
-                            # Update local counts for this month
-                            weekend_counts[over_worker_id] -= 1
-                            weekend_counts[under_worker_id] += 1
+                            # --- Evaluate this potential swap ---
+                            # Calculate current total absolute deviation for these two workers
+                            current_total_abs_dev = abs(current_over_dev) + abs(current_under_dev)
 
-                            changes_made += 1
-                            logging.info(f"Improved weekend distribution: Moved weekend shift on {weekend_date.strftime('%Y-%m-%d')} "
-                                         f"from worker {over_worker_id} to worker {under_worker_id}")
+                            # Calculate deviation *after* the potential swap
+                            # Over worker loses 1 W/H shift, Under worker gains 1 W/H shift
+                            new_over_dev = current_over_dev - 1
+                            new_under_dev = current_under_dev + 1
+                            new_total_abs_dev = abs(new_over_dev) + abs(new_under_dev)
 
-                            # Update overloaded/underloaded lists locally for this month
-                            if weekend_counts[over_worker_id] <= over_limit:
-                                overloaded_workers = [(w, c, l) for w, c, l in overloaded_workers if w != over_worker_id]
+                            # Calculate how much the deviation is reduced
+                            improvement_score = current_total_abs_dev - new_total_abs_dev
 
-                            for i, (w_id, count, slots) in enumerate(underloaded_workers):
-                                if w_id == under_worker_id:
-                                    # Check if worker X is now at their max for the month
-                                    worker_X_data = next((w for w in self.workers_data if w['id'] == under_worker_id), None)
-                                    worker_X_max = self.max_consecutive_weekends
-                                    if worker_X_data and worker_X_data.get('work_percentage', 100) < 100:
-                                        worker_X_max = max(1, int(self.max_consecutive_weekends * worker_X_data.get('work_percentage', 100) / 100))
+                            # Check if this swap improves balance more than the current best
+                            # AND is valid according to hard constraints
+                            # Use >= to allow swaps with equal improvement score (might help break ties)
+                            if improvement_score >= best_improvement_score:
+                                logging.debug(f"  Testing Swap: {over_id}({date_over.strftime('%d/%m')}-P{post_over}) <-> {under_id}({date_under.strftime('%d/%m')}-P{post_under}). Improvement: {improvement_score:.2f}")
+                                if self._can_swap_assignments(over_id, under_id, date_over, post_over, date_under, post_under):
+                                    logging.debug(f"    Valid swap found. Current best improvement: {improvement_score:.2f}")
+                                    best_improvement_score = improvement_score
+                                    best_swap_found_this_attempt = {
+                                        'over_id': over_id, 'under_id': under_id,
+                                        'date_over': date_over, 'post_over': post_over,
+                                        'date_under': date_under, 'post_under': post_under,
+                                        'score': improvement_score # Store the score
+                                    }
+                                else:
+                                     logging.debug("    Swap invalid due to hard constraints.")
 
-                                    if weekend_counts[w_id] >= worker_X_max:
-                                        underloaded_workers.pop(i)
-                                    break # Found worker X in the list
 
-                            swap_done_for_date = True
-                            break # Found a swap for this weekend_date, move to next overloaded worker
+            # --- Perform the best swap found in this attempt ---
+            if best_swap_found_this_attempt and best_swap_found_this_attempt['score'] > 0.1: # Require some minimal improvement
+                swap = best_swap_found_this_attempt
+                logging.info(f"[Weekend Balance] Swapping: "
+                             f"{swap['over_id']} ({swap['date_over'].strftime('%Y-%m-%d')} P{swap['post_over']}) "
+                             f"<-> {swap['under_id']} ({swap['date_under'].strftime('%Y-%m-%d']} P{swap['post_under']}) "
+                             f"to improve W/H balance (Improvement: {swap['score']:.2f})")
 
-                # If a swap was done for this overloaded worker, break to check the next (potentially new) most overloaded worker
-                if swap_done_for_date:
-                     break # Break from the weekend_date loop for the current over_worker_id
+                self._perform_swap(
+                    swap['over_id'], swap['under_id'],
+                    swap['date_over'], swap['post_over'],
+                    swap['date_under'], swap['post_under']
+                )
+                changes_made_overall = True
+                # Go to the next attempt after making a swap
+                break # Exit inner loops and restart attempt loop
+            else:
+                # If no beneficial swap was found in this attempt for any pair
+                logging.info(f"No beneficial weekend/holiday swaps found in attempt {attempt + 1}.")
+                break # Exit the loop, no further improvement possible in this phase
 
-        logging.info(f"Weekend distribution improvement: made {changes_made} changes")
-        if changes_made > 0:
-            self._save_current_as_best() # Save if changes were made
-        return changes_made > 0
+        # --- End of attempts loop ---
+
+        self.scheduler.ensure_data_integrity("End of Weekend Improvement")
+        logging.info(f"Finished weekend/holiday distribution improvement. Made changes: {changes_made_overall}")
+        return changes_made_overall
 
     def _fix_incompatibility_violations(self):
         """
