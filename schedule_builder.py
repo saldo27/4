@@ -2415,7 +2415,7 @@ class ScheduleBuilder:
         with non-weekend/holiday shifts from under-assigned workers.
         """
         logging.info("Attempting to improve weekend/holiday distribution...")
-        self.scheduler.ensure_data_integrity("Start of Weekend Improvement") # Ensure counts are up-to-date
+        self.scheduler._ensure_data_integrity("Start of Weekend Improvement") # Ensure counts are up-to-date
 
         max_attempts = 25 # Limit iterations to prevent potential infinite loops
         changes_made_overall = False
@@ -2526,8 +2526,8 @@ class ScheduleBuilder:
                 swap = best_swap_found_this_attempt
                 logging.info(f"[Weekend Balance] Swapping: "
                              f"{swap['over_id']} ({swap['date_over'].strftime('%Y-%m-%d')} P{swap['post_over']}) "
-                             f"<-> {swap['under_id']} ({swap['date_under'].strftime('%Y-%m-%d']} P{swap['post_under']}) "
-                             f"to improve W/H balance (Improvement: {swap['score']:.2f})")
+                             f"<-> {swap['under_id']} ({swap['date_under'].strftime('%Y-%m-%d')} P{swap['post_under']}) "
+                             f"to improve W/H balance (Improvement: {swap['score']:.2f}).")
 
                 self._perform_swap(
                     swap['over_id'], swap['under_id'],
@@ -2544,7 +2544,7 @@ class ScheduleBuilder:
 
         # --- End of attempts loop ---
 
-        self.scheduler.ensure_data_integrity("End of Weekend Improvement")
+        self.scheduler._ensure_data_integrity("End of Weekend Improvement")
         logging.info(f"Finished weekend/holiday distribution improvement. Made changes: {changes_made_overall}")
         return changes_made_overall
 
