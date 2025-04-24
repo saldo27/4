@@ -2,15 +2,21 @@
 from datetime import datetime, timedelta
 import logging
 import sys
+from dateutil.relativedelta import relativedelta
 import random
 import copy
+from data_manager import DataManager
 from constraint_checker import ConstraintChecker
 from schedule_builder import ScheduleBuilder
 from data_manager import DataManager
 from utilities import DateTimeUtils
 from statistics import StatisticsCalculator
-from exceptions import SchedulerError
+from exceptions import ConfigError, DataError, SchedulerError
 from worker_eligibility import WorkerEligibilityTracker
+from date_utils import DateTimeUtils
+from schedule_validator import ScheduleValidator
+from visualization import ScheduleVisualizer
+from reporting import Reporting
 
 # Class definition
 class SchedulerError(Exception):
@@ -31,13 +37,15 @@ class Scheduler:
             # Then validate the configuration
             self._validate_config(config)
         
-            # Basic setup from config
-            self.config = config
-            self.start_date = config['start_date']
-            self.end_date = config['end_date']
-            self.num_shifts = config['num_shifts']
-            self.workers_data = config['workers_data']
-            self.holidays = config.get('holidays', [])
+            # Core data structures
+            self.config = {}
+            self.workers_data = []
+            self.worker_ids = set()
+            self.schedule = {} # {date: [worker_id_post0, worker_id_post1, ...]}
+            self.holidays = set()
+            self.start_date = None
+            self.end_date = None
+            self.num_shifts = 0 # Number of shifts (posts) per day
 
             # --- START: Build incompatibility lists ---
             incompatible_worker_ids = {
@@ -74,7 +82,11 @@ class Scheduler:
             self.worker_holiday_counts = {w['id']: 0 for w in self.workers_data}
             # Store last assignment date for gap checks
             self.last_assignment_date = {w['id']: None for w in self.workers_data}
-                      
+            # <<< --- ADDED: Target Percentage Attribute --- >>>
+            self.worker_target_percentages = {} # {worker_id: target_percentage_float (0.0-1.0)}
+
+            # Best schedule found during optimization
+            self.best_schedule_state = None # Stores the complete state of the best schedule          
             # Initialize worker targets
             for worker in self.workers_data:
                 if 'target_shifts' not in worker:
@@ -111,6 +123,9 @@ class Scheduler:
                 self.gap_between_shifts,
                 self.max_consecutive_weekends
             )
+            self.validator = None # Initialized after data loading
+            self.visualizer = None # Initialized after data loading
+            self.reporter = None # Initialized after data loading
 
             # Calculate targets before proceeding
             self._calculate_target_shifts()
@@ -121,9 +136,64 @@ class Scheduler:
             self.builder = ScheduleBuilder(self)
     
 
+        # Load configuration and data
+        try:
+            # Load config first as other components might depend on it
+            self.config = self.data_manager.load_config()
+            logging.info("Configuration loaded successfully.")
+            self._configure_logging() # Configure logging based on loaded config
+
+            # Define schedule period based on config
+            self._define_schedule_period()
+
+            # Load holidays based on config and period
+            self.holidays = self.data_manager.load_holidays(self.config, self.start_date, self.end_date)
+            logging.info(f"Holidays loaded: {len(self.holidays)} days.")
+
+            # Initialize ConstraintChecker now that config and holidays are loaded
+            self.constraint_checker = ConstraintChecker(self) # Pass self (scheduler)
+            logging.info("ConstraintChecker initialized.")
+
+            # Load worker data
+            self.workers_data = self.data_manager.load_workers_data()
+            self.worker_ids = {w['id'] for w in self.workers_data} # Populate worker IDs set
+            self._preprocess_worker_data() # Calculate work_dates etc.
+            logging.info(f"Worker data loaded and preprocessed for {len(self.workers_data)} workers.")
+
+            # <<< --- ADDED: Calculate target percentages after loading worker data --- >>>
+            self._calculate_target_percentages()
+
+            # Initialize other components that depend on loaded data
+            self.schedule_builder = ScheduleBuilder(self)
+            self.validator = ScheduleValidator(self)
+            self.visualizer = ScheduleVisualizer(self)
+            self.reporter = Reporting(self)
+            logging.info("Scheduler components (Builder, Validator, Visualizer, Reporter) initialized.")
+
+            # Initialize tracking data structures based on loaded workers
+            self.initialize_tracking_data()
+            logging.info("Tracking data structures initialized.")
+
+            # Load previous schedule if path provided
+            if self.previous_schedule_path:
+                previous_schedule_data = self.data_manager.load_previous_schedule()
+                # TODO: Integrate previous schedule data (e.g., for constraints like consecutive shifts crossing period boundaries)
+                logging.info("Previous schedule data loaded (integration pending).")
+
+            # Initialize the schedule structure for the period
+            self.schedule = self._initialize_schedule_structure()
+            logging.info("Schedule structure initialized.")
+
+        except (ConfigError, DataError) as e:
+             logging.error(f"Initialization failed due to configuration or data error: {e}", exc_info=True)
+             # Propagate the error or handle it to prevent scheduler use
+             raise SchedulerError(f"Scheduler initialization failed: {e}") from e
         except Exception as e:
-            logging.error(f"Initialization error: {str(e)}")
-            raise SchedulerError(f"Failed to initialize scheduler: {str(e)}")
+            logging.error(f"Unexpected error during Scheduler initialization: {e}", exc_info=True)
+            raise SchedulerError(f"Unexpected error during Scheduler initialization: {e}") from e
+
+        logging.info("Scheduler initialized successfully.")
+
         
     def _validate_config(self, config):
         """
@@ -452,7 +522,50 @@ class Scheduler:
     
         # Log the results
         logging.info("Monthly targets calculated")
-        return True  
+        return True
+
+    def _calculate_target_percentages(self):
+        """
+        Calculates the target percentage of total shifts each worker should have,
+        based on their work_percentage relative to the total work_percentage sum.
+        Populates self.worker_target_percentages.
+        """
+        logging.debug("Calculating worker target percentages...")
+        self.worker_target_percentages = {} # Reset just in case
+
+        # Ensure work_percentage is treated as a number, default to 0 if missing/invalid
+        total_work_percentage_sum = sum(
+            float(w.get('work_percentage', 0)) for w in self.workers_data
+            if str(w.get('work_percentage', 0)).replace('.','',1).isdigit() # Basic check if it looks like a number
+        )
+
+        if total_work_percentage_sum <= 0:
+            logging.warning("Total work percentage sum is zero or less. Cannot calculate target percentages accurately. Assigning equal targets.")
+            # Fallback: Assign equal target percentage if sum is invalid
+            num_workers = len(self.workers_data)
+            if num_workers > 0:
+                equal_target = 1.0 / num_workers
+                for worker in self.workers_data:
+                    self.worker_target_percentages[worker['id']] = equal_target
+            else:
+                 # No workers, percentages remain empty
+                 pass
+            return
+
+        # Calculate based on valid sum
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            try:
+                # Ensure work_percentage is float, default 0
+                work_percentage = float(worker.get('work_percentage', 0))
+            except (ValueError, TypeError):
+                work_percentage = 0.0
+
+            target_percentage = work_percentage / total_work_percentage_sum if total_work_percentage_sum > 0 else 0.0
+            self.worker_target_percentages[worker_id] = target_percentage
+            logging.debug(f"  Worker {worker_id}: Work%={work_percentage}, TotalSum={total_work_percentage_sum}, Target%={target_percentage:.4f}")
+
+        logging.debug(f"Calculated target percentages: {self.worker_target_percentages}")
     
     def _redistribute_excess_shifts(self, excess_shifts, excluded_worker_id, mandatory_shifts_by_worker):
         """Helper method to redistribute excess shifts from one worker to others, respecting mandatory assignments"""
@@ -519,37 +632,64 @@ class Scheduler:
 
     def _ensure_data_integrity(self):
         """
-        Ensure all data structures are consistent before schedule generation
+        Verifies and recalculates tracking data based on the current schedule state.
         """
-        logging.info("Ensuring data integrity...")
-    
-        # Ensure all workers have proper data structures
-        for worker in self.workers_data:
-            worker_id = worker['id']
-        
-            # Ensure worker assignments tracking
-            if worker_id not in self.worker_assignments:
-                self.worker_assignments[worker_id] = set()
-            
-            # Ensure worker posts tracking
-            if worker_id not in self.worker_posts:
-                self.worker_posts[worker_id] = set()
-            
-            # Ensure weekday tracking
-            if worker_id not in self.worker_weekdays:
-                self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
-            
-            # Ensure weekend tracking
-            if worker_id not in self.worker_weekends:
-                self.worker_weekends[worker_id] = []
-    
-        # Ensure schedule dictionary is initialized
-        for current_date in self._get_date_range(self.start_date, self.end_date):
-            if current_date not in self.schedule:
-                self.schedule[current_date] = [None] * self.num_shifts
-    
-        logging.info("Data integrity check completed")
-        return True
+        logging.debug("Ensuring data integrity: Recalculating tracking data from schedule.")
+
+        # Reset tracking data
+        temp_worker_assignments = {w_id: set() for w_id in self.worker_ids}
+        temp_worker_shift_counts = {w_id: 0 for w_id in self.worker_ids}
+        temp_worker_weekend_shifts = {w_id: 0 for w_id in self.worker_ids}
+        temp_worker_posts = {w_id: {p: 0 for p in range(self.num_shifts)} for w_id in self.worker_ids}
+        # Keep last_assigned_date and consecutive_shifts? Or reset? Resetting might be safer.
+        temp_last_assigned_date = {}
+        temp_consecutive_shifts = {w_id: 0 for w_id in self.worker_ids}
+        temp_worker_weekdays = {w_id: {wd: 0 for wd in range(7)} for w_id in self.worker_ids}
+
+
+        # Recalculate from schedule
+        sorted_dates = sorted(self.schedule.keys())
+        for date in sorted_dates:
+            assignments_today = self.schedule.get(date, [])
+            for post, worker_id in enumerate(assignments_today):
+                if worker_id is not None:
+                    if worker_id not in self.worker_ids:
+                        logging.error(f"Data Integrity Error: Worker ID '{worker_id}' found in schedule on {date} but not in loaded workers_data!")
+                        # Decide how to handle: remove from schedule? Raise error?
+                        self.schedule[date][post] = None # Remove invalid worker
+                        continue # Skip tracking updates for this invalid entry
+
+                    # Basic tracking
+                    temp_worker_assignments.setdefault(worker_id, set()).add(date)
+                    temp_worker_shift_counts[worker_id] = temp_worker_shift_counts.get(worker_id, 0) + 1
+                    temp_worker_posts[worker_id][post] = temp_worker_posts[worker_id].get(post, 0) + 1
+                    temp_worker_weekdays[worker_id][date.weekday()] = temp_worker_weekdays[worker_id].get(date.weekday(), 0) + 1
+
+                    # Weekend/Holiday tracking
+                    if self.constraint_checker.is_weekend_day(date): # Use constraint checker method
+                         temp_worker_weekend_shifts[worker_id] = temp_worker_weekend_shifts.get(worker_id, 0) + 1
+
+                    # Consecutive shifts tracking (simplified version)
+                    if worker_id in temp_last_assigned_date:
+                        if (date - temp_last_assigned_date[worker_id]).days == 1:
+                            temp_consecutive_shifts[worker_id] = temp_consecutive_shifts.get(worker_id, 0) + 1
+                        else:
+                            temp_consecutive_shifts[worker_id] = 1 # Reset streak
+                    else:
+                         temp_consecutive_shifts[worker_id] = 1 # First shift found
+
+                    temp_last_assigned_date[worker_id] = date # Update last assigned date
+
+        # Update the scheduler's tracking attributes
+        self.worker_assignments = temp_worker_assignments
+        self.worker_shift_counts = temp_worker_shift_counts
+        self.worker_weekend_shifts = temp_worker_weekend_shifts
+        self.worker_posts = temp_worker_posts
+        self.last_assigned_date = temp_last_assigned_date
+        self.consecutive_shifts = temp_consecutive_shifts
+        self.worker_weekdays = temp_worker_weekdays
+
+        logging.debug("Data integrity check complete. Tracking data recalculated.")
 
     def _update_tracking_data(self, worker_id, date, post, removing=False):
         """
