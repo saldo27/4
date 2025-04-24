@@ -55,30 +55,76 @@ class DataManager:
     def load_config(self):
         """
         Loads the main configuration file.
+        Converts date strings (start_date, end_date) back to datetime objects.
         If the file doesn't exist, logs a warning and returns a default config dictionary.
         """
         config_path = self.scheduler.config_path
+        # Ensure config_path is actually a string before proceeding
+        if not isinstance(config_path, (str, bytes, os.PathLike)):
+             logging.error(f"Invalid config_path type received by DataManager: {type(config_path)}. Expected a string path.")
+             # Depending on desired behavior, either raise error or use default
+             # raise ConfigError(f"Invalid configuration path type: {type(config_path)}")
+             logging.warning(f"Invalid config_path type: {type(config_path)}. Using default configuration.")
+             return DEFAULT_CONFIG.copy() # Fallback to default
+
         logging.info(f"Attempting to load configuration from: {config_path}")
+        date_format = "%d-%m-%Y" # The format used in main.py for saving
 
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config_data = json.load(f)
                 logging.info(f"Configuration file loaded successfully from {config_path}.")
-                # Optional: You could merge defaults with loaded data here if needed
-                # merged_config = {**DEFAULT_CONFIG, **config_data}
-                # return merged_config
-                return config_data
+
+                # --- Convert date strings back to datetime objects ---
+                if 'start_date' in config_data and isinstance(config_data['start_date'], str):
+                    try:
+                        config_data['start_date'] = datetime.strptime(config_data['start_date'], date_format)
+                        logging.debug(f"Converted start_date string to datetime: {config_data['start_date']}")
+                    except ValueError:
+                         logging.error(f"Invalid start_date format in config file: {config_data['start_date']}. Expected {date_format}.")
+                         raise ConfigError(f"Invalid start_date format: {config_data['start_date']}")
+                else:
+                     # Handle case where start_date might be missing or not a string (though it should be based on main.py)
+                     if 'start_date' not in config_data:
+                          logging.warning("start_date missing in config file.")
+                     elif not isinstance(config_data['start_date'], str):
+                          logging.warning(f"start_date in config is not a string (type: {type(config_data['start_date'])}). Skipping conversion.")
+
+
+                if 'end_date' in config_data and isinstance(config_data['end_date'], str):
+                    try:
+                        config_data['end_date'] = datetime.strptime(config_data['end_date'], date_format)
+                        logging.debug(f"Converted end_date string to datetime: {config_data['end_date']}")
+                    except ValueError:
+                         logging.error(f"Invalid end_date format in config file: {config_data['end_date']}. Expected {date_format}.")
+                         raise ConfigError(f"Invalid end_date format: {config_data['end_date']}")
+                else:
+                     # Handle case where end_date might be missing or not a string
+                     if 'end_date' not in config_data:
+                          logging.warning("end_date missing in config file.")
+                     elif not isinstance(config_data['end_date'], str):
+                          logging.warning(f"end_date in config is not a string (type: {type(config_data['end_date'])}). Skipping conversion.")
+
+                # Note: Holiday strings should be handled by load_holidays or similar logic later
+                # Do NOT parse holidays here unless load_config is solely responsible for them.
+
+                return config_data # Return the dictionary with datetime objects
+
             except json.JSONDecodeError as e:
                 logging.error(f"Error decoding JSON from config file {config_path}: {e}")
                 raise ConfigError(f"Invalid JSON in configuration file: {config_path} - {e}") from e
             except Exception as e:
-                logging.error(f"Failed to read config file {config_path}: {e}")
-                raise ConfigError(f"Could not read configuration file: {config_path} - {e}") from e
+                logging.error(f"Failed to read or process config file {config_path}: {e}", exc_info=True)
+                # Re-raise as ConfigError or allow original exception? Re-raising provides context.
+                raise ConfigError(f"Could not read/process configuration file: {config_path} - {e}") from e
         else:
             # File does not exist, return the default config
             logging.warning(f"Configuration file not found at {config_path}. Using default configuration.")
-            return DEFAULT_CONFIG.copy() # Return a copy to prevent modification of 
+            # Ensure default dates are datetime objects if needed downstream immediately
+            default_copy = DEFAULT_CONFIG.copy()
+            # Example: if default_copy['start_date'] is None, it might need setting here or handled later
+            return default_copy
 
     def load_workers_data(self):
         """Loads worker data from the specified JSON file."""
@@ -103,25 +149,37 @@ class DataManager:
 
     def load_holidays(self, config, start_date, end_date):
         """Loads and parses holidays from config or a separate file."""
-        # Placeholder: Implement logic based on how holidays are stored (e.g., in config or separate file)
-        # This example assumes holidays are a list of "DD-MM" strings in the config
-        holidays_config = config.get('holidays', [])
+        # This example assumes holidays are LIST OF STRINGS "DD-MM-YYYY" in the config
+        # It now correctly parses them into date objects.
+        holidays_config = config.get('holidays', []) # Get the list of strings from config
         holidays = set()
-        current_year = start_date.year
-        end_year = end_date.year
+        date_format = "%d-%m-%Y" # Match the format used
 
-        while current_year <= end_year:
-             for holiday_str in holidays_config:
+        if not isinstance(start_date, datetime) or not isinstance(end_date, datetime):
+             logging.error("load_holidays requires start_date and end_date to be datetime objects.")
+             # Handle this error appropriately, maybe return empty set or raise
+             return holidays # Return empty set for now
+
+        # Convert datetime to date for comparison if needed, or compare directly
+        start_date_date = start_date.date()
+        end_date_date = end_date.date()
+
+        for holiday_str in holidays_config:
+             if isinstance(holiday_str, str): # Check if it's a string to parse
                  try:
-                     # Assuming format "DD-MM"
-                     day, month = map(int, holiday_str.split('-'))
-                     holiday_date = datetime(current_year, month, day).date()
-                     # Only add if within the schedule range
-                     if start_date <= holiday_date <= end_date:
+                     # Parse using the correct format
+                     holiday_dt = datetime.strptime(holiday_str, date_format)
+                     holiday_date = holiday_dt.date() # Get the date part
+
+                     # Only add if within the schedule range (inclusive)
+                     if start_date_date <= holiday_date <= end_date_date:
                          holidays.add(holiday_date)
                  except ValueError:
-                     logging.warning(f"Invalid holiday format found: {holiday_str}. Expected DD-MM.")
-             current_year += 1
+                     logging.warning(f"Invalid holiday format found in config: '{holiday_str}'. Expected {date_format}.")
+                 except TypeError:
+                     logging.warning(f"Invalid type for holiday found in config: '{holiday_str}' ({type(holiday_str)}). Expected string.")
+             else:
+                  logging.warning(f"Non-string item found in holidays list: {holiday_str}. Skipping.")
 
         logging.debug(f"Parsed {len(holidays)} holidays within the schedule range.")
         return holidays
