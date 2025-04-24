@@ -2415,8 +2415,7 @@ class ScheduleBuilder:
         with non-weekend/holiday shifts from under-assigned workers.
         """
         logging.info("Attempting to improve weekend/holiday distribution...")
-        self.scheduler._ensure_data_integrity("Start of Weekend Improvement") # Ensure counts are up-to-date
-
+        self.scheduler._ensure_data_integrity()
         max_attempts = 25 # Limit iterations to prevent potential infinite loops
         changes_made_overall = False
 
@@ -2544,7 +2543,7 @@ class ScheduleBuilder:
 
         # --- End of attempts loop ---
 
-        self.scheduler._ensure_data_integrity("End of Weekend Improvement")
+        self.scheduler._ensure_data_integrity()
         logging.info(f"Finished weekend/holiday distribution improvement. Made changes: {changes_made_overall}")
         return changes_made_overall
 
