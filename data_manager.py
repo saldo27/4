@@ -25,32 +25,41 @@ class DataManager:
     """Handles data management and tracking for the scheduler"""
 
     # Methods
-    def __init__(self, scheduler: 'Scheduler'):
+    def __init__(self, scheduler):
         """
-        Initialize the data manager
+        Initialize the DataManager.
 
         Args:
-            scheduler: The main Scheduler object
+            scheduler: The main Scheduler instance.
         """
-        self.scheduler = scheduler
+        self.scheduler = scheduler # Keep a reference to the scheduler
+        # --- Initialize attributes by copying from scheduler IF they exist ---
+        # Use .get() or hasattr() for safety, especially during initialization order
+        self.config = getattr(scheduler, 'config', {}) # Get config if exists
+        self.workers_data = getattr(scheduler, 'workers_data', [])
+        self.worker_ids = getattr(scheduler, 'worker_ids', set())
+        self.schedule = getattr(scheduler, 'schedule', {})
+        self.holidays = getattr(scheduler, 'holidays', set())
+        self.start_date = getattr(scheduler, 'start_date', None)
+        self.end_date = getattr(scheduler, 'end_date', None)
+        self.num_shifts = getattr(scheduler, 'num_shifts', 0)
+        self.gap_between_shifts = getattr(scheduler, 'gap_between_shifts', 1)
+        self.max_consecutive_weekends = getattr(scheduler, 'max_consecutive_weekends', 2)
 
-        # Store references to frequently accessed attributes
-        # Ensure these attributes exist on the scheduler object when DataManager is initialized
-        self.schedule = scheduler.schedule
-        self.worker_assignments = scheduler.worker_assignments
-        self.worker_posts = scheduler.worker_posts
-        self.worker_weekdays = scheduler.worker_weekdays
-        self.worker_weekends = scheduler.worker_weekend_shifts
-        self.num_shifts = scheduler.num_shifts # Might be initialized later in Scheduler
-        self.workers_data = scheduler.workers_data # Might be initialized later in Scheduler
+        # --- Tracking data copies ---
+        self.worker_assignments = getattr(scheduler, 'worker_assignments', {})
+        self.worker_shift_counts = getattr(scheduler, 'worker_shift_counts', {})
+        # self.worker_weekends = scheduler.worker_weekend_shifts # <--- CHANGE THIS LINE (line 43)
+        self.worker_weekends = getattr(scheduler, 'worker_weekends', {}) # <--- TO THIS (Use correct name and getattr)
+        self.worker_posts = getattr(scheduler, 'worker_posts', {})
+        self.last_assignment_date = getattr(scheduler, 'last_assignment_date', {})
+        self.consecutive_shifts = getattr(scheduler, 'consecutive_shifts', {})
+        self.worker_weekdays = getattr(scheduler, 'worker_weekdays', {})
+        self.worker_holiday_counts = getattr(scheduler, 'worker_holiday_counts', {})
+        self.worker_target_percentages = getattr(scheduler, 'worker_target_percentages', {})
 
-        # Flag to track if data integrity has been verified
-        self.data_integrity_verified = False
+        logging.info("DataManager initialized") # Keep or adjust log message
 
-        # Initialize monthly targets structure
-        self.monthly_targets = {}
-
-        logging.info("DataManager initialized")
 
     def load_config(self):
         """
