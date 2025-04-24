@@ -1,4 +1,3 @@
-# Imports
 from datetime import datetime, timedelta
 import logging
 import sys
@@ -8,15 +7,10 @@ import copy
 from data_manager import DataManager
 from constraint_checker import ConstraintChecker
 from schedule_builder import ScheduleBuilder
-from data_manager import DataManager
 from utilities import DateTimeUtils
 from statistics import StatisticsCalculator
 from exceptions import ConfigError, DataError, SchedulerError
 from worker_eligibility import WorkerEligibilityTracker
-from date_utils import DateTimeUtils
-from schedule_validator import ScheduleValidator
-from visualization import ScheduleVisualizer
-from reporting import Reporting
 
 # Class definition
 class SchedulerError(Exception):
@@ -73,8 +67,6 @@ class Scheduler:
         # Others initialized inside the try block after data is loaded
         self.constraint_checker = None
         self.schedule_builder = None
-        self.validator = None
-        self.visualizer = None
         self.reporter = None
         # self.stats = None # Initialize if StatisticsCalculator is used
         # self.eligibility_tracker = None # Initialize if WorkerEligibilityTracker is used
@@ -126,8 +118,6 @@ class Scheduler:
 
             # 10. Initialize Remaining Components
             self.schedule_builder = ScheduleBuilder(self)
-            self.validator = ScheduleValidator(self) # Assuming these exist
-            self.visualizer = ScheduleVisualizer(self)
             self.reporter = Reporting(self)
             # self.stats = StatisticsCalculator(self) # If used
             # self.eligibility_tracker = WorkerEligibilityTracker(...) # If used, needs relevant data
