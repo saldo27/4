@@ -92,7 +92,10 @@ class Scheduler:
             logging.info("Configuration validated.")
 
             # 4. Define Schedule Period & Core Params (from validated config)
-            self._define_schedule_period() # Sets self.start_date, self.end_date
+            self.start_date = self.config.get('start_date')
+            self.end_date = self.config.get('end_date')
+            if not isinstance(self.start_date, datetime) or not isinstance(self.end_date, datetime):
+                 raise SchedulerError("start_date or end_date were not datetime objects after loading/validation.")
             self.num_shifts = self.config.get('shifts_per_day', 1) # Example: Get from config
             self.gap_between_shifts = self.config.get('gap_between_shifts', 1)
             self.max_consecutive_weekends = self.config.get('max_consecutive_weekends', 2)
