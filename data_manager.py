@@ -24,7 +24,7 @@ class DataManager:
         self.worker_assignments = scheduler.worker_assignments
         self.worker_posts = scheduler.worker_posts
         self.worker_weekdays = scheduler.worker_weekdays
-        self.worker_weekends = scheduler.worker_weekends
+        self.worker_weekends = scheduler.worker_weekend_shifts
         self.num_shifts = scheduler.num_shifts
         self.workers_data = scheduler.workers_data
         
