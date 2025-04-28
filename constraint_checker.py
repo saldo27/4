@@ -254,30 +254,22 @@ class ConstraintChecker:
             assignments = sorted(list(self.worker_assignments.get(worker_id, [])))
             if assignments:
                 for prev_date in assignments:
-                    # Check the actual days between, not the absolute value
-                    days_since = (date - prev_date).days
-        
-                    # If it's a future date, ensure the gap is respected
-                    if days_since >= 0 and days_since < self.gap_between_shifts + 1:
-                        logging.debug(f"- Failed: Insufficient gap ({days_since} days)")
-                        return False
-            
-                    # If it's a past date, we also need to check
-                    if days_since < 0 and abs(days_since) < self.gap_between_shifts + 1:
-                        logging.debug(f"- Failed: Insufficient gap ({abs(days_since)} days)")
+                    days_between = abs((date - prev_date).days)
+                    if 0 < days_between < self.gap_between_shifts + 1:  # Fixed to only check non-zero gaps within range
+                        logging.debug(f"- Failed: Insufficient gap ({days_between} days)")
                         return False
 
             # 6. CRITICAL: Check weekend limit - NEVER RELAX THIS
             if self._would_exceed_weekend_limit(worker_id, date):
                 logging.debug(f"- Failed: Would exceed weekend limit")
                 return False
-            
+        
             return True
 
         except Exception as e:
             logging.error(f"Error in _can_assign_worker for worker {worker_id}: {str(e)}", exc_info=True)
             return False
-        
+              
     def _check_constraints(self, worker_id, date, skip_constraints=False, try_part_time=False):
         """
         Unified constraint checking
