@@ -1531,7 +1531,6 @@ class ScheduleBuilder:
 
                     # --- Start Relaxed Check ---
                     is_valid_candidate = self.scheduler.constraint_checker._can_assign_worker(worker_id, date, post)
-
                     # 1. Check absolute unavailability
                     if self._is_worker_unavailable(worker_id, date):
                         is_valid_candidate = False
@@ -1545,9 +1544,20 @@ class ScheduleBuilder:
                     if is_valid_candidate and not self._check_incompatibility(worker_id, date):
                         # logging.debug(f"  [Relaxed Check] Worker {worker_id} incompatible on {date}")
                         is_valid_candidate = False
+
+                    # === ADDED: Gap Between Shifts Check ===
+                    if is_valid_candidate:
+                        assignments = sorted(list(self.scheduler.worker_assignments.get(worker_id, set())))
+                        min_days_between = self.gap_between_shifts + 1  # +1 because we need days_between > gap
+    
+                        for prev_date in assignments:
+                            days_between = abs((date - prev_date).days)
+                            if days_between < min_days_between:  # Minimum required gap not met
+                                is_valid_candidate = False
+                                logging.debug(f"  [Relaxed Check] Worker {worker_id} skipped for {date} - insufficient gap ({days_between} days) from previous assignment on {prev_date}")
+                                break
                     
                     # 4. Check if max total shifts reached
-                    # Use scheduler's references
                     if is_valid_candidate and len(self.scheduler.worker_assignments.get(worker_id, set())) >= self.max_shifts_per_worker:
                         is_valid_candidate = False
                     # --- End Relaxed Check ---
