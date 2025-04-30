@@ -43,11 +43,11 @@ class PasswordScreen(Screen):
         super(PasswordScreen, self).__init__(**kwargs)
         layout = BoxLayout(orientation='vertical', padding=50, spacing=20)
 
-        layout.add_widget(Label(text='Enter Password:', size_hint_y=None, height=40))
+        layout.add_widget(Label(text='Introduza la contrasela:', size_hint_y=None, height=40))
 
         self.password_input = TextInput(
             multiline=False,
-            password=True,  # Hides the entered characters
+            password=True,  
             size_hint_y=None,
             height=40,
             halign='center',
@@ -175,7 +175,7 @@ class SetupScreen(Screen):
         
         # Gap between shifts
         gap_container = BoxLayout(orientation='vertical')
-        gap_container.add_widget(Label(text='Diferencia mínima entre guardias:', halign='left', size_hint_y=0.4))
+        gap_container.add_widget(Label(text='Distancia mínima entre guardias:', halign='left', size_hint_y=0.4))
         self.gap_between_shifts = TextInput(multiline=False, input_filter='int', text='1', size_hint_y=0.6)
         gap_container.add_widget(self.gap_between_shifts)
         numbers_section.add_widget(gap_container)
@@ -318,7 +318,7 @@ class SetupScreen(Screen):
             }
         
             # Notify user
-            self.show_message('Introduce los datos de los médicos')
+            self.show_message('Introduce los datos de cada médico')
     
         except Exception as e:
             self.show_error(f"Error saving configuration: {str(e)}")
@@ -1523,12 +1523,17 @@ class CalendarViewScreen(Screen):
         Display the detailed summary dialog (handles global stats).
         """
         print("DEBUG: display_summary_dialog called.")
-        # --- ALL THE FOLLOWING CODE MUST BE INDENTED INSIDE THIS METHOD ---
+    
+        # Create the main content box
         content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+    
+        # Create a proper ScrollView that takes most of the popup height
         scroll = ScrollView(size_hint=(1, 0.8))
+    
+        # Create the layout for the summary content that will be scrollable
         summary_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=[10, 10])
         summary_layout.bind(minimum_height=summary_layout.setter('height'))
-
+    
         # --- Modify Title ---
         start = stats_data.get('period_start')
         end = stats_data.get('period_end')
@@ -1537,27 +1542,29 @@ class CalendarViewScreen(Screen):
             title_text = f"Schedule Summary ({period_str})"
         else:
             title_text = "Schedule Summary (Full Period)"
-
+    
         summary_title = Label(text=title_text, size_hint_y=None, height=40, bold=True)
         summary_layout.add_widget(summary_title)
-
+    
         # --- Worker Details Header ---
         worker_header = Label(text="Worker Details:", size_hint_y=None, height=40, bold=True)
         summary_layout.add_widget(worker_header)
-
+    
         # --- Loop Through Workers ---
         print("DEBUG: display_summary_dialog - Adding worker details...")
         weekdays_short = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
         workers_stats = stats_data.get('workers', {})
         worker_shifts_all = stats_data.get('worker_shifts', {})
-
+    
         if not workers_stats:
-             # Add a message if there are no workers/stats
-             summary_layout.add_widget(Label(text="No worker statistics found for this period.", size_hint_y=None, height=30))
+            # Add a message if there are no workers/stats
+            summary_layout.add_widget(Label(text="No worker statistics found for this period.", size_hint_y=None, height=30))
         else:
             for worker_id, stats in sorted(stats_data['workers'].items(), key=numeric_sort_key):
                 print(f"DEBUG: display_summary_dialog - Processing worker: {worker_id}")
                 worker_box = BoxLayout(orientation='vertical', size_hint_y=None, padding=[5, 10], spacing=3)
+                worker_box.bind(minimum_height=worker_box.setter('height'))  # Ensure proper height calculation
+            
                 # Get calculated stats for this worker
                 total_w = stats.get('total', 0)
                 weekends_w = stats.get('weekends', 0)
@@ -1566,115 +1573,167 @@ class CalendarViewScreen(Screen):
                 weekday_counts = stats.get('weekday_counts', {})
                 post_counts = stats.get('post_counts', {})
                 worker_shifts = worker_shifts_all.get(worker_id, [])
-
+            
                 # --- Worker Summary Line ---
                 summary_text = f"Worker {worker_id}: Total: {total_w} | Weekends: {weekends_w} | Holidays: {holidays_w} | Last Post: {last_post_w}"
-                worker_box.add_widget(Label(
-                    text=summary_text, size_hint_y=None, height=25, bold=True, halign='left',
-                    text_size=(summary_layout.width - 30, None)
-                ))
-
+                summary_label = Label(
+                    text=summary_text, 
+                    size_hint_y=None, 
+                    height=25, 
+                    bold=True, 
+                    halign='left'
+                )
+                summary_label.bind(size=summary_label.setter('text_size'))  # Ensure text wrapping
+                worker_box.add_widget(summary_label)
+            
                 # --- Weekday Distribution Line ---
                 weekdays_str = "Weekdays: " + " ".join([f"{weekdays_short[i]}:{weekday_counts.get(i, 0)}" for i in range(7)])
-                worker_box.add_widget(Label(
-                    text=weekdays_str, size_hint_y=None, height=25, halign='left',
-                    text_size=(summary_layout.width - 30, None)
-                ))
-
+                weekday_label = Label(
+                    text=weekdays_str, 
+                    size_hint_y=None, 
+                    height=25, 
+                    halign='left'
+                )
+                weekday_label.bind(size=weekday_label.setter('text_size'))  # Ensure text wrapping
+                worker_box.add_widget(weekday_label)
+            
                 # --- Post Distribution Line ---
                 posts_str = "Posts: " + " ".join([f"P{post+1}:{count}" for post, count in sorted(post_counts.items())])
-                worker_box.add_widget(Label(
-                    text=posts_str, size_hint_y=None, height=25, halign='left',
-                    text_size=(summary_layout.width - 30, None)
-                ))
-
+                posts_label = Label(
+                    text=posts_str, 
+                    size_hint_y=None, 
+                    height=25, 
+                    halign='left'
+                )
+                posts_label.bind(size=posts_label.setter('text_size'))  # Ensure text wrapping
+                worker_box.add_widget(posts_label)
+            
                 # --- Assigned Shifts Header ---
-                worker_box.add_widget(Label(
-                    text="Assigned Shifts:", size_hint_y=None, height=25, halign='left', bold=True
-                ))
-
+                shifts_header = Label(
+                    text="Assigned Shifts:", 
+                    size_hint_y=None, 
+                    height=25, 
+                    halign='left', 
+                    bold=True
+                )
+                shifts_header.bind(size=shifts_header.setter('text_size'))  # Ensure text wrapping
+                worker_box.add_widget(shifts_header)
+            
                 # --- List of Shifts ---
+                shifts_container = GridLayout(cols=1, size_hint_y=None, spacing=2)
+                shifts_container.bind(minimum_height=shifts_container.setter('height'))  # Important for scrolling
+            
                 if not worker_shifts:
-                     worker_box.add_widget(Label(text="  (No shifts assigned)", size_hint_y=None, height=20, halign='left'))
-                for shift in sorted(worker_shifts, key=lambda x: x['date']):
-                    date_str = shift['date'].strftime('%d-%m-%Y')
-                    post_str = f"Post {shift['post']}"
-                    day_type = ""
-                    if shift['is_holiday']: day_type = " [HOLIDAY]"
-                    elif shift['is_weekend']: day_type = " [WEEKEND]"
-
-                    shift_text = f" • {date_str} ({shift['day'][:3]}){day_type}: {post_str}"
-                    shift_label = Label(
-                        text=shift_text, size_hint_y=None, height=20, halign='left',
-                        text_size=(summary_layout.width - 40, None)
+                    no_shifts_label = Label(
+                        text="  (No shifts assigned)", 
+                        size_hint_y=None, 
+                        height=20, 
+                        halign='left'
                     )
-                    worker_box.add_widget(shift_label)
-
+                    no_shifts_label.bind(size=no_shifts_label.setter('text_size'))
+                    shifts_container.add_widget(no_shifts_label)
+                else:
+                    for shift in sorted(worker_shifts, key=lambda x: x['date']):
+                        date_str = shift['date'].strftime('%d-%m-%Y')
+                        post_str = f"Post {shift['post']}"
+                        day_type = ""
+                        if shift['is_holiday']: 
+                            day_type = " [HOLIDAY]"
+                        elif shift['is_weekend']: 
+                            day_type = " [WEEKEND]"
+                    
+                        shift_text = f" • {date_str} ({shift['day'][:3]}){day_type}: {post_str}"
+                        shift_label = Label(
+                            text=shift_text, 
+                            size_hint_y=None, 
+                            height=20, 
+                            halign='left'
+                        )
+                        shift_label.bind(size=shift_label.setter('text_size'))
+                        shifts_container.add_widget(shift_label)
+            
+                # Add the shifts container to the worker box
+                shifts_container.height = max(20, len(worker_shifts) * 20)  # Set appropriate height
+                worker_box.add_widget(shifts_container)
+            
                 # --- Calculate Height Dynamically ---
-                base_height = 25 * 4 + 20
-                shifts_height = max(20, len(worker_shifts) * 20)
-                worker_box.height = base_height + shifts_height
-                # print(f"DEBUG: display_summary_dialog - Worker {worker_id} Box height: {worker_box.height}") # Optional Debug
-
+                base_height = 25 * 4  # Summary + Weekday + Posts + Shifts Header
+                total_height = base_height + shifts_container.height + 20  # Add some padding
+                worker_box.height = total_height
+            
                 # --- Separator ---
                 separator = BoxLayout(size_hint_y=None, height=1)
                 with separator.canvas:
                     from kivy.graphics import Color, Rectangle
                     Color(0.7, 0.7, 0.7, 1)
                     Rectangle(pos=separator.pos, size=separator.size)
-
+            
+                # Add the worker box and separator to the summary layout
                 summary_layout.add_widget(worker_box)
                 summary_layout.add_widget(separator)
-                # --- End Worker Loop ---
-
-        print("DEBUG: display_summary_dialog - Finished adding worker details.")
+    
+        # Set the height of the summary layout to ensure scrolling works
+        # This is critical - we need to ensure this layout takes appropriate space
+        summary_layout.height = summary_layout.minimum_height
+    
+        # Add the summary layout to the scroll view
         scroll.add_widget(summary_layout)
+    
+        # Add the scroll view to the main content
         content.add_widget(scroll)
-
+    
         # --- Buttons (Export PDF, Close) ---
         button_layout = BoxLayout(orientation='horizontal', size_hint_y=0.1, spacing=10)
-        # DEFINE buttons here, inside the method
         pdf_button = Button(text='Export PDF')
         close_button = Button(text='Close')
         button_layout.add_widget(pdf_button)
         button_layout.add_widget(close_button)
         content.add_widget(button_layout)
-
+    
         # --- Popup Creation ---
         popup = Popup(
-            title='Schedule Summary', content=content, size_hint=(0.9, 0.9), auto_dismiss=False
+            title='Schedule Summary', 
+            content=content, 
+            size_hint=(0.9, 0.9), 
+            auto_dismiss=False
         )
-        
+    
+        # Button callbacks
         def on_pdf(instance):
             print("DEBUG: on_pdf callback triggered!")
             try:
                 print("DEBUG: Calling export_summary_pdf from on_pdf...")
-                # Pass the comprehensive month_stats
                 self.export_summary_pdf(stats_data)
                 print("DEBUG: export_summary_pdf call finished.")
             except Exception as e:
                 print(f"DEBUG: Error calling export_summary_pdf from on_pdf: {e}")
                 logging.error(f"Error during PDF export triggered from popup: {e}", exc_info=True)
-                # Show error popup
-                error_popup = Popup(title='PDF Export Error', content=Label(text=f'Failed export: {e}'),
-                                    size_hint=(None, None), size=(400,200))
+                error_popup = Popup(
+                    title='PDF Export Error', 
+                    content=Label(text=f'Failed export: {e}'),
+                    size_hint=(None, None), 
+                    size=(400, 200)
+                )
                 error_popup.open()
             finally:
-                 popup.dismiss()
-                 print("DEBUG: Popup dismissed from on_pdf")
-
+                popup.dismiss()
+                print("DEBUG: Popup dismissed from on_pdf")
+    
         def on_close(instance):
             print("DEBUG: on_close callback triggered!")
             popup.dismiss()
             print("DEBUG: Popup dismissed from on_close")
-
+    
         pdf_button.bind(on_press=on_pdf)
         close_button.bind(on_press=on_close)
-
-        # --- Show Popup ---
+    
+        # Show the popup
         print("DEBUG: Opening summary popup...")
         popup.open()
         print("DEBUG: Summary popup should be open.")
+    
+        # Return True to indicate success (for compatibility with existing code)
+        return True
         
     def show_global_summary(self, instance):
         """Calculate and display a summary of the ENTIRE schedule period."""
