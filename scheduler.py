@@ -243,15 +243,15 @@ class Scheduler:
     def _initialize_schedule_with_variable_shifts(self):
         """Initialize the schedule dictionary with appropriate number of shifts for each date"""
         current_date = self.start_date
-	while current_date <= self.end_date:
-	    # Determine how many shifts this date should have
+        while current_date <= self.end_date:
+            # Determine how many shifts this date should have
             shifts_for_date = self._get_shifts_for_date(current_date)
-		
-            # Initialize the schedule entry for this date
-            self.schedule[current_date] = [None] * shifts_for_date
-		
-	    # Move to next date
-	    current_date += timedelta(days=1)
+
+	    # Initialize the schedule entry for this date
+	    self.schedule[current_date] = [None] * shifts_for_date
+
+            # Move to next date
+            current_date += timedelta(days=1)
         
     def _get_schedule_months(self):
         """
