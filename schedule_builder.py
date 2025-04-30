@@ -2719,24 +2719,36 @@ class ScheduleBuilder:
         self.scheduler.schedule[date_to][post_to] = worker_id
 
         # 2. Update worker_assignments set for the first worker
-        self.scheduler.worker_assignments.setdefault(worker_id, set()).remove(date_from)
+        # Check if the date exists in the worker's assignments before removing
+        if date_from in self.scheduler.worker_assignments.get(worker_id, set()):
+            self.scheduler.worker_assignments[worker_id].remove(date_from)
+    
+        # Add the new date to the worker's assignments
         self.scheduler.worker_assignments.setdefault(worker_id, set()).add(date_to)
 
         # 3. Update worker_assignments for the second worker if present
         if worker_X_id is not None:
+            # Check if the date exists in worker_X's assignments before removing
             if date_to in self.scheduler.worker_assignments.get(worker_X_id, set()):
                 self.scheduler.worker_assignments[worker_X_id].remove(date_to)
+        
+            # Add the from_date to worker_X's assignments
             self.scheduler.worker_assignments.setdefault(worker_X_id, set()).add(date_from)
 
         # 4. Update detailed tracking stats for both workers
-        self.scheduler._update_tracking_data(worker_id, date_from, post_from, removing=True)
+        # Only update tracking data for removal if the worker was actually assigned to that date
+        if date_from in self.scheduler.worker_assignments.get(worker_id, set()) or self.scheduler.schedule[date_from].count(worker_id) > 0:
+            self.scheduler._update_tracking_data(worker_id, date_from, post_from, removing=True)
+    
         self.scheduler._update_tracking_data(worker_id, date_to, post_to)
     
         if worker_X_id is not None:
-            self.scheduler._update_tracking_data(worker_X_id, date_to, post_to, removing=True)
+            # Only update tracking data for removal if worker_X was actually assigned to that date
+            if date_to in self.scheduler.worker_assignments.get(worker_X_id, set()) or self.scheduler.schedule[date_to].count(worker_X_id) > 0:
+                self.scheduler._update_tracking_data(worker_X_id, date_to, post_to, removing=True)
+        
             self.scheduler._update_tracking_data(worker_X_id, date_from, post_from)
-
-  
+            
     def _can_swap_assignments(self, worker_id, date_from, post_from, date_to, post_to):
          """ Checks if moving worker_id from (date_from, post_from) to (date_to, post_to) is valid """
          # 1. Temporarily apply the swap to copies or directly (need rollback)
