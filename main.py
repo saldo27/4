@@ -166,9 +166,9 @@ class SetupScreen(Screen):
         workers_container.add_widget(self.num_workers)
         numbers_section.add_widget(workers_container)
         
-        # Number of shifts
+        # Default Number of shifts
         shifts_container = BoxLayout(orientation='vertical')
-        shifts_container.add_widget(Label(text='Guardias/día:', halign='left', size_hint_y=0.4))
+        shifts_container.add_widget(Label(text='Guardias/día (default):', halign='left', size_hint_y=0.4))
         self.num_shifts = TextInput(multiline=False, input_filter='int', size_hint_y=0.6)
         shifts_container.add_widget(self.num_shifts)
         numbers_section.add_widget(shifts_container)
@@ -218,10 +218,25 @@ class SetupScreen(Screen):
             color=(0.5, 0.5, 0.5, 1)  # Gray color
         )
         form_layout.add_widget(help_text)
-        
-        # Add form to scroll view
-        scroll_view.add_widget(form_layout)
-        self.layout.add_widget(scroll_view)
+
+        # NEW SECTION: Variable Shifts
+        variable_shifts_section = BoxLayout(orientation='vertical', size_hint_y=None, height=170, spacing=5)
+        variable_shifts_header = Label(
+        text='Número variable de guardias por día (Opcional):',
+        halign='left',
+        valign='bottom',
+        size_hint_y=0.2,
+        bold=True
+        )
+        variable_shifts_section.add_widget(variable_shifts_header)
+    
+        # Instructions for variable shifts format
+        instructions = Label(
+            text="Formato: DD-MM-YYYY - DD-MM-YYYY: N; DD-MM-YYYY: N\n"
+                  "Ejemplo: 01-05-2025 - 31-05-2025: 3; 24-12-2025: 
+            # Add form to scroll view
+            scroll_view.add_widget(form_layout)
+            self.layout.add_widget(scroll_view)
         
         # Buttons in a separate area at the bottom
         button_section = BoxLayout(
