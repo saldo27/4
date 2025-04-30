@@ -189,8 +189,36 @@ class SetupScreen(Screen):
         
         form_layout.add_widget(numbers_section)
         
-        # Add spacing using a BoxLayout instead of Widget
-        form_layout.add_widget(BoxLayout(size_hint_y=None, height=10))
+        # ------ NEW SECTION: Variable Shifts by Date Range ------
+	shifts_header = BoxLayout(orientation='vertical', size_hint_y=None, height=40)
+	shifts_header.add_widget(Label(
+		text='Variables guardias por período (opcional):',
+		halign='left',
+		valign='bottom',
+		bold=True
+	))
+	form_layout.add_widget(shifts_header)
+	
+	# Container for variable shifts definitions
+	self.variable_shifts_container = GridLayout(cols=1, size_hint_y=None, spacing=10)
+	self.variable_shifts_container.bind(minimum_height=self.variable_shifts_container.setter('height'))
+	
+	# Add an initial empty row
+	self.add_variable_shift_row()
+	
+	form_layout.add_widget(self.variable_shifts_container)
+	
+	# Add button to add more variable shift periods
+	add_period_btn = Button(
+		text='+ Añadir período',
+		size_hint_y=None,
+		height=40
+	)
+	add_period_btn.bind(on_press=self.add_variable_shift_row)
+	form_layout.add_widget(add_period_btn)
+	
+	# Add spacing
+	form_layout.add_widget(BoxLayout(size_hint_y=None, height=10))
         
         # Holidays - given more space with a clear label
         holidays_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=150)
@@ -217,35 +245,8 @@ class SetupScreen(Screen):
             font_size='12sp',
             color=(0.5, 0.5, 0.5, 1)  # Gray color
         )
-        form_layout.add_widget(help_text)
-
-        # NEW SECTION: Variable Shifts
-        variable_shifts_section = BoxLayout(orientation='vertical', size_hint_y=None, height=170, spacing=5)
-        variable_shifts_header = Label(
-        text='Número variable de guardias por día (Opcional):',
-        halign='left',
-        valign='bottom',
-        size_hint_y=0.2,
-        bold=True
-        )
-        variable_shifts_section.add_widget(variable_shifts_header)
-    
-        # Instructions for variable shifts format
-        instructions = Label(
-            text="Formato: DD-MM-YYYY - DD-MM-YYYY: N; DD-MM-YYYY: N\n"
-                  "Ejemplo: 01-05-2025 - 31-05-2025: 3; 24-12-2025: "
-            # Add form to scroll view
-            scroll_view.add_widget(form_layout)
-            self.layout.add_widget(scroll_view)
-        
-        # Buttons in a separate area at the bottom
-        button_section = BoxLayout(
-            orientation='horizontal', 
-            size_hint_y=0.12,
-            spacing=15,
-            padding=(0, 10)
-        )
-        
+        form_layout.add_widget(help_text)      
+                
         # Button styling (simplified to avoid potential issues)
         self.save_button = Button(text='Guardar', font_size='16sp')
         self.save_button.bind(on_press=self.save_config)
@@ -320,13 +321,13 @@ class SetupScreen(Screen):
             # Save configuration to app
             app = App.get_running_app()
             app.schedule_config = {
-                'start_date': start_datetime,  # Now we're saving datetime objects, not date objects
-                'end_date': end_datetime,      # Now we're saving datetime objects, not date objects
+                'start_date': start_datetime,
+                'end_date': end_datetime,      
                 'num_workers': num_workers,
                 'num_shifts': num_shifts,
                 'gap_between_shifts': gap_between_shifts,
                 'max_consecutive_weekends': max_consecutive_weekends,
-                'holidays': holidays_datetime,  # Now we're saving datetime objects, not date objects
+                'holidays': holidays_datetime,  
                 'workers_data': [],
                 'schedule': {},
                 'current_worker_index': 0
