@@ -233,7 +233,7 @@ class SetupScreen(Screen):
         # Instructions for variable shifts format
         instructions = Label(
             text="Formato: DD-MM-YYYY - DD-MM-YYYY: N; DD-MM-YYYY: N\n"
-                  "Ejemplo: 01-05-2025 - 31-05-2025: 3; 24-12-2025: 
+                  "Ejemplo: 01-05-2025 - 31-05-2025: 3; 24-12-2025: "
             # Add form to scroll view
             scroll_view.add_widget(form_layout)
             self.layout.add_widget(scroll_view)
