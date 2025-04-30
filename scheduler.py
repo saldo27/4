@@ -112,6 +112,15 @@ class Scheduler:
                 self.max_consecutive_weekends
             )
 
+            # Process variable shifts
+            self.variable_shifts = config.get('variable_shifts', [])
+    
+            # Sort the variable shifts by start date for efficient lookup
+            self.variable_shifts.sort(key=lambda x: x['start_date'])
+    
+            # Initialize the schedule structure with the appropriate number of shifts for each date
+            self._initialize_schedule_with_variable_shifts()
+
             # Calculate targets before proceeding
             self._calculate_target_shifts()
 
@@ -230,6 +239,19 @@ class Scheduler:
             w['id']: {'gap': [], 'incompatibility': [], 'reduced_gap': []}
             for w in self.workers_data
         }
+
+    def _initialize_schedule_with_variable_shifts(self):
+        """Initialize the schedule dictionary with appropriate number of shifts for each date"""
+        current_date = self.start_date
+	while current_date <= self.end_date:
+	    # Determine how many shifts this date should have
+            shifts_for_date = self._get_shifts_for_date(current_date)
+		
+            # Initialize the schedule entry for this date
+            self.schedule[current_date] = [None] * shifts_for_date
+		
+	    # Move to next date
+	    current_date += timedelta(days=1)
         
     def _get_schedule_months(self):
         """
@@ -405,6 +427,19 @@ class Scheduler:
         
             logging.warning(f"Using fallback distribution: {default_target} non-mandatory shifts per worker plus mandatory shifts")
             return False
+
+    def _get_shifts_for_date(self, date):
+	"""Determine the number of shifts for a specific date based on variable shifts configuration"""
+	# Check if the date falls within any of the variable shifts ranges
+	for shift_range in self.variable_shifts:
+		start_date = shift_range['start_date']
+		end_date = shift_range['end_date']
+		
+		if start_date <= date <= end_date:
+			return shift_range['shifts']
+	
+	# If no variable shifts apply, use the default number of shifts
+	return self.num_shifts
 
     def _calculate_monthly_targets(self):
         """
