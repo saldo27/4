@@ -2708,25 +2708,35 @@ class ScheduleBuilder:
         logging.debug(f"Swap between Worker {worker1_id} ({date1}/{post1}) and Worker {worker2_id} ({date2}/{post2}) is valid")
         return True
 
-    def _execute_swap(self, worker_id, date_from, post_from, date_to, post_to):
-        """ Helper to perform the actual swap updates """
+    def _execute_swap(self, worker_id, date_from, post_from, worker_X_id, date_to, post_to):
+        """ Helper to perform the actual swap updates. Can handle either a single worker swap or a swap between two workers. """
         # 1. Update schedule dictionary
-        self.scheduler.schedule[date_from][post_from] = None
+        self.scheduler.schedule[date_from][post_from] = None if worker_X_id is None else worker_X_id
+    
         # Ensure target list is long enough before assignment
         while len(self.scheduler.schedule[date_to]) <= post_to:
             self.scheduler.schedule[date_to].append(None)
         self.scheduler.schedule[date_to][post_to] = worker_id
 
-        # 2. Update worker_assignments set
+        # 2. Update worker_assignments set for the first worker
         self.scheduler.worker_assignments.setdefault(worker_id, set()).remove(date_from)
         self.scheduler.worker_assignments.setdefault(worker_id, set()).add(date_to)
 
-        # 3. Update detailed tracking stats
+        # 3. Update worker_assignments for the second worker if present
+        if worker_X_id is not None:
+            if date_to in self.scheduler.worker_assignments.get(worker_X_id, set()):
+                self.scheduler.worker_assignments[worker_X_id].remove(date_to)
+            self.scheduler.worker_assignments.setdefault(worker_X_id, set()).add(date_from)
+
+        # 4. Update detailed tracking stats for both workers
         self.scheduler._update_tracking_data(worker_id, date_from, post_from, removing=True)
         self.scheduler._update_tracking_data(worker_id, date_to, post_to)
+    
+        if worker_X_id is not None:
+            self.scheduler._update_tracking_data(worker_X_id, date_to, post_to, removing=True)
+            self.scheduler._update_tracking_data(worker_X_id, date_from, post_from)
 
-    # Make sure _can_swap_assignments exists and is correctly implemented
-    # It should check constraints after simulating the move. Example sketch:
+  
     def _can_swap_assignments(self, worker_id, date_from, post_from, date_to, post_to):
          """ Checks if moving worker_id from (date_from, post_from) to (date_to, post_to) is valid """
          # 1. Temporarily apply the swap to copies or directly (need rollback)
