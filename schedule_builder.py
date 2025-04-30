@@ -1530,7 +1530,7 @@ class ScheduleBuilder:
                     worker_id = worker['id']
 
                     # --- Start Relaxed Check ---
-                    is_valid_candidate = True
+                    is_valid_candidate = self.scheduler.constraint_checker._can_assign_worker(worker_id, date, post)
 
                     # 1. Check absolute unavailability
                     if self._is_worker_unavailable(worker_id, date):
@@ -1541,13 +1541,11 @@ class ScheduleBuilder:
                     if is_valid_candidate and worker_id in [w for i, w in enumerate(self.scheduler.schedule[date]) if i != post and w is not None]:
                         is_valid_candidate = False
 
-                    # === ADDED: STRICT Incompatibility Check ===
                     # Incompatibility is NEVER relaxed.
                     if is_valid_candidate and not self._check_incompatibility(worker_id, date):
                         # logging.debug(f"  [Relaxed Check] Worker {worker_id} incompatible on {date}")
                         is_valid_candidate = False
-                    # === END ADDED CHECK ===
-
+                    
                     # 4. Check if max total shifts reached
                     # Use scheduler's references
                     if is_valid_candidate and len(self.scheduler.worker_assignments.get(worker_id, set())) >= self.max_shifts_per_worker:
