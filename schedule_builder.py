@@ -1581,10 +1581,18 @@ class ScheduleBuilder:
                         is_compatible = self._check_incompatibility_with_list(worker_id, current_assignments_on_date)
                         logging.debug(f"  -> Incompatibility Check Result: {is_compatible}") # <<< LOG 2
 
-                        if not is_compatible:
-                            logging.debug(f"  [Relaxed Direct Fill] Skipping candidate {worker_id} for post {post} on {date}: Incompatible with current assignments.") # <<< LOG 3
-                            continue # Try next candidate
-                        # *** END: CRITICAL DEBUG LOGS ***
+                        # With this improved version that also checks for the worker already being on the date:
+                        current_assignments_on_date = [w for w in self.scheduler.schedule.get(date, []) if w is not None]
+                        logging.debug(f"CHECKING: Date={date}, Post={post}, Candidate={worker_id}, CurrentlyAssigned={current_assignments_on_date}")
+
+                        # Check if the worker is already assigned to this date (add this check)
+                        if worker_id in current_assignments_on_date:
+                            logging.debug(f"  [Relaxed Direct Fill] Skipping candidate {worker_id} for post {post} on {date}: Already assigned to another post on this date.")
+                            continue # Skip this candidate and try the next one
+
+                        # Keep the existing incompatibility check
+                        is_compatible = self._check_incompatibility_with_list(worker_id, current_assignments_on_date)
+                        logging.debug(f"  -> Incompatibility Check Result: {is_compatible}")
 
                         # *** If compatible, assign this worker ***
                         while len(self.scheduler.schedule[date]) <= post:
