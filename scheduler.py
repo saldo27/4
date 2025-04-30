@@ -1090,10 +1090,12 @@ class Scheduler:
             worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
             if not worker:
                 return False
-    
-            # Check if worker is already assigned on this date
-            if worker_id in self.worker_assignments and date in self.worker_assignments[worker_id]:
-                return False
+        
+            # Improved check if worker is already assigned on this date
+            if date in self.schedule:
+                if worker_id in self.schedule[date]:
+                    logging.debug(f"Worker {worker_id} already assigned to a different post on {date}")
+                    return False
     
             # Check past assignments for minimum gap and patterns
             for assigned_date in self.worker_assignments.get(worker_id, set()):
