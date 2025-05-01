@@ -249,10 +249,16 @@ class Scheduler:
 
     def _initialize_schedule_with_variable_shifts(self):
         """Initialize the schedule dictionary with appropriate number of shifts for each date"""
+        logging.info(f"Initializing schedule with variable shifts. Found {len(self.variable_shifts)} variable shift configurations.")
+    
         current_date = self.start_date
         while current_date <= self.end_date:
             # Determine how many shifts this date should have
             shifts_for_date = self._get_shifts_for_date(current_date)
+        
+            # Log the determined number of shifts for debugging
+            if shifts_for_date != self.num_shifts:
+                logging.info(f"Variable shifts for date {current_date.strftime('%Y-%m-%d')}: {shifts_for_date} (default is {self.num_shifts})")
         
             # Initialize the schedule entry for this date
             self.schedule[current_date] = [None] * shifts_for_date
@@ -442,8 +448,17 @@ class Scheduler:
             start_date = shift_range['start_date']
             end_date = shift_range['end_date']
         
-            if start_date <= date <= end_date:
-                return shift_range['shifts']
+            # Ensure we compare only the date part (not the time part)
+            if isinstance(date, datetime):
+                check_date = date
+            else:
+                # If date is already a date object, convert to datetime for consistent comparison
+                check_date = datetime.combine(date, datetime.min.time())
+        
+            # Ensure start_date and end_date are datetime objects
+            if isinstance(start_date, datetime) and isinstance(end_date, datetime):
+                if start_date <= check_date <= end_date:
+                    return shift_range['shifts']
     
         # If no variable shifts apply, use the default number of shifts
         return self.num_shifts
