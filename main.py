@@ -191,6 +191,16 @@ class SetupScreen(Screen):
         
         # Add spacing using a BoxLayout instead of Widget
         form_layout.add_widget(BoxLayout(size_hint_y=None, height=10))
+
+        # ------ NEW SECTION: Variable Shifts by Date Range ------
+        shifts_header = BoxLayout(orientation='vertical', size_hint_y=None, height=40)
+        shifts_header.add_widget(Label(
+            text='Variables guardias por período (opcional):',
+            halign='left',
+            valign='bottom',
+            bold=True
+        ))
+        form_layout.add_widget(shifts_header)
         
         # Holidays - given more space with a clear label
         holidays_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=150)
