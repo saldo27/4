@@ -247,8 +247,8 @@ class Scheduler:
             # Determine how many shifts this date should have
             shifts_for_date = self._get_shifts_for_date(current_date)
 
-	    # Initialize the schedule entry for this date
-	    self.schedule[current_date] = [None] * shifts_for_date
+            # Initialize the schedule entry for this date
+            self.schedule[current_date] = [None] * shifts_for_date
 
             # Move to next date
             current_date += timedelta(days=1)
@@ -429,17 +429,17 @@ class Scheduler:
             return False
 
     def _get_shifts_for_date(self, date):
-	"""Determine the number of shifts for a specific date based on variable shifts configuration"""
-	# Check if the date falls within any of the variable shifts ranges
-	for shift_range in self.variable_shifts:
-	    start_date = shift_range['start_date']
-	    end_date = shift_range['end_date']
+        """Determine the number of shifts for a specific date based on variable shifts configuration"""
+        # Check if the date falls within any of the variable shifts ranges
+        for shift_range in self.variable_shifts:
+            start_date = shift_range['start_date']
+            end_date = shift_range['end_date']
 		
-	    if start_date <= date <= end_date:
+            if start_date <= date <= end_date:
                 return shift_range['shifts']
 	
-	# If no variable shifts apply, use the default number of shifts
-	return self.num_shifts
+        # If no variable shifts apply, use the default number of shifts
+        return self.num_shifts
 
     def _calculate_monthly_targets(self):
         """
