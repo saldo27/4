@@ -36,6 +36,7 @@ class Scheduler:
             self.start_date = config['start_date']
             self.end_date = config['end_date']
             self.num_shifts = config['num_shifts']
+            self.variable_shifts = config.get('variable_shifts', [])
             self.workers_data = config['workers_data']
             self.holidays = config.get('holidays', [])
 
@@ -56,8 +57,14 @@ class Scheduler:
             # --- END: Build incompatibility lists ---
         
             # Get the new configurable parameters with defaults
-            self.gap_between_shifts = config.get('gap_between_shifts', 1)
-            self.max_consecutive_weekends = config.get('max_consecutive_weekends', 2)
+            self.gap_between_shifts = config.get('gap_between_shifts', 3)
+            self.max_consecutive_weekends = config.get('max_consecutive_weekends', 3)
+
+            # Sort the variable shifts by start date for efficient lookup
+            self.variable_shifts.sort(key=lambda x: x['start_date'])
+    
+            # Initialize the schedule structure with the appropriate number of shifts for each date
+            self._initialize_schedule_with_variable_shifts()
     
             # Initialize tracking dictionaries
             self.schedule = {}
@@ -246,10 +253,10 @@ class Scheduler:
         while current_date <= self.end_date:
             # Determine how many shifts this date should have
             shifts_for_date = self._get_shifts_for_date(current_date)
-
+        
             # Initialize the schedule entry for this date
             self.schedule[current_date] = [None] * shifts_for_date
-
+        
             # Move to next date
             current_date += timedelta(days=1)
         
@@ -434,10 +441,10 @@ class Scheduler:
         for shift_range in self.variable_shifts:
             start_date = shift_range['start_date']
             end_date = shift_range['end_date']
-		
+        
             if start_date <= date <= end_date:
                 return shift_range['shifts']
-	
+    
         # If no variable shifts apply, use the default number of shifts
         return self.num_shifts
 
