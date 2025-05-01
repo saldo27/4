@@ -201,6 +201,28 @@ class SetupScreen(Screen):
             bold=True
         ))
         form_layout.add_widget(shifts_header)
+
+        # Create container for variable shifts
+        self.variable_shifts_container = GridLayout(
+            cols=1,
+            size_hint_y=None,
+            height=0,  # Will be updated dynamically
+            spacing=5
+        )
+        self.variable_shifts_container.bind(minimum_height=self.variable_shifts_container.setter('height'))
+        form_layout.add_widget(self.variable_shifts_container)
+
+        # Add button to add new variable shift rows
+        add_shift_btn = Button(
+            text='+ Add Variable Shifts Period',
+            size_hint_y=None,
+            height=40
+        )
+        add_shift_btn.bind(on_press=self.add_variable_shift_row)
+        form_layout.add_widget(add_shift_btn)
+
+        # Add some spacing
+        form_layout.add_widget(BoxLayout(size_hint_y=None, height=10))
         
         # Holidays - given more space with a clear label
         holidays_layout = BoxLayout(orientation='vertical', size_hint_y=None, height=150)
