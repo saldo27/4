@@ -404,8 +404,8 @@ class SetupScreen(Screen):
                 'workers_data': [],
                 'schedule': {},
                 'current_worker_index': 0,
-                'variable_shifts': variable_shifts  # New field for variable shifts
-            }
+                'variable_shifts': variable_shifts  # Make sure this line is present
+}
     
             # Notify user
             self.show_message('Introduce los datos de cada médico')
