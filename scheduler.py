@@ -30,7 +30,7 @@ class Scheduler:
     
             # Then validate the configuration
             self._validate_config(config)
-        
+    
             # Basic setup from config
             self.config = config
             self.start_date = config['start_date']
@@ -55,23 +55,23 @@ class Scheduler:
                     worker['incompatible_with'] = list(incompatible_worker_ids - {worker_id}) # Exclude self
                 logging.debug(f"Worker {worker_id} incompatible_with list: {worker['incompatible_with']}")
             # --- END: Build incompatibility lists ---
-        
+    
             # Get the new configurable parameters with defaults
             self.gap_between_shifts = config.get('gap_between_shifts', 3)
             self.max_consecutive_weekends = config.get('max_consecutive_weekends', 3)
 
             # Sort the variable shifts by start date for efficient lookup
             self.variable_shifts.sort(key=lambda x: x['start_date'])
-    
-            # Initialize the schedule structure with the appropriate number of shifts for each date
-            self._initialize_schedule_with_variable_shifts()
-    
+
             # Initialize tracking dictionaries
-            self.schedule = {}
+            self.schedule = {} # MOVED HERE, BEFORE _initialize_schedule_with_variable_shifts()
             self.worker_assignments = {w['id']: set() for w in self.workers_data}
             self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
             self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
+
+            # Initialize the schedule structure with the appropriate number of shifts for each date
+            self._initialize_schedule_with_variable_shifts() # MOVED HERE, AFTER self.schedule = {}
 
             # Initialize tracking data structures
             self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
