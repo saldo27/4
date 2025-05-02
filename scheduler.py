@@ -443,24 +443,42 @@ class Scheduler:
 
     def _get_shifts_for_date(self, date):
         """Determine the number of shifts for a specific date based on variable shifts configuration"""
+        # Debug logging to help identify issues
+        logging.debug(f"Checking variable shifts for date: {date}")
+        logging.debug(f"Have {len(self.variable_shifts)} variable shift configurations")
+    
         # Check if the date falls within any of the variable shifts ranges
         for shift_range in self.variable_shifts:
             start_date = shift_range['start_date']
             end_date = shift_range['end_date']
         
-            # Ensure we compare only the date part (not the time part)
+            # Convert all to datetime objects with date portion only for consistent comparison
             if isinstance(date, datetime):
-                check_date = date
+                check_date = date.replace(hour=0, minute=0, second=0, microsecond=0)
             else:
-                # If date is already a date object, convert to datetime for consistent comparison
+                # If date is a date object, convert to datetime
                 check_date = datetime.combine(date, datetime.min.time())
         
-            # Ensure start_date and end_date are datetime objects
-            if isinstance(start_date, datetime) and isinstance(end_date, datetime):
-                if start_date <= check_date <= end_date:
-                    return shift_range['shifts']
+            # Convert start_date to datetime if it's a date
+            if isinstance(start_date, datetime):
+                compare_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                compare_start = datetime.combine(start_date, datetime.min.time())
+            
+            # Convert end_date to datetime if it's a date
+            if isinstance(end_date, datetime):
+                compare_end = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                compare_end = datetime.combine(end_date, datetime.min.time())
+        
+            # Now compare with consistent datetime objects
+            if compare_start <= check_date <= compare_end:
+                shifts = shift_range['shifts']
+                logging.debug(f"Found variable shifts config: {shifts} shifts for date {date}")
+                return shifts
     
         # If no variable shifts apply, use the default number of shifts
+        logging.debug(f"No variable shifts config found for {date}, using default {self.num_shifts}")
         return self.num_shifts
 
     def _calculate_monthly_targets(self):
