@@ -249,28 +249,37 @@ class Scheduler:
 
     def _initialize_schedule_with_variable_shifts(self):
         """Initialize the schedule dictionary with appropriate number of shifts for each date"""
-        logging.info(f"Initializing schedule structure from {self.start_date} to {self.end_date} with variable shifts. Found {len(self.variable_shifts)} configurations.")
+        logging.info(f"Initializing schedule structure from {self.start_date} to {self.end_date} with variable shifts.")
+        logging.info(f"Found {len(self.variable_shifts)} variable shift configurations:")
     
-        # Log variable shifts to help with debugging
+        # Log details of each variable shift config for debugging
         for i, shift_config in enumerate(self.variable_shifts):
-            logging.info(f"  Variable shift config #{i+1}: From {shift_config['start_date']} to {shift_config['end_date']} - {shift_config['shifts']} shift(s) per day")
+            start = shift_config['start_date']
+            end = shift_config['end_date']
+            shifts = shift_config['shifts']
+            logging.info(f"  Config #{i+1}: From {start} to {end} - {shifts} shift(s) per day")
     
         current_date = self.start_date
+        dates_initialized = 0
+        variable_dates = 0
+    
         while current_date <= self.end_date:
             # Determine how many shifts this date should have
             shifts_for_date = self._get_shifts_for_date(current_date)
         
             # Log when shifts differ from default
             if shifts_for_date != self.num_shifts:
-                logging.info(f"Variable shifts applied for {current_date.strftime('%Y-%m-%d')}: {shifts_for_date} shifts (default is {self.num_shifts})")
+                logging.info(f"Variable shifts applied for {current_date}: {shifts_for_date} shifts (default is {self.num_shifts})")
+                variable_dates += 1
         
             # Initialize the schedule entry for this date
             self.schedule[current_date] = [None] * shifts_for_date
+            dates_initialized += 1
         
             # Move to next date
             current_date += timedelta(days=1)
     
-        logging.info(f"Schedule structure initialized with {len(self.schedule)} dates.")
+        logging.info(f"Schedule structure initialized with {dates_initialized} dates ({variable_dates} with variable shifts).")
         
     def _get_schedule_months(self):
         """
@@ -449,36 +458,24 @@ class Scheduler:
 
     def _get_shifts_for_date(self, date):
         """Determine the number of shifts for a specific date based on variable shifts configuration"""
-        # Debug logging to help identify issues
+        # Add debug logging to help identify issues
         logging.debug(f"Checking variable shifts for date: {date}")
         logging.debug(f"Have {len(self.variable_shifts)} variable shift configurations")
+    
+        # Convert input date to a date-only value for comparison
+        check_date = date.date() if isinstance(date, datetime) else date
     
         # Check if the date falls within any of the variable shifts ranges
         for shift_range in self.variable_shifts:
             start_date = shift_range['start_date']
             end_date = shift_range['end_date']
         
-            # Convert all to datetime objects with date portion only for consistent comparison
-            if isinstance(date, datetime):
-                check_date = date.replace(hour=0, minute=0, second=0, microsecond=0)
-            else:
-                # If date is a date object, convert to datetime
-                check_date = datetime.combine(date, datetime.min.time())
+            # Convert to date objects for a uniform comparison
+            start_date_normalized = start_date.date() if isinstance(start_date, datetime) else start_date
+            end_date_normalized = end_date.date() if isinstance(end_date, datetime) else end_date
         
-            # Convert start_date to datetime if it's a date
-            if isinstance(start_date, datetime):
-                compare_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            else:
-                compare_start = datetime.combine(start_date, datetime.min.time())
-            
-            # Convert end_date to datetime if it's a date
-            if isinstance(end_date, datetime):
-                compare_end = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            else:
-                compare_end = datetime.combine(end_date, datetime.min.time())
-        
-            # Now compare with consistent datetime objects
-            if compare_start <= check_date <= compare_end:
+            # Now compare with normalized date objects
+            if start_date_normalized <= check_date <= end_date_normalized:
                 shifts = shift_range['shifts']
                 logging.debug(f"Found variable shifts config: {shifts} shifts for date {date}")
                 return shifts
