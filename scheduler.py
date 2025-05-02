@@ -249,22 +249,28 @@ class Scheduler:
 
     def _initialize_schedule_with_variable_shifts(self):
         """Initialize the schedule dictionary with appropriate number of shifts for each date"""
-        logging.info(f"Initializing schedule with variable shifts. Found {len(self.variable_shifts)} variable shift configurations.")
+        logging.info(f"Initializing schedule structure from {self.start_date} to {self.end_date} with variable shifts. Found {len(self.variable_shifts)} configurations.")
+    
+        # Log variable shifts to help with debugging
+        for i, shift_config in enumerate(self.variable_shifts):
+            logging.info(f"  Variable shift config #{i+1}: From {shift_config['start_date']} to {shift_config['end_date']} - {shift_config['shifts']} shift(s) per day")
     
         current_date = self.start_date
         while current_date <= self.end_date:
             # Determine how many shifts this date should have
             shifts_for_date = self._get_shifts_for_date(current_date)
         
-            # Log the determined number of shifts for debugging
+            # Log when shifts differ from default
             if shifts_for_date != self.num_shifts:
-                logging.info(f"Variable shifts for date {current_date.strftime('%Y-%m-%d')}: {shifts_for_date} (default is {self.num_shifts})")
+                logging.info(f"Variable shifts applied for {current_date.strftime('%Y-%m-%d')}: {shifts_for_date} shifts (default is {self.num_shifts})")
         
             # Initialize the schedule entry for this date
             self.schedule[current_date] = [None] * shifts_for_date
         
             # Move to next date
             current_date += timedelta(days=1)
+    
+        logging.info(f"Schedule structure initialized with {len(self.schedule)} dates.")
         
     def _get_schedule_months(self):
         """
