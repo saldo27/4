@@ -614,11 +614,19 @@ class Scheduler:
             if worker_id not in self.worker_weekends:
                 self.worker_weekends[worker_id] = []
     
-        # Ensure schedule dictionary is initialized
+        # Ensure schedule dictionary entries match variable shifts configuration
         for current_date in self._get_date_range(self.start_date, self.end_date):
+            expected = self._get_shifts_for_date(current_date)
             if current_date not in self.schedule:
-                self.schedule[current_date] = [None] * self.num_shifts
-    
+                self.schedule[current_date] = [None] * expected
+                else:
+                # Pad or trim to expected length
+                actual = len(self.schedule[current_date])
+                if actual < expected:
+                    self.schedule[current_date].extend([None] * (expected - actual))
+                elif actual > expected:
+                    self.schedule[current_date] = self.schedule[current_date][:expected]
+                    
         logging.info("Data integrity check completed")
         return True
 
@@ -765,17 +773,17 @@ class Scheduler:
         """
         logging.info("Cleaning up schedule...")
 
-        # Ensure all dates in the period are in the schedule
+        # Ensure each date matches its variable-shifts count
         for date in self._get_date_range(self.start_date, self.end_date):
+            expected = self._get_shifts_for_date(date)
             if date not in self.schedule:
-                self.schedule[date] = [None] * self.num_shifts
-            elif len(self.schedule[date]) < self.num_shifts:
-                # Fill missing shifts with None
-                self.schedule[date].extend([None] * (self.num_shifts - len(self.schedule[date])))
-            elif len(self.schedule[date]) > self.num_shifts:
-                # Trim excess shifts (shouldn't happen, but just in case)
-                self.schedule[date] = self.schedule[date][:self.num_shifts]
-    
+                self.schedule[date] = [None] * expected
+                else:
+                    actual = len(self.schedule[date])
+                    if actual < expected:
+                        self.schedule[date].extend([None] * (expected - actual))
+                    elif actual > expected:
+                        self.schedule[date] = self.schedule[date][:expected]    
         # Create a sorted version of the schedule
         sorted_schedule = {}
         for date in sorted(self.schedule.keys()):
