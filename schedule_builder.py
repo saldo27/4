@@ -1319,7 +1319,7 @@ class ScheduleBuilder:
             if current not in self.schedule:
                 # Date not in schedule at all
                 date_needs_processing = True
-            elif len(self.schedule[current]) < self.num_shifts:
+            elif len(self.schedule[current]) < len(self.schedule.get(current, [])) or len(self.schedule[current]) < self.num_shifts:
                 # Date in schedule but has fewer shifts than needed
                 date_needs_processing = True
             
@@ -1336,7 +1336,7 @@ class ScheduleBuilder:
     
         return dates_to_process
     
-    def _assign_day_shifts_with_relaxation(self, date, attempt_number=0, relaxation_level=0):
+    def _assign_day_shifts_with_relaxation(self, date, attempt_number=10, relaxation_level=0):
         """Assign shifts for a given date with optional constraint relaxation"""
         logging.debug(f"Assigning shifts for {date.strftime('%d-%m-%Y')} (attempt: {attempt_number}, initial relax: {relaxation_level})")
 
@@ -1354,7 +1354,9 @@ class ScheduleBuilder:
         # Determine starting post index. If schedule[date] already has items, start from the next index.
         start_post = len(self.schedule.get(date, []))
 
-        for post in range(start_post, self.num_shifts):
+        # Respect the number of slots initialized for this date
+        total_slots = len(self.schedule.get(date, []))
+        for post in range(start_post, total_slots):
             assigned_this_post = False
             # Try each relaxation level until we succeed or run out of options
             for relax_level in range(relaxation_level + 1): # Start from specified level up to max (usually 0)
