@@ -1314,18 +1314,14 @@ class ScheduleBuilder:
         # Get all dates in period that are not weekends or holidays
         # or that already have some assignments but need more
         while current <= self.end_date:
-            date_needs_processing = False
-        
+            # for each date, check if we need to generate more shifts
             if current not in self.schedule:
-                # Date not in schedule at all
-                date_needs_processing = True
-            elif len(self.schedule[current]) < len(self.schedule.get(current, [])) or len(self.schedule[current]) < self.num_shifts:
-                # Date in schedule but has fewer shifts than needed
-                date_needs_processing = True
-            
-            if date_needs_processing:
                 dates_to_process.append(current)
-            
+            else:
+                # compare actual slots vs configured for that date
+                expected = self.scheduler._get_shifts_for_date(current)
+                if len(self.schedule[current]) < expected:
+                    dates_to_process.append(current)
             current += timedelta(days=1)
     
         # Sort based on direction
@@ -1351,10 +1347,8 @@ class ScheduleBuilder:
              max_post_assigned_prev = current_len -1
 
 
-        # Determine starting post index. If schedule[date] already has items, start from the next index.
+        # Determine how many slots this date actually has (supports variable shifts)
         start_post = len(self.schedule.get(date, []))
-
-        # Respect the number of slots initialized for this date
         total_slots = len(self.schedule.get(date, []))
         for post in range(start_post, total_slots):
             assigned_this_post = False
