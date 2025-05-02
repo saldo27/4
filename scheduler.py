@@ -61,7 +61,7 @@ class Scheduler:
             self.max_consecutive_weekends = config.get('max_consecutive_weekends', 3)
 
             # Sort the variable shifts by start date for efficient lookup
-            self.variable_shifts.sort(key=lambda x: x['start_date'])
+            #self.variable_shifts.sort(key=lambda x: x['start_date'])
 
             # Initialize tracking dictionaries
             self.schedule = {} # MOVED HERE, BEFORE _initialize_schedule_with_variable_shifts()
