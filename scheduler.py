@@ -248,21 +248,6 @@ class Scheduler:
         }
 
     def _initialize_schedule_with_variable_shifts(self):
-        """Initialize the schedule dictionary with appropriate number of shifts for each date"""
-        logging.info(f"Initializing schedule structure from {self.start_date} to {self.end_date} with variable shifts.")
-        logging.info(f"Found {len(self.variable_shifts)} variable shift configurations:")
-    
-        # Log details of each variable shift config for debugging
-        for i, shift_config in enumerate(self.variable_shifts):
-            start = shift_config['start_date']
-            end = shift_config['end_date']
-            shifts = shift_config['shifts']
-            logging.info(f"  Config #{i+1}: From {start} to {end} - {shifts} shift(s) per day")
-    
-        current_date = self.start_date
-        dates_initialized = 0
-        variable_dates = 0
-    
         while current_date <= self.end_date:
             # Determine how many shifts this date should have
             shifts_for_date = self._get_shifts_for_date(current_date)
@@ -278,9 +263,28 @@ class Scheduler:
         
             # Move to next date
             current_date += timedelta(days=1)
-    
-        logging.info(f"Schedule structure initialized with {dates_initialized} dates ({variable_dates} with variable shifts).")
-        
+        # Build a lookup for fast matching of variable ranges
+        var_cfgs = [
+            (cfg['start_date'], cfg['end_date'], cfg['shifts'])
+            for cfg in self.variable_shifts
+        ]
+        while current_date <= self.end_date:
+            # Determine how many shifts this date should have
+            shifts_for_date = self.num_shifts
+            for start, end, cnt in var_cfgs:
+                if start <= current_date <= end:
+                    shifts_for_date = cnt
+                    logging.info(f"Variable shifts applied for {current_date}: {cnt} shifts (default is {self.num_shifts})")
+                    variable_dates += 1
+                    break
+            # Initialize the schedule entry for this date
+            self.schedule[current_date] = [None] * shifts_for_date
+            dates_initialized += 1
+
+            # Move to next date
+            current_date += timedelta(days=1)
+
+
     def _get_schedule_months(self):
         """
         Calculate number of months in schedule period considering partial months
