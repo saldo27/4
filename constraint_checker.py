@@ -427,7 +427,7 @@ class ConstraintChecker:
     def is_weekend_day(self, date):
         """Check if a date is a weekend day or holiday"""
         try:
-            return date.weekday() >= 5 or date in self.holidays
+            return date.weekday() >= 4 or date in self.holidays
         except Exception as e:
             logging.error(f"Error checking if date is weekend: {str(e)}")
             return False

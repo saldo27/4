@@ -1104,7 +1104,7 @@ class CalendarViewScreen(Screen):
                     }
                 stats[worker]['total_shifts'] += 1
             
-                if date.weekday() >= 5:
+                if date.weekday() >= 4:
                     stats[worker]['weekends'] += 1
                 
                 app = App.get_running_app()
@@ -1155,7 +1155,7 @@ class CalendarViewScreen(Screen):
             
     def get_day_color(self, current_date):
         app = App.get_running_app()
-        is_weekend = current_date.weekday() >= 5
+        is_weekend = current_date.weekday() >= 4
         is_holiday = current_date in app.schedule_config.get('holidays', [])
         is_today = current_date.date() == datetime.now().date()
     
@@ -1341,7 +1341,7 @@ class CalendarViewScreen(Screen):
             self.details_layout.add_widget(header)
         
             app = App.get_running_app()
-            is_weekend = date.weekday() >= 5
+            is_weekend = date.weekday() >= 4
             is_holiday = date in app.schedule_config.get('holidays', [])
         
             # Show if it's a weekend or holiday
@@ -1560,7 +1560,7 @@ class CalendarViewScreen(Screen):
             # Filter for the current month being viewed
             if date.year == self.current_date.year and date.month == self.current_date.month:
                 month_stats['total_shifts'] += len(workers)
-                is_weekend = date.weekday() >= 5
+                is_weekend = date.weekday() >= 4
                 is_holiday = date in holidays
 
                 for i, worker_id in enumerate(workers):
@@ -1647,7 +1647,7 @@ class CalendarViewScreen(Screen):
         for date, workers in schedule.items():
             # No date filtering needed here for global summary
             global_stats['total_shifts'] += len(workers)
-            is_weekend = date.weekday() >= 5
+            is_weekend = date.weekday() >= 4
             is_holiday = date in holidays
 
             for i, worker_id in enumerate(workers):

@@ -265,7 +265,7 @@ class PDFExporter:
             
             # Calculate statistics
             total_shifts = len(assignments)
-            weekend_shifts = sum(1 for date in assignments if date.weekday() >= 5)
+            weekend_shifts = sum(1 for date in assignments if date.weekday() >= 4)
             holiday_shifts = sum(1 for date in assignments if date in self.holidays)
             
             # Calculate post distribution

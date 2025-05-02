@@ -694,7 +694,7 @@ class Scheduler:
         # Check if the date is a weekend (Sat/Sun) or a defined holiday
         # Ensure self.holidays is a list or set of datetime.date objects
         # Ensure self.date_utils exists and has is_holiday method if using holidays
-        is_weekend_day = date.weekday() >= 5 # Saturday (5) or Sunday (6)
+        is_weekend_day = date.weekday() >= 4 # Saturday (5) or Sunday (6)
         is_holiday_day = hasattr(self, 'date_utils') and hasattr(self.date_utils, 'is_holiday') and self.date_utils.is_holiday(date)
         # Alternatively, if date_utils not available/reliable:
         # is_holiday_day = date in self.holidays

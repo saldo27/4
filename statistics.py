@@ -318,7 +318,7 @@ class StatisticsCalculator:
             target_shifts = worker.get('target_shifts', 0)
         
             # Calculate weekend shifts
-            weekend_shifts = sum(1 for date in assignments if date.weekday() >= 5 or date in self.scheduler.holidays)
+            weekend_shifts = sum(1 for date in assignments if date.weekday() >= 4 or date in self.scheduler.holidays)
             weekday_shifts = total_shifts - weekend_shifts
         
             # Calculate post distribution
@@ -575,11 +575,9 @@ class StatisticsCalculator:
                 day_type = ""
                 if date in self.scheduler.holidays:
                     day_type = " [HOLIDAY]"
-                elif date.weekday() >= 5:  # Saturday or Sunday
+                elif date.weekday() >= 4:  # Friday, Saturday or Sunday
                     day_type = " [WEEKEND]"
-                elif date.weekday() == 4:  # Friday
-                    day_type = " [FRIDAY]"
-                
+                                
                 report.append(f"  {date_str} ({day_name}){day_type}: {post}")
         
             # Future recommendations
