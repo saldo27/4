@@ -248,6 +248,10 @@ class Scheduler:
         }
 
     def _initialize_schedule_with_variable_shifts(self):
+        # Initialize loop variables
+        current_date = self.start_date
+        dates_initialized = 0
+        variable_dates = 0
         # Build a lookup for fast matching of variable ranges
         var_cfgs = [
             (cfg['start_date'], cfg['end_date'], cfg['shifts'])
