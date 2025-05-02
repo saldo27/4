@@ -248,21 +248,6 @@ class Scheduler:
         }
 
     def _initialize_schedule_with_variable_shifts(self):
-        while current_date <= self.end_date:
-            # Determine how many shifts this date should have
-            shifts_for_date = self._get_shifts_for_date(current_date)
-        
-            # Log when shifts differ from default
-            if shifts_for_date != self.num_shifts:
-                logging.info(f"Variable shifts applied for {current_date}: {shifts_for_date} shifts (default is {self.num_shifts})")
-                variable_dates += 1
-        
-            # Initialize the schedule entry for this date
-            self.schedule[current_date] = [None] * shifts_for_date
-            dates_initialized += 1
-        
-            # Move to next date
-            current_date += timedelta(days=1)
         # Build a lookup for fast matching of variable ranges
         var_cfgs = [
             (cfg['start_date'], cfg['end_date'], cfg['shifts'])
