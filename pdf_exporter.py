@@ -76,7 +76,8 @@ class PDFExporter:
             if not workers_stats:
                  story.append(Paragraph("No worker statistics found for this period.", styles['Normal']))
             else:
-                for worker_id, stats in sorted(workers_stats.items()):
+                # Numeric sort: 1,2,3,…10,11
+                for worker_id, stats in sorted(workers_stats.items(), key=numeric_sort_key):
                     # --- Worker Header ---
                     worker_header = Paragraph(f"Worker {worker_id}", styles['h3'])
                     story.append(worker_header)
@@ -84,12 +85,11 @@ class PDFExporter:
 
                     # Get stats
                     total_w = stats.get('total', 0)
-                    # ... (get weekends_w, holidays_w, last_post_w, weekday_counts, post_counts) ...
                     holidays_w = stats.get('holidays', 0)
                     last_post_w = stats.get('last_post', 0)
                     weekday_counts = stats.get('weekday_counts', {})
                     post_counts = stats.get('post_counts', {})
-                    worker_shifts = worker_shifts_all.get(worker_id, []) # Get shifts for this worker
+                    worker_shifts = worker_shifts_all.get(worker_id, []) 
 
 
                     # --- Worker Summary Stats ---
