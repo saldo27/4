@@ -120,13 +120,13 @@ class Scheduler:
             )
 
             # Process variable shifts
-            self.variable_shifts = config.get('variable_shifts', [])
+            #self.variable_shifts = config.get('variable_shifts', [])
     
             # Sort the variable shifts by start date for efficient lookup
-            self.variable_shifts.sort(key=lambda x: x['start_date'])
+            #self.variable_shifts.sort(key=lambda x: x['start_date'])
     
             # Initialize the schedule structure with the appropriate number of shifts for each date
-            self._initialize_schedule_with_variable_shifts()
+            #self._initialize_schedule_with_variable_shifts()
 
             # Calculate targets before proceeding
             self._calculate_target_shifts()
