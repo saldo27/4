@@ -778,12 +778,12 @@ class Scheduler:
             expected = self._get_shifts_for_date(date)
             if date not in self.schedule:
                 self.schedule[date] = [None] * expected
-                else:
-                    actual = len(self.schedule[date])
-                    if actual < expected:
-                        self.schedule[date].extend([None] * (expected - actual))
-                    elif actual > expected:
-                        self.schedule[date] = self.schedule[date][:expected]    
+            else:
+                actual = len(self.schedule[date])
+                if actual < expected:
+                    self.schedule[date].extend([None] * (expected - actual))
+                elif actual > expected:
+                    self.schedule[date] = self.schedule[date][:expected]    
         # Create a sorted version of the schedule
         sorted_schedule = {}
         for date in sorted(self.schedule.keys()):
