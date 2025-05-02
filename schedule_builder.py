@@ -1096,16 +1096,21 @@ class ScheduleBuilder:
 
                     # Check constraints and assign
                     logging.debug(f"      Checking constraints for Worker {worker_id} on {current_date} Post {post_idx}...")
-                    # Ensure constraint checker method exists and is correct
                     try:
-                        # Assuming check_constraints is the correct method name and location
-                        can_assign = self.scheduler.constraint_checker._check_constraints(worker_id, current_date, post_idx=post_idx, skip_constraints=False)
+                        passed, reason = self.scheduler.constraint_checker._check_constraints(
+                            worker_id,
+                            current_date,
+                            skip_constraints=False
+                        )
+                        can_assign = passed
+                        if not passed:
+                            logging.debug(f"      Constraint check failed: {reason}")
                     except AttributeError:
-                         logging.error("AttributeError: Could not find _check_constraints method on constraint_checker.")
-                         can_assign = False # Fail safe
+                        logging.error("AttributeError: _check_constraints method not found on constraint_checker.")
+                        can_assign = False
                     except Exception as e_check:
-                         logging.error(f"Exception during constraint check for {worker_id} on {current_date}: {e_check}", exc_info=True)
-                         can_assign = False # Fail safe
+                        logging.error(f"Exception during constraint check for {worker_id} on {current_date}: {e_check}", exc_info=True)
+                        can_assign = False
 
 
                     if can_assign:
@@ -2829,19 +2834,20 @@ class ScheduleBuilder:
                 # Assuming _check_constraints uses live data from self.scheduler
                 # Ensure the constraint checker method exists and is correctly referenced
                 try:
-                    # Indent level 4
-                    if not self.scheduler.constraint_checker._check_constraints(worker_id, date, post_idx=post, skip_constraints=False):
-                        # Indent level 5
-                        # logging.debug(f"LIVE Constraint check failed for {worker_id} on {date} post {post} during swap check.")
+                    passed, reason = self.scheduler.constraint_checker._check_constraints(
+                        worker_id,
+                        date,
+                        skip_constraints=False
+                    )
+                    if not passed:
+                        logging.debug(f"Constraint violation for worker {worker_id} on {date}: {reason}")
                         return False
                 except AttributeError:
-                    # Indent level 4 (aligned with try)
                     logging.error("Constraint checker or _check_constraints method not found during swap validation.")
-                    return False # Fail validation if checker is missing
+                    return False
                 except Exception as e_constr:
-                    # Indent level 4 (aligned with try)
                     logging.error(f"Error calling constraint checker for {worker_id} on {date}: {e_constr}", exc_info=True)
-                    return False # Fail validation on error
+                    return False
 
         # Indent level 1 (aligned with the initial 'if' and 'for' loops)
         return True
