@@ -619,7 +619,7 @@ class Scheduler:
             expected = self._get_shifts_for_date(current_date)
             if current_date not in self.schedule:
                 self.schedule[current_date] = [None] * expected
-                else:
+            else:
                 # Pad or trim to expected length
                 actual = len(self.schedule[current_date])
                 if actual < expected:
