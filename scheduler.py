@@ -1349,19 +1349,11 @@ class Scheduler:
             self.schedule_builder = ScheduleBuilder(self)
             logging.info("Scheduler initialized and ScheduleBuilder created.")
 
-            # --- ADDED: Initialize Schedule Structure ---
-            logging.info(f"Initializing schedule structure from {self.start_date} to {self.end_date} with {self.num_shifts} posts per day.")
-            if not self.start_date or not self.end_date or self.num_shifts is None:
-                 raise SchedulerError("Start date, end date, or num_shifts not properly initialized in Scheduler.")
-            if self.num_shifts <= 0:
-                 raise SchedulerError(f"Number of shifts per day (num_shifts) must be positive, got {self.num_shifts}.")
-
-            current_date = self.start_date
-            while current_date <= self.end_date:
-                self.schedule[current_date] = [None] * self.num_shifts
-                current_date += timedelta(days=1)
-            logging.info(f"Schedule structure initialized with {len(self.schedule)} dates.")
-            # --- END ADDED ---
+            # Initialize schedule structure honoring variable_shifts configuration
+            logging.info("Initializing schedule structure with variable shift counts...")
+            self.schedule = {}  # reset before init
+            self._initialize_schedule_with_variable_shifts()
+            logging.info(f"Schedule structure initialized with {len(self.schedule)} dates (variable shifts applied).")
 
         except Exception as e:
             logging.exception("Initialization failed during schedule generation.")
