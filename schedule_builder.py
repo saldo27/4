@@ -1109,21 +1109,22 @@ class ScheduleBuilder:
 
 
                     if can_assign:
-                         logging.info(f"      Assigning config mandatory shift: {current_date} Post {post_idx} -> Worker {worker_id}")
-                         self.scheduler.schedule[current_date][post_idx] = worker_id
-                         # Ensure _update_tracking_data exists and has correct signature
-                         try:
+                        logging.info(f"      Assigning config mandatory shift: {current_date} Post {post_idx} -> Worker {worker_id}")
+                        # Place in schedule
+                        self.scheduler.schedule[current_date][post_idx] = worker_id
+                        # Track assignment in scheduler.worker_assignments
+                        self.scheduler.worker_assignments.setdefault(worker_id, set()).add(current_date)
+                        # Update counts/tracking
+                        try:
                             self.scheduler._update_tracking_data(worker_id, current_date, post_idx)
-                         except AttributeError:
-                             logging.error("AttributeError: Could not find _update_tracking_data method on scheduler.")
-                         except Exception as e_update:
-                             logging.error(f"Exception during tracking update for {worker_id} on {current_date}: {e_update}", exc_info=True)
-
-                         assigned_count += 1
+                        except AttributeError:
+                            logging.error("AttributeError: Could not find _update_tracking_data method on scheduler.")
+                        except Exception as e_update:
+                            logging.error(f"Exception during tracking update for {worker_id} on {current_date}: {e_update}", exc_info=True)
+                        assigned_count += 1
                     else:
                          logging.warning(f"      Could not assign config mandatory shift for {worker_id} on {current_date} (Post {post_idx}) due to constraints.")
-                # --- End of indented block ---
-
+             
             # This line must be OUTSIDE the 'if' block, but INSIDE the 'while' loop
             current_date += timedelta(days=1)
         logging.debug("Finished date iteration for config mandatory shifts.")
