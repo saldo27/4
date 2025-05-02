@@ -2766,8 +2766,14 @@ class ScheduleBuilder:
          while len(self.scheduler.schedule[date_to]) <= post_to:
               self.scheduler.schedule[date_to].append(None)
          self.scheduler.schedule[date_to][post_to] = worker_id
-         self.scheduler.worker_assignments[worker_id].remove(date_from)
-         self.scheduler.worker_assignments[worker_id].add(date_to)
+         if date_from in self.scheduler.worker_assignments.get(worker_id, set()):
+            self.scheduler.worker_assignments[worker_id].remove(date_from)
+        else:
+            logging.warning(
+                f"_can_swap_assignments: cannot remove {date_from} for worker {worker_id} — "
+                "date not tracked in worker_assignments"
+            )
+        self.scheduler.worker_assignments[worker_id].add(date_to)
 
          # 2. Check constraints for BOTH dates with the new state
          valid_from = self._check_all_constraints_for_date(date_from)
