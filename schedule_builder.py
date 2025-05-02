@@ -2747,26 +2747,26 @@ class ScheduleBuilder:
             self.scheduler._update_tracking_data(worker_X_id, date_from, post_from)
             
     def _can_swap_assignments(self, worker_id, date_from, post_from, date_to, post_to):
-         """ Checks if moving worker_id from (date_from, post_from) to (date_to, post_to) is valid """
-         # 1. Temporarily apply the swap to copies or directly (need rollback)
-         original_val_from = self.scheduler.schedule[date_from][post_from]
-         # Ensure target list is long enough for check
-         original_len_to = len(self.scheduler.schedule.get(date_to, []))
-         original_val_to = None
-         if original_len_to > post_to:
-              original_val_to = self.scheduler.schedule[date_to][post_to]
-         elif original_len_to == post_to: # Can append
-              pass
-         else: # Cannot place here if list isn't long enough and we aren't appending
-              return False
+        """ Checks if moving worker_id from (date_from, post_from) to (date_to, post_to) is valid """
+        # 1. Temporarily apply the swap to copies or directly (need rollback)
+        original_val_from = self.scheduler.schedule[date_from][post_from]
+        # Ensure target list is long enough for check
+        original_len_to = len(self.scheduler.schedule.get(date_to, []))
+        original_val_to = None
+        if original_len_to > post_to:
+            original_val_to = self.scheduler.schedule[date_to][post_to]
+        elif original_len_to == post_to: # Can append
+            pass
+        else: # Cannot place here if list isn't long enough and we aren't appending
+            return False
 
-         self.scheduler.schedule[date_from][post_from] = None
-         # Ensure list exists and is long enough
-         self.scheduler.schedule.setdefault(date_to, [None] * self.num_shifts) # Ensure list exists
-         while len(self.scheduler.schedule[date_to]) <= post_to:
-              self.scheduler.schedule[date_to].append(None)
-         self.scheduler.schedule[date_to][post_to] = worker_id
-         if date_from in self.scheduler.worker_assignments.get(worker_id, set()):
+        self.scheduler.schedule[date_from][post_from] = None
+        # Ensure list exists and is long enough
+        self.scheduler.schedule.setdefault(date_to, [None] * self.num_shifts) # Ensure list exists
+        while len(self.scheduler.schedule[date_to]) <= post_to:
+             self.scheduler.schedule[date_to].append(None)
+        self.scheduler.schedule[date_to][post_to] = worker_id
+        if date_from in self.scheduler.worker_assignments.get(worker_id, set()):
             self.scheduler.worker_assignments[worker_id].remove(date_from)
         else:
             logging.warning(
@@ -2775,30 +2775,30 @@ class ScheduleBuilder:
             )
         self.scheduler.worker_assignments[worker_id].add(date_to)
 
-         # 2. Check constraints for BOTH dates with the new state
-         valid_from = self._check_all_constraints_for_date(date_from)
-         valid_to = self._check_all_constraints_for_date(date_to)
+        # 2. Check constraints for BOTH dates with the new state
+        valid_from = self._check_all_constraints_for_date(date_from)
+        valid_to = self._check_all_constraints_for_date(date_to)
 
-         # 3. Rollback the temporary changes
-         self.scheduler.schedule[date_from][post_from] = original_val_from # Should be worker_id
-         if original_len_to > post_to:
-             self.scheduler.schedule[date_to][post_to] = original_val_to # Should be None
-         elif original_len_to == post_to: # We appended, so remove
-             self.scheduler.schedule[date_to].pop()
-         # If list was shorter and not appendable, we returned False earlier
+        # 3. Rollback the temporary changes
+        self.scheduler.schedule[date_from][post_from] = original_val_from # Should be worker_id
+        if original_len_to > post_to:
+            self.scheduler.schedule[date_to][post_to] = original_val_to # Should be None
+        elif original_len_to == post_to: # We appended, so remove
+            self.scheduler.schedule[date_to].pop()
+        # If list was shorter and not appendable, we returned False earlier
 
-         # Adjust list length if needed after pop
-         if date_to in self.scheduler.schedule and len(self.scheduler.schedule[date_to]) == 0:
-             # Maybe don't delete empty dates? Or handle carefully.
-             # Let's assume empty lists are okay.
-             pass
-
-
-         self.scheduler.worker_assignments[worker_id].add(date_from)
-         self.scheduler.worker_assignments[worker_id].remove(date_to)
+        # Adjust list length if needed after pop
+        if date_to in self.scheduler.schedule and len(self.scheduler.schedule[date_to]) == 0:
+            # Maybe don't delete empty dates? Or handle carefully.
+            # Let's assume empty lists are okay.
+            pass
 
 
-         return valid_from and valid_to
+        self.scheduler.worker_assignments[worker_id].add(date_from)
+        self.scheduler.worker_assignments[worker_id].remove(date_to)
+
+
+        return valid_from and valid_to
 
     def _check_all_constraints_for_date(self, date):
         """ Checks all constraints for all workers assigned on a given date. """
