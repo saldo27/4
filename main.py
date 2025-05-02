@@ -95,7 +95,7 @@ class PasswordScreen(Screen):
 class WelcomeScreen(Screen):
     def __init__(self, **kwargs):
         super(WelcomeScreen, self).__init__(**kwargs)
-        print("DEBUG: PasswordScreen __init__ called!") # <<< ADD THIS LINE
+        print("DEBUG: PasswordScreen __init__ called!") 
         layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
         
         layout.add_widget(Label(text='Bienvenido'))
@@ -176,14 +176,14 @@ class SetupScreen(Screen):
         # Gap between shifts
         gap_container = BoxLayout(orientation='vertical')
         gap_container.add_widget(Label(text='Distancia mínima entre guardias:', halign='left', size_hint_y=0.4))
-        self.gap_between_shifts = TextInput(multiline=False, input_filter='int', text='1', size_hint_y=0.6)
+        self.gap_between_shifts = TextInput(multiline=False, input_filter='int', text='3', size_hint_y=0.6)
         gap_container.add_widget(self.gap_between_shifts)
         numbers_section.add_widget(gap_container)
         
         # Max consecutive weekends
         weekends_container = BoxLayout(orientation='vertical')
         weekends_container.add_widget(Label(text='Máx Findes/Festivos consecutivos:', halign='left', size_hint_y=0.4))
-        self.max_consecutive_weekends = TextInput(multiline=False, input_filter='int', text='2', size_hint_y=0.6)
+        self.max_consecutive_weekends = TextInput(multiline=False, input_filter='int', text='3', size_hint_y=0.6)
         weekends_container.add_widget(self.max_consecutive_weekends)
         numbers_section.add_widget(weekends_container)
         
@@ -195,7 +195,7 @@ class SetupScreen(Screen):
         # ------ NEW SECTION: Variable Shifts by Date Range ------
         shifts_header = BoxLayout(orientation='vertical', size_hint_y=None, height=40)
         shifts_header.add_widget(Label(
-            text='Variables guardias por período (opcional):',
+            text='Periodo con variación en guardias/día(opcional):',
             halign='left',
             valign='bottom',
             bold=True
@@ -214,7 +214,7 @@ class SetupScreen(Screen):
 
         # Add button to add new variable shift rows
         add_shift_btn = Button(
-            text='+ Add Variable Shifts Period',
+            text='+ Añadir Periodo con variación guardias/día',
             size_hint_y=None,
             height=40
         )
@@ -435,12 +435,12 @@ class SetupScreen(Screen):
                 if 'gap_between_shifts' in app.schedule_config:
                     self.gap_between_shifts.text = str(app.schedule_config['gap_between_shifts'])
                 else:
-                    self.gap_between_shifts.text = "1"  # Default value
+                    self.gap_between_shifts.text = "3"  
             
                 if 'max_consecutive_weekends' in app.schedule_config:
                     self.max_consecutive_weekends.text = str(app.schedule_config['max_consecutive_weekends'])
                 else:
-                    self.max_consecutive_weekends.text = "2"  # Default value
+                    self.max_consecutive_weekends.text = "3"  
             
                 if 'holidays' in app.schedule_config and app.schedule_config['holidays']:
                     # Format holidays in DD-MM-YYYY format

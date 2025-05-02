@@ -1338,7 +1338,7 @@ class ScheduleBuilder:
     
         return dates_to_process
     
-    def _assign_day_shifts_with_relaxation(self, date, attempt_number=10, relaxation_level=0):
+    def _assign_day_shifts_with_relaxation(self, date, attempt_number=20, relaxation_level=0):
         """Assign shifts for a given date with optional constraint relaxation"""
         logging.debug(f"Assigning shifts for {date.strftime('%d-%m-%Y')} (attempt: {attempt_number}, initial relax: {relaxation_level})")
 
