@@ -2989,15 +2989,15 @@ class ScheduleBuilder:
     def _adjust_last_post_distribution(self, balance_tolerance=1.0):
         """
         Adjust the distribution of the last post for each worker by only moving workers
-        who are already assigned on a specific day. This ensures each worker has approximately
-        (total_shifts_for_worker / shifts_per_day +/- 1) last post assignments.
-    
-        Properly accounts for variable shifts where different days may have different numbers of posts.
-        
-        This is called AFTER all other swaps and optimizations are completed.
+        who are already assigned on a specific day.
         """
         logging.info("Adjusting last post distribution among workers...")
+        logging.debug("LAST_POST_DEBUG: Starting last post adjustment")
         fixes_made = 0
+    
+        # Add debug counts
+        total_overassigned = 0
+        total_underassigned = 0
     
         # First, analyze the current distribution of posts for each worker
         worker_post_stats = []
@@ -3016,13 +3016,13 @@ class ScheduleBuilder:
             for date in worker_dates:
                 if date not in self.schedule:
                     continue
-                
+            
                 shifts = self.schedule[date]
                 shifts_per_day = len(shifts)
             
                 if shifts_per_day == 0:
                     continue
-                
+            
                 # Add to the total last post probability calculation
                 total_last_post_probability += (1 / shifts_per_day)
             
@@ -3059,29 +3059,46 @@ class ScheduleBuilder:
                 'deviation': deviation
             })
         
-            logging.debug(f"Worker {worker_id}: {last_post_count} last post shifts, "
+            # Add detailed logging for each worker
+            logging.debug(f"LAST_POST_DEBUG: Worker {worker_id}: {last_post_count} last post shifts, "
                          f"target {target_last_post:.2f}, deviation {deviation:.2f}")
     
         # Sort workers by deviation (most overassigned first, then most underassigned)
         overassigned = sorted([w for w in worker_post_stats if w['deviation'] > balance_tolerance],
                              key=lambda x: -x['deviation'])
         underassigned = sorted([w for w in worker_post_stats if w['deviation'] < -balance_tolerance],
-                              key=lambda x: x['deviation'])
+                             key=lambda x: x['deviation'])
     
-        # Process each date to find possible swaps between overassigned and underassigned workers
+        # Log statistics on how many workers are overassigned/underassigned
+        total_overassigned = len(overassigned)
+        total_underassigned = len(underassigned)
+        logging.debug(f"LAST_POST_DEBUG: Found {total_overassigned} overassigned workers and {total_underassigned} underassigned workers")
+    
+        # If either list is empty, we can't balance
+        if not overassigned or not underassigned:
+            logging.info("LAST_POST_DEBUG: No adjustment possible - not enough workers to balance")
+            return False
+    
+        # Process each date to find possible swaps
         dates_to_process = sorted(list(self.schedule.keys()))
+    
+        # Log some potential swap candidates
+        if overassigned and underassigned:
+            over_example = overassigned[0]['worker_id']
+            under_example = underassigned[0]['worker_id']
+            logging.debug(f"LAST_POST_DEBUG: Example candidates - Overassigned: {over_example}, Underassigned: {under_example}")
     
         for date in dates_to_process:
             shifts = self.schedule.get(date, [])
             if not shifts:
                 continue
-            
+        
             # Get the last post index for this specific date (accounts for variable shifts)
             last_post_idx = len(shifts) - 1
         
             if last_post_idx < 0:
                 continue  # Skip dates with empty shift lists
-        
+            
             # Check if the last post is assigned to an overassigned worker
             if shifts[last_post_idx] is None:
                 continue  # Skip if the last post is empty
@@ -3097,6 +3114,9 @@ class ScheduleBuilder:
         
             if not overassigned_worker:
                 continue  # Skip if the last post worker isn't overassigned
+        
+            # Add detailed debug for this date
+            logging.debug(f"LAST_POST_DEBUG: Date {date}: Last post assigned to overassigned worker {last_post_worker_id}")
         
             # Find an underassigned worker on this same date
             swap_candidate = None
@@ -3117,11 +3137,15 @@ class ScheduleBuilder:
                     break  # Found a candidate to swap with
         
             if not swap_candidate:
+                logging.debug(f"LAST_POST_DEBUG: Date {date}: No underassigned worker found on this date to swap with")
                 continue  # Skip if no underassigned worker found on this date
+            
+            logging.debug(f"LAST_POST_DEBUG: Date {date}: Found potential swap between {overassigned_worker['worker_id']} and {swap_candidate['worker_id']}")
         
             # Check if the swap isn't mandatory for either worker
             if self._is_mandatory(overassigned_worker['worker_id'], date) or \
                self._is_mandatory(swap_candidate['worker_id'], date):
+                logging.debug(f"LAST_POST_DEBUG: Date {date}: Swap rejected - mandatory assignment detected")
                 continue  # Skip if either worker has a mandatory shift
         
             # Perform the swap on this date
@@ -3163,10 +3187,15 @@ class ScheduleBuilder:
             if not overassigned or not underassigned:
                 break
     
-        logging.info(f"Last post adjustment completed: made {fixes_made} changes")
+        # Summary of changes
+        logging.info(f"Last post adjustment completed: made {fixes_made} changes out of {total_overassigned} overassigned workers")
+    
         if fixes_made > 0:
             self._save_current_as_best()
-        return fixes_made > 0
+            return True
+        else:
+            logging.info("LAST_POST_DEBUG: No changes were made during last post adjustment")
+            return False
 
     # 7. Backup and Restore Methods
 
