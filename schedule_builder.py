@@ -936,20 +936,24 @@ class ScheduleBuilder:
                 # Lower score for workers with more weekend assignments
                 score -= weekend_assignments * 300
         
-            # 3. Post Rotation Score - focus especially on last post distribution
-            last_post = self.num_shifts - 1
-            if post == last_post:  # Special handling for the last post
-                post_counts = self._get_post_counts(worker_id)
-                total_assignments = sum(post_counts.values()) + 1  # +1 for this potential assignment
-                target_last_post = total_assignments * (1 / self.num_shifts)
-                current_last_post = post_counts.get(last_post, 0)
-            
-                # Encourage assignments when below target
-                if current_last_post < target_last_post - 1:
-                    score += 1000
-                # Discourage assignments when above target
-                elif current_last_post > target_last_post + 1:
-                    score -= 1000
+            # 3. Post Rotation Score - MODIFY THIS SECTION
+            # Remove the special handling for last post since this will be handled separately
+            # by _adjust_last_post_distribution after all optimizations are done
+    
+            # Instead, use a more general post rotation score that treats all posts equally
+            post_counts = self._get_post_counts(worker_id)
+            total_assignments = sum(post_counts.values()) + 1  # +1 for this potential assignment
+            expected_per_post = total_assignments / self.num_shifts
+            current_post_count = post_counts.get(post, 0)
+    
+            # Calculate deviation from expected count
+            post_deviation = current_post_count - expected_per_post
+    
+            # Apply moderate score adjustment (-500 to +500) based on how far from expected
+            if post_deviation < -0.5:  # Significantly under-assigned for this post
+                score += 500  # Encourage assignments to under-represented posts
+            elif post_deviation > 0.5:  # Significantly over-assigned for this post
+                score -= 500  # Discourage assignments to over-represented post
         
             # 4. Weekly Balance Score - avoid concentration in some weeks
             week_number = date.isocalendar()[1]
@@ -2265,30 +2269,54 @@ class ScheduleBuilder:
         return best_score
 
     def _improve_post_rotation(self):
-        """Improve post rotation by swapping assignments"""
-        logging.info("Attempting to improve post rotation...")
+        """
+        Improve post rotation by swapping assignments.
+        This method focuses on balancing posts 0 through n-2, 
+        excluding the last post which will be handled separately
+        by _adjust_last_post_distribution.
+        """
+        logging.info("Attempting to improve post rotation (excluding last post)...")
         fixes_made = 0
+    
         # Use a threshold slightly above 1 to avoid swapping for minor imbalances
         imbalanced_workers = self._identify_imbalanced_posts(deviation_threshold=1.5)
 
         if not imbalanced_workers:
-             logging.info("No workers identified with significant post imbalance.")
-             return False
-            
+            logging.info("No workers identified with significant post imbalance.")
+            return False
+        
         for worker_id, post_counts, deviation in imbalanced_workers:
             goto_next_worker = False
-            total_assigned = sum(post_counts.values()) # Recalculate or pass from identify? Pass is better.
+            total_assigned = sum(post_counts.values())
 
-
-            overassigned_posts, underassigned_posts = self._get_over_under_posts(post_counts, total_assigned, balance_threshold=1.0)
+            # Get over/under assigned posts
+            overassigned_posts, underassigned_posts = self._get_over_under_posts(
+                post_counts, total_assigned, balance_threshold=1.0)
+            
             if not overassigned_posts or not underassigned_posts:
                 logging.debug(f"Worker {worker_id} is imbalanced (dev={deviation:.2f}) but no clear over/under posts found with threshold 1.0. Counts: {post_counts}")
                 continue
 
             logging.debug(f"Improving post rotation for {worker_id}: Over={overassigned_posts}, Under={underassigned_posts}")
 
+            # ADDED: Filter out last post from the swaps - we'll handle that separately
+            overassigned_posts = [(p, c) for p, c in overassigned_posts 
+                                 if p != self.num_shifts - 1]
+        
+            # If after filtering there are no overassigned non-last posts, skip this worker
+            if not overassigned_posts:
+                continue
+
             for over_post, _ in overassigned_posts:
-                for under_post, _ in underassigned_posts:
+                # ADDED: Filter underassigned posts to exclude the last post
+                filtered_under_posts = [(p, c) for p, c in underassigned_posts 
+                                      if p != self.num_shifts - 1]
+            
+                # If after filtering there are no underassigned non-last posts, skip
+                if not filtered_under_posts:
+                    continue
+                
+                for under_post, _ in filtered_under_posts:
                     possible_swap_dates = []
                     # Use scheduler references
                     for date_loop, workers_loop in self.scheduler.schedule.items():
