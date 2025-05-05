@@ -417,6 +417,9 @@ class ScheduleBuilder:
         Returns:
             bool: True if the worker can be assigned, False otherwise
         """
+        try:
+            # Log all constraint checks
+            logging.debug(f"\nChecking worker {worker_id} for {date}, post {post}")
         # Skip if already assigned to this date
         if worker_id in self.schedule.get(date, []):
             return False
@@ -434,15 +437,19 @@ class ScheduleBuilder:
         if not self._check_incompatibility(worker_id, date):
             return False
 
-        # Check minimum gap between shifts based on configurable parameter
-        assignments = sorted(self.worker_assignments[worker_id])
-        min_days_between = self.gap_between_shifts + 1  # +1 because we need days_between > gap
-    
-        for prev_date in assignments:
-            days_between = abs((date - prev_date).days)
-            if days_between < min_days_between:  # Use configurable gap
-                return False
-
+        # 4. CRITICAL: Check minimum gap - NEVER RELAX THIS
+        assignments = sorted(list(self.worker_assignments.get(worker_id, [])))
+        if assignments:
+            for prev_date in assignments:
+                days_between = abs((date - prev_date).days)
+                if 0 < days_between < self.gap_between_shifts + 1:  # Fixed to only check non-zero gaps within range
+                    logging.debug(f"- Failed: Insufficient gap ({days_between} days)")
+                    return False
+                
+                # 5. NEW: Check for weekly pattern (7/14 day) constraint - ONLY 7 and 14 days
+                if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
+                    logging.debug(f"- Failed: Would create {days_between} day pattern")
+                    return False
         # Special case: Friday-Monday check if gap is only 1 day
         if self.gap_between_shifts == 1:
             for prev_date in assignments:
@@ -537,7 +544,7 @@ class ScheduleBuilder:
                 return False
 
             simulated_schedule[date_to][post_to] = worker_id
-            simulated_assignments.setdefault(worker_id, set()).add(date_to)
+            simulated_assignments.setdefault(worker_id, set()).add(date_to)check_constraints_on_simulated
 
             # --- Check Constraints on Simulated State ---
             # Check if the worker can be assigned to the target slot considering the simulated state
@@ -634,13 +641,12 @@ class ScheduleBuilder:
                 if prev_date == date: 
                     continue
                 days_between = abs((date - prev_date).days)
-                # Fix the variable names and check for exactly 7 or 14 days pattern AND same weekday
+                # Check for exactly 7 or 14 days pattern AND same weekday
                 if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
                     logging.debug(f"Sim Check Fail: {days_between} day pattern conflict for {worker_id} between {prev_date} and {date}")
                     return False
                 
-            return True # All checks passed on simulated data
-        
+            return True # All checks passed on simulated data        
         except Exception as e:
             logging.error(f"Error during _check_constraints_on_simulated for {worker_id} on {date}: {e}", exc_info=True)
             return False # Fail safe
@@ -706,7 +712,7 @@ class ScheduleBuilder:
     def _would_exceed_weekend_limit_simulated(self, worker_id, date, simulated_assignments):
         """Check weekend limit using simulated assignments."""
         # Check if date is a weekend/holiday
-        is_target_weekend = self.date_utils.is_weekend_day(date) or date in self.scheduler.holidays
+        is_target_weekend = date.weekday() >= 4 or date in self.scheduler.holidays
         if not is_target_weekend:
             return False  # Not a weekend/holiday, so no limit applies
     
@@ -719,38 +725,60 @@ class ScheduleBuilder:
         if work_percentage < 70:
             max_weekend_count = max(1, int(self.scheduler.max_consecutive_weekends * work_percentage / 100))
     
-        # Get current weekend assignments for this worker
-        weekend_dates = self.scheduler.worker_weekends.get(worker_id, []).copy()
+        # Get weekend assignments and add the current date
+        weekend_dates = []
+        for d in simulated_assignments.get(worker_id, set()):
+            if d.weekday() >= 4 or d in self.scheduler.holidays:
+                weekend_dates.append(d)
     
         # Add the date if it's not already in the list
         if date not in weekend_dates:
             weekend_dates.append(date)
     
-        # Sort dates to ensure proper analysis
+        # Sort dates to ensure chronological order
         weekend_dates.sort()
     
-        # Check for consecutive weekends exceeding the limit
-        if len(weekend_dates) <= max_weekend_count:
-            return False  # No issue if total weekends are within limit
+        # Check for consecutive weekends
+        consecutive_groups = []
+        current_group = []
     
-        # Find consecutive weekends - by looking for dates within 14 days of each other
-        consecutive_count = 1
-        max_consecutive = 1
-    
-        for i in range(1, len(weekend_dates)):
-            # If this date is within 14 days of the previous one, it's part of a consecutive sequence
-            if (weekend_dates[i] - weekend_dates[i-1]).days <= 14:
-                consecutive_count += 1
-                max_consecutive = max(max_consecutive, consecutive_count)
+        for i, d in enumerate(weekend_dates):
+            # Start a new group or add to the current one
+            if not current_group:
+                current_group = [d]
             else:
-                # Reset consecutive count when the gap is more than 14 days
-                consecutive_count = 1
+                # Get the previous weekend's date
+                prev_weekend = current_group[-1]
+                # Calculate days between this weekend and the previous one
+                days_diff = (d - prev_weekend).days
+            
+                # Checking if they are adjacent weekend dates (7-10 days apart)
+                # A weekend is consecutive to the previous if it's the next calendar weekend
+                # This is typically 7 days apart, but could be 6-8 days depending on which weekend days
+                if 5 <= days_diff <= 10:
+                    current_group.append(d)
+                else:
+                    # Not consecutive, save the current group and start a new one
+                    if len(current_group) > 1:  # Only save groups with more than 1 weekend
+                        consecutive_groups.append(current_group)
+                    current_group = [d]
+    
+        # Add the last group if it has more than 1 weekend
+        if len(current_group) > 1:
+            consecutive_groups.append(current_group)
+    
+        # Find the longest consecutive sequence
+        max_consecutive = 0
+        if consecutive_groups:
+            max_consecutive = max(len(group) for group in consecutive_groups)
+        else:
+            max_consecutive = 1  # No consecutive weekends found
     
         # Check if maximum consecutive weekend count is exceeded
         if max_consecutive > max_weekend_count:
             logging.debug(f"Weekend limit exceeded: Worker {worker_id} would have {max_consecutive} consecutive weekend shifts (max allowed: {max_weekend_count})")
             return True
-        
+    
         return False
     
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
@@ -3029,8 +3057,11 @@ class ScheduleBuilder:
         logging.info("Adjusting last post distribution among workers...")
         fixes_made = 0
     
-        # First, perform a full synchronization to ensure all tracking data is accurate
+        # First, perform a full synchronization to ensure ALL tracking data is accurate
         self._synchronize_tracking_data()
+    
+        # Additional verification to ensure complete consistency
+        self._verify_assignment_consistency()
     
         # Initialize worker post statistics
         worker_post_stats = []
