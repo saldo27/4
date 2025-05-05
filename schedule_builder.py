@@ -683,31 +683,32 @@ class ScheduleBuilder:
         return self._check_incompatibility_with_list(worker_id, assigned_workers_list)
 
     def _check_gap_constraint_simulated(self, worker_id, date, simulated_assignments):
-         """Check gap constraint using simulated assignments."""
-         # Use scheduler's gap config
-         min_days_between = self.scheduler.gap_between_shifts + 1
-         # Add part-time adjustment if needed
-         worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
-         work_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
-         if work_percentage < 70: # Example threshold for part-time adjustment
-             min_days_between = max(min_days_between, self.scheduler.gap_between_shifts + 2)
+        """Check gap constraint using simulated assignments."""
+        # Use scheduler's gap config
+        min_days_between = self.scheduler.gap_between_shifts + 1
+        # Add part-time adjustment if needed
+        worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
+        work_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
+        if work_percentage < 70: # Example threshold for part-time adjustment
+            min_days_between = max(min_days_between, self.scheduler.gap_between_shifts + 2)
 
-         assignments = sorted(list(simulated_assignments.get(worker_id, [])))
+            assignments = sorted(list(simulated_assignments.get(worker_id, [])))
 
-         for prev_date in assignments:
-              if prev_date == date: continue # Don't compare date to itself
-              days_between = abs((date - prev_date).days)
-              if days_between < min_days_between:
-                   return False
-              # Add Friday-Monday / 7-14 day checks if needed here too, using relaxation_level=0 logic
-              if self.scheduler.gap_between_shifts == 1 and work_percentage >= 100:
-                   if days_between == 3:
-                       if ((prev_date.weekday() == 4 and date.weekday() == 0) or \
-                           (date.weekday() == 4 and prev_date.weekday() == 0)):
-                           return False
-              # if days_between in [7, 14, 21]: return False # Optional strict weekly pattern check
-
-         return True
+            for prev_date in assignments:
+        if prev_date == date: continue # Don't compare date to itself
+            days_between = abs((date - prev_date).days)
+            if days_between < min_days_between:
+                return False
+            # Add Friday-Monday / 7-14 day checks if needed here too, using relaxation_level=0 logic
+            if self.scheduler.gap_between_shifts == 1 and work_percentage >= 100:
+                if days_between == 3:
+                    if ((prev_date.weekday() == 4 and date.weekday() == 0) or \
+                        (date.weekday() == 4 and prev_date.weekday() == 0)):
+                        return False
+            # Add check for weekly pattern (7/14 day)
+            if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
+                return False
+        return True
 
     def _would_exceed_weekend_limit_simulated(self, worker_id, date, simulated_assignments):
         """Check weekend limit using simulated assignments."""
@@ -896,6 +897,7 @@ class ScheduleBuilder:
             elif shifts_this_month >= max_monthly:
                  score -= (shifts_this_month - max_monthly + 1) * 1500 # Penalty increases the further above max they go
                  logging.debug(f"Worker {worker_id} gets monthly penalty: at/above max ({shifts_this_month} >= {max_monthly})")
+         
 
             # --- Gap Constraints ---
             assignments = sorted(list(self.worker_assignments[worker_id]))
@@ -913,14 +915,14 @@ class ScheduleBuilder:
                         return float('-inf')
         
                     # Special rule for full-time workers with gap=1: No Friday + Monday (3-day gap)
-                    if work_percentage >= 100 and relaxation_level == 0 and self.gap_between_shifts == 1:
+                    if work_percentage >= 80 and relaxation_level == 0 and self.gap_between_shifts == 1:
                         if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
                             (date.weekday() == 4 and prev_date.weekday() == 0)):
                             if days_between == 3:
                                 return float('-inf')
                 
                     # Prevent same day of week in consecutive weeks (can be relaxed)
-                    if relaxation_level < 2 and days_between in [7, 14, 21]:
+                    if relaxation_level < 2 and (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
                         return float('-inf')
         
             # --- Weekend Limits ---
@@ -2417,7 +2419,7 @@ class ScheduleBuilder:
             worker2_id: Second worker's ID
             date2: Second worker's date
             post2: Second worker's post
-        
+    
         Returns:
             bool: True if the swap is valid, False otherwise
         """
@@ -2477,6 +2479,11 @@ class ScheduleBuilder:
                     (date2.weekday() == 4 and assigned_date.weekday() == 0)):
                     logging.debug(f"Swap rejected: Worker {worker1_id} would have Friday-Monday pattern")
                     return False
+        
+            # NEW: Check for 7/14 day pattern (same day of week in consecutive weeks)
+            if (days_between == 7 or days_between == 14) and date2.weekday() == assigned_date.weekday():
+                logging.debug(f"Swap rejected: Worker {worker1_id} would have {days_between} day pattern")
+                return False
     
         # 4. Check minimum gap constraints for worker2
         worker2_dates = sorted(list(assignments_copy[worker2_id]))
@@ -2496,7 +2503,12 @@ class ScheduleBuilder:
                     (date1.weekday() == 4 and assigned_date.weekday() == 0)):
                     logging.debug(f"Swap rejected: Worker {worker2_id} would have Friday-Monday pattern")
                     return False
-    
+        
+            # NEW: Check for 7/14 day pattern (same day of week in consecutive weeks)
+            if (days_between == 7 or days_between == 14) and date1.weekday() == assigned_date.weekday():
+                logging.debug(f"Swap rejected: Worker {worker2_id} would have {days_between} day pattern")
+                return False
+        
         # 5. Check weekend constraints for worker1
         worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
         if worker1:
