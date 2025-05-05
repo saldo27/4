@@ -633,10 +633,10 @@ class ScheduleBuilder:
             for prev_date in sorted_sim_assignments:
                 if prev_date == date: continue
                 days_between = abs((date - prev_date).days)
-                # Check SPECIFICALLY for 7 or 14 day patterns AND same weekday
-                if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
-                    logging.debug(f"Sim Check Fail: {days_between} day pattern conflict for {worker_id} between {prev_date} and {date}")
-                    return False
+                # Check for 7 or 14 day patterns (same day of week)
+                if (days_difference == 7 or days_difference == 14) and date.weekday() == assigned_date.weekday():
+                    too_close = True
+                    break
                 
             return True # All checks passed on simulated data
         
@@ -705,7 +705,7 @@ class ScheduleBuilder:
     def _would_exceed_weekend_limit_simulated(self, worker_id, date, simulated_assignments):
         """Check weekend limit using simulated assignments."""
         # Check if date is a weekend/holiday
-        is_target_weekend = self.scheduler.date_utils.is_weekend_day(date) or date in self.scheduler.holidays
+        is_target_weekend = self.date_utils.is_weekend_day(date) or date in self.scheduler.holidays
         if not is_target_weekend:
             return False
 
@@ -718,29 +718,29 @@ class ScheduleBuilder:
         if work_percentage < 70:
             max_weekend_count = max(1, int(self.scheduler.max_consecutive_weekends * work_percentage / 100))
 
-        # Create a comprehensive list of all weekend assignments
-        # 1. Start with existing weekend assignments from current schedule
-        current_weekend_dates = [d for d in self.scheduler.worker_weekends.get(worker_id, [])]
+        # Get existing weekend dates from worker_weekends
+        current_weekend_dates = self.scheduler.worker_weekends.get(worker_id, [])
     
-        # 2. Add the current date if it's a weekend/holiday
-        if date not in current_weekend_dates:
-            all_weekend_dates = current_weekend_dates + [date]
-        else:
-            all_weekend_dates = current_weekend_dates.copy()
+        # Create a comprehensive list including the new date
+        all_weekend_dates = current_weekend_dates.copy()
+        if date not in all_weekend_dates:
+            all_weekend_dates.append(date)
     
-        # Sort the dates for proper window checking
+        # Sort dates for proper window checking
         all_weekend_dates.sort()
     
         # Check for any 3-week period with too many weekend shifts
-        three_weeks = timedelta(days=21)
+        # FIX: This is the key part that was broken - proper window counting
         for i, start_date in enumerate(all_weekend_dates):
-            end_date = start_date + three_weeks
-            count = sum(1 for d in all_weekend_dates[i:] if d <= end_date)
+            end_date = start_date + timedelta(days=21) # 3-week window
+            window_dates = [d for d in all_weekend_dates if start_date <= d <= end_date]
+            count = len(window_dates)
+        
             if count > max_weekend_count:
-                logging.debug(f"Sim Check Fail: Weekend limit for {worker_id}. Found {count} in window starting {start_date} (Limit: {max_weekend_count})")
+                logging.debug(f"Weekend limit exceeded: Worker {worker_id} would have {count} weekend shifts in window from {start_date} to {end_date} (max allowed: {max_weekend_count})")
                 return True
 
-        return False
+        return False    
     
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
@@ -3008,35 +3008,37 @@ class ScheduleBuilder:
         logging.info("Adjusting last post distribution among workers...")
         logging.debug("LAST_POST_DEBUG: Starting last post adjustment")
         fixes_made = 0
-    
+
         # Use worker_posts instead of worker_assignments for analysis
         worker_post_stats = []
-    
+
         # First, analyze the current distribution of posts for each worker
         for worker in self.workers_data:
             worker_id = worker['id']
             # Use worker_posts directly (from scheduler)
-            post_counts = self.scheduler.worker_posts.get(worker_id, {})
+            # THIS IS A CRITICAL FIX - ensure we're using the correct structure format
+            post_counts = {}
+            if worker_id in self.scheduler.worker_posts:
+                for post, count in self.scheduler.worker_posts[worker_id].items():
+                    # Convert to int to ensure consistent comparison
+                    post_counts[int(post)] = count
         
             # Skip workers with no assignments
-            if not post_counts:
-                continue
-            
             total_shifts = sum(post_counts.values())
             if total_shifts == 0:
                 continue
-            
+        
             # Count the number of last post assignments
             last_post = self.num_shifts - 1
             last_post_count = post_counts.get(last_post, 0)
-        
+    
             # Calculate the expected number of last post assignments
-            # For post distribution, we expect an equal distribution across all posts
             expected_per_post = total_shifts / self.num_shifts
             target_last_post = expected_per_post
-        
+    
             deviation = last_post_count - target_last_post
-        
+    
+            # Create comprehensive data structure for analysis
             worker_post_stats.append({
                 'worker_id': worker_id,
                 'post_counts': post_counts,
@@ -3045,15 +3047,15 @@ class ScheduleBuilder:
                 'target_last_post': target_last_post,
                 'deviation': deviation
             })
-        
+    
             logging.debug(f"LAST_POST_DEBUG: Worker {worker_id}: {last_post_count} last post shifts, "
                          f"target {target_last_post:.2f}, deviation {deviation:.2f}")
-    
-        # Sort workers by deviation 
+
+        # Sort workers by deviation - FIX the sorting logic for clarity
         overassigned = sorted([w for w in worker_post_stats if w['deviation'] > balance_tolerance],
-                             key=lambda x: -x['deviation'])
+                              key=lambda x: x['deviation'], reverse=True)  # Most overassigned first
         underassigned = sorted([w for w in worker_post_stats if w['deviation'] < -balance_tolerance],
-                              key=lambda x: x['deviation'])
+                              key=lambda x: x['deviation'])  # Most underassigned first
     
         total_overassigned = len(overassigned)
         total_underassigned = len(underassigned)
