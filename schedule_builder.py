@@ -633,8 +633,8 @@ class ScheduleBuilder:
             for prev_date in sorted_sim_assignments:
                 if prev_date == date: continue
                 days_between = abs((date - prev_date).days)
-                # Check if days_between is a multiple of 7 AND the weekdays match
-                if days_between % 7 == 0 and date.weekday() == prev_date.weekday():
+                # Check SPECIFICALLY for 7 or 14 day patterns AND same weekday
+                if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
                     logging.debug(f"Sim Check Fail: {days_between} day pattern conflict for {worker_id} between {prev_date} and {date}")
                     return False
                 
@@ -705,7 +705,6 @@ class ScheduleBuilder:
     def _would_exceed_weekend_limit_simulated(self, worker_id, date, simulated_assignments):
         """Check weekend limit using simulated assignments."""
         # Check if date is a weekend/holiday
-        # Use scheduler's holidays
         is_target_weekend = self.scheduler.date_utils.is_weekend_day(date) or date in self.scheduler.holidays
         if not is_target_weekend:
             return False
@@ -719,37 +718,31 @@ class ScheduleBuilder:
         if work_percentage < 70:
             max_weekend_count = max(1, int(self.scheduler.max_consecutive_weekends * work_percentage / 100))
 
-        # Get existing weekend/holiday assignments from the worker's current assignments
-        existing_weekend_assignments = {
-            d for d in self.scheduler.worker_assignments.get(worker_id, set())
-            if self.scheduler.date_utils.is_weekend_day(d) or d in self.scheduler.holidays
-        }
+        # Create a comprehensive list of all weekend assignments
+        # 1. Start with existing weekend assignments from current schedule
+        current_weekend_dates = [d for d in self.scheduler.worker_weekends.get(worker_id, [])]
     
-        # Get weekend/holiday assignments from the simulated state, excluding the current date
-        simulated_weekend_assignments = {
-            d for d in simulated_assignments
-            if d != date and (self.scheduler.date_utils.is_weekend_day(d) or d in self.scheduler.holidays)
-        }
+        # 2. Add the current date if it's a weekend/holiday
+        if date not in current_weekend_dates:
+            all_weekend_dates = current_weekend_dates + [date]
+        else:
+            all_weekend_dates = current_weekend_dates.copy()
     
-        # Combine both sets and add the target date
-        all_weekend_assignments = existing_weekend_assignments.union(simulated_weekend_assignments)
-        all_weekend_assignments.add(date)
+        # Sort the dates for proper window checking
+        all_weekend_dates.sort()
     
-        # Convert to a sorted list for window checking
-        sorted_weekends = sorted(list(all_weekend_assignments))
-    
-        # Check the 21-day window around each date
-        for i, window_start_date in enumerate(sorted_weekends):
-            window_end = window_start_date + timedelta(days=21)
-            count = sum(1 for d in sorted_weekends if window_start_date <= d <= window_end)
-        
+        # Check for any 3-week period with too many weekend shifts
+        three_weeks = timedelta(days=21)
+        for i, start_date in enumerate(all_weekend_dates):
+            end_date = start_date + three_weeks
+            count = sum(1 for d in all_weekend_dates[i:] if d <= end_date)
             if count > max_weekend_count:
-                logging.debug(f"Weekend limit would be exceeded: Worker {worker_id} would have {count} weekend shifts in a 21-day window (max: {max_weekend_count})")
+                logging.debug(f"Sim Check Fail: Weekend limit for {worker_id}. Found {count} in window starting {start_date} (Limit: {max_weekend_count})")
                 return True
-    
+
         return False
     
-    def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
+    def FF_calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
         Calculate score for a worker assignment with optional relaxation of constraints
     
