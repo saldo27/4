@@ -420,69 +420,74 @@ class ScheduleBuilder:
         try:
             # Log all constraint checks
             logging.debug(f"\nChecking worker {worker_id} for {date}, post {post}")
-        # Skip if already assigned to this date
-        if worker_id in self.schedule.get(date, []):
-            return False
+        
+            # Skip if already assigned to this date
+            if worker_id in self.schedule.get(date, []):
+                return False
 
-        # Get worker data
-        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
-        if not worker:
-            return False
+            # Get worker data
+            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+            if not worker:
+                return False
 
-        # Check worker availability (days off)
-        if self._is_worker_unavailable(worker_id, date):
-            return False
+            # Check worker availability (days off)
+            if self._is_worker_unavailable(worker_id, date):
+                return False
 
-        # Check for incompatibilities
-        if not self._check_incompatibility(worker_id, date):
-            return False
+            # Check for incompatibilities
+            if not self._check_incompatibility(worker_id, date):
+                return False
 
-        # 4. CRITICAL: Check minimum gap - NEVER RELAX THIS
-        assignments = sorted(list(self.worker_assignments.get(worker_id, [])))
-        if assignments:
-            for prev_date in assignments:
-                days_between = abs((date - prev_date).days)
-                if 0 < days_between < self.gap_between_shifts + 1:  # Fixed to only check non-zero gaps within range
-                    logging.debug(f"- Failed: Insufficient gap ({days_between} days)")
-                    return False
+            # 4. CRITICAL: Check minimum gap - NEVER RELAX THIS
+            assignments = sorted(list(self.worker_assignments.get(worker_id, [])))
+            if assignments:
+                for prev_date in assignments:
+                    days_between = abs((date - prev_date).days)
+                    if 0 < days_between < self.gap_between_shifts + 1:  # Fixed to only check non-zero gaps within range
+                        logging.debug(f"- Failed: Insufficient gap ({days_between} days)")
+                        return False
                 
                 # 5. NEW: Check for weekly pattern (7/14 day) constraint - ONLY 7 and 14 days
                 if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
                     logging.debug(f"- Failed: Would create {days_between} day pattern")
                     return False
-        # Special case: Friday-Monday check if gap is only 1 day
-        if self.gap_between_shifts == 1:
-            for prev_date in assignments:
-                days_between = abs((date - prev_date).days)
-                if days_between == 3:
-                    if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
-                        (date.weekday() == 4 and prev_date.weekday() == 0)):
-                        return False
+            # Special case: Friday-Monday check if gap is only 1 day
+            if self.gap_between_shifts == 1:
+                for prev_date in assignments:
+                    days_between = abs((date - prev_date).days)
+                    if days_between == 3:
+                        if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
+                            (date.weekday() == 4 and prev_date.weekday() == 0)):
+                            return False
 
-        # Check weekend limits
-        if self._would_exceed_weekend_limit(worker_id, date):
-            return False
-
-        # Check if this worker can swap these assignments
-        work_percentage = worker.get('work_percentage', 100)
-
-        # Part-time workers need more days between shifts
-        if work_percentage < 100:
-            part_time_gap = max(3, self.gap_between_shifts + 2)  # At least 3 days, or gap+2
-            for prev_date in assignments:
-                days_between = abs((date - prev_date).days)
-                if days_between < part_time_gap:
-                    return False
-
-        # Check for consecutive week patterns
-        for prev_date in assignments:
-            days_between = abs((date - prev_date).days)
-            # Avoid same day of week in consecutive weeks when possible
-            if days_between in [7, 14] and date.weekday() == prev_date.weekday():
+            # Check weekend limits
+            if self._would_exceed_weekend_limit(worker_id, date):
                 return False
 
-        # If we've made it this far, the worker can be assigned
-        return True
+            # Check if this worker can swap these assignments
+            work_percentage = worker.get('work_percentage', 100)
+
+            # Part-time workers need more days between shifts
+            if work_percentage < 70:
+                part_time_gap = max(3, self.gap_between_shifts + 2)  # At least 3 days, or gap+2
+                for prev_date in assignments:
+                    days_between = abs((date - prev_date).days)
+                    if days_between < part_time_gap:
+                        return False
+
+            # Check for consecutive week patterns
+            for prev_date in assignments:
+                days_between = abs((date - prev_date).days)
+                # Avoid same day of week in consecutive weeks when possible
+                if days_between in [7, 14] and date.weekday() == prev_date.weekday():
+                    return False
+
+            # If we've made it this far, the worker can be assigned
+            return True
+
+        except Exception as e:
+            logging.error(f"Error in _can_assign_worker for worker {worker_id}: {str(e)}", exc_info=True)
+            return False
 
     def assign_worker_to_shift(self, worker_id, date, post):
         """Assign a worker to a shift with proper incompatibility checking"""
@@ -692,10 +697,10 @@ class ScheduleBuilder:
         if work_percentage < 70: # Example threshold for part-time adjustment
             min_days_between = max(min_days_between, self.scheduler.gap_between_shifts + 2)
 
-            assignments = sorted(list(simulated_assignments.get(worker_id, [])))
+        assignments = sorted(list(simulated_assignments.get(worker_id, [])))
 
-            for prev_date in assignments:
-        if prev_date == date: continue # Don't compare date to itself
+        for prev_date in assignments:
+            if prev_date == date: continue # Don't compare date to itself
             days_between = abs((date - prev_date).days)
             if days_between < min_days_between:
                 return False
