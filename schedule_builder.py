@@ -3023,7 +3023,7 @@ class ScheduleBuilder:
     
         logging.info("Tracking data synchronization complete")
 
-    def _adjust_last_post_distribution(self, balance_tolerance=1.0):
+    def _adjust_last_post_distribution(self, balance_tolerance=0.5):
         logging.info("Adjusting last post distribution among workers...")
         logging.debug("LAST_POST_DEBUG: Starting last post adjustment")
         fixes_made = 0
