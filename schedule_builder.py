@@ -742,7 +742,7 @@ class ScheduleBuilder:
 
         return False
     
-    def FF_calculate_worker_score(self, worker, date, post, relaxation_level=0):
+    def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
         Calculate score for a worker assignment with optional relaxation of constraints
     
