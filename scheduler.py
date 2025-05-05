@@ -1413,6 +1413,7 @@ class Scheduler:
                      logging.info("Improvement Loop: Improved general post rotation.")
                      improvement_made_in_cycle = True
 
+                self.schedule_builder._synchronize_tracking_data()
                 if self.schedule_builder._adjust_last_post_distribution():
                     logging.info("Improvement Loop: Balanced last post assignments.")
                     improvement_made_in_cycle = True
