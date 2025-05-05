@@ -630,16 +630,16 @@ class ScheduleBuilder:
                                return False
 
             # 8. 7/14 Day Pattern Check (Same day of week in consecutive weeks)
-            # Apply strictly during simulation checks (as relaxation isn't usually passed here)
             for prev_date in sorted_sim_assignments:
-                 if prev_date == date: continue
-                 days_between = abs((date - prev_date).days)
-                 # Check for 7, 14, 21 etc. day differences AND same weekday
-                 if days_between > 0 and days_between % 7 == 0 and date.weekday() == prev_date.weekday():
-                      logging.debug(f"Sim Check Fail: 7/14 day pattern conflict for {worker_id} between {prev_date} and {date}")
-                      return False
-
+                if prev_date == date: continue
+                days_between = abs((date - prev_date).days)
+                # Check if days_between is a multiple of 7 AND the weekdays match
+                if days_between % 7 == 0 and date.weekday() == prev_date.weekday():
+                    logging.debug(f"Sim Check Fail: {days_between} day pattern conflict for {worker_id} between {prev_date} and {date}")
+                    return False
+                
             return True # All checks passed on simulated data
+        
         except Exception as e:
             logging.error(f"Error during _check_constraints_on_simulated for {worker_id} on {date}: {e}", exc_info=True)
             return False # Fail safe
@@ -710,56 +710,44 @@ class ScheduleBuilder:
         if not is_target_weekend:
             return False
 
-        # Get simulated weekend assignments including the target date
-        sim_weekend_assignments = {
-            d for d in simulated_assignments.get(worker_id, [])
-            if (self.scheduler.date_utils.is_weekend_day(d) or d in self.scheduler.holidays)
-        }
-        # Add the current date being checked if it's a weekend/holiday
-        sim_weekend_assignments.add(date)
-        sorted_sim_weekends = sorted(list(sim_weekend_assignments))
-
-
-        # Apply window check logic (e.g., max N in 21 days)
-        # Use scheduler's max weekend config
-        max_weekend_count = self.scheduler.max_consecutive_weekends
-        # Add part-time adjustment if needed
+        # Get worker data to check work_percentage
         worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
         work_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
-        if work_percentage < 100:
-             max_weekend_count = max(1, int(self.scheduler.max_consecutive_weekends * work_percentage / 100))
+    
+        # Calculate max_weekend_count based on work_percentage
+        max_weekend_count = self.scheduler.max_consecutive_weekends
+        if work_percentage < 70:
+            max_weekend_count = max(1, int(self.scheduler.max_consecutive_weekends * work_percentage / 100))
 
-        # Check different window sizes if needed, e.g., 3 weekends in a row?
-        # Simple check: count consecutive weekend *days*
-        max_consecutive_days = 3 # Example: Allow Sat/Sun/Mon-Holiday but not Fri/Sat/Sun
-        consecutive_count = 0
-        for i, d in enumerate(sorted_sim_weekends):
-             if i > 0 and (d - sorted_sim_weekends[i-1]).days == 1:
-                  consecutive_count += 1
-             else:
-                  consecutive_count = 1
-             if consecutive_count > max_consecutive_days:
-                  # This check might be too strict, depending on rules
-                  # return True # Exceeds consecutive weekend day limit
-                  pass # Disable strict consecutive day check for now
-
-
-        # Check: Max weekends in any 3-week (21 day) rolling window
-        window_days = 21
-        for i in range(len(sorted_sim_weekends)):
-            window_start_date = sorted_sim_weekends[i]
-            # Find weekends within the window starting from window_start_date
-            count_in_window = 0
-            for d in sorted_sim_weekends[i:]: # Only need to check dates from i onwards
-                 if (d - window_start_date).days < window_days:
-                      count_in_window += 1
-                 else:
-                      break # Dates are sorted, no need to check further
-            if count_in_window > max_weekend_count:
-                logging.debug(f"Sim Check Fail: Weekend limit exceeded for {worker_id}. Found {count_in_window} in window starting {window_start_date} (Limit: {max_weekend_count})")
-                return True # Exceeds limit
-
-        return False # Limit not exceeded
+        # Get existing weekend/holiday assignments from the worker's current assignments
+        existing_weekend_assignments = {
+            d for d in self.scheduler.worker_assignments.get(worker_id, set())
+            if self.scheduler.date_utils.is_weekend_day(d) or d in self.scheduler.holidays
+        }
+    
+        # Get weekend/holiday assignments from the simulated state, excluding the current date
+        simulated_weekend_assignments = {
+            d for d in simulated_assignments
+            if d != date and (self.scheduler.date_utils.is_weekend_day(d) or d in self.scheduler.holidays)
+        }
+    
+        # Combine both sets and add the target date
+        all_weekend_assignments = existing_weekend_assignments.union(simulated_weekend_assignments)
+        all_weekend_assignments.add(date)
+    
+        # Convert to a sorted list for window checking
+        sorted_weekends = sorted(list(all_weekend_assignments))
+    
+        # Check the 21-day window around each date
+        for i, window_start_date in enumerate(sorted_weekends):
+            window_end = window_start_date + timedelta(days=21)
+            count = sum(1 for d in sorted_weekends if window_start_date <= d <= window_end)
+        
+            if count > max_weekend_count:
+                logging.debug(f"Weekend limit would be exceeded: Worker {worker_id} would have {count} weekend shifts in a 21-day window (max: {max_weekend_count})")
+                return True
+    
+        return False
     
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
