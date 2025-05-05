@@ -453,24 +453,24 @@ class ScheduleBuilder:
                             return False
 
             # Check weekend limits
-        if self._would_exceed_weekend_limit(worker_id, date):
-            return False
+            if self._would_exceed_weekend_limit(worker_id, date):
+                return False
 
-        # Part-time workers need more days between shifts
-        work_percentage = worker.get('work_percentage', 100)
-        if work_percentage < 70:
-            part_time_gap = max(3, self.gap_between_shifts + 2)
-            for prev_date in assignments:
-                days_between = abs((date - prev_date).days)
-                if days_between < part_time_gap:
-                    return False
+            # Part-time workers need more days between shifts
+            work_percentage = worker.get('work_percentage', 100)
+            if work_percentage < 70:
+                part_time_gap = max(3, self.gap_between_shifts + 2)
+                for prev_date in assignments:
+                    days_between = abs((date - prev_date).days)
+                    if days_between < part_time_gap:
+                        return False
 
-        # If we've made it this far, the worker can be assigned
-        return True
+            # If we've made it this far, the worker can be assigned
+            return True
     
-    except Exception as e:
-        logging.error(f"Error in _can_assign_worker for worker {worker_id}: {str(e)}", exc_info=True)
-        return False
+        except Exception as e:
+            logging.error(f"Error in _can_assign_worker for worker {worker_id}: {str(e)}", exc_info=True)
+            return False
 
     def assign_worker_to_shift(self, worker_id, date, post):
         """Assign a worker to a shift with proper incompatibility checking"""
