@@ -901,7 +901,7 @@ class Scheduler:
                                 break
     
                         # Check for 7 or 14 day patterns (same day of week)
-                        if days_difference % 7 == 0 and date.weekday() == assigned_date.weekday():
+                        if (days_difference == 7 or days_difference == 14) and date.weekday() == assigned_date.weekday():
                             too_close = True
                             break
     
