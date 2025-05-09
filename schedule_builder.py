@@ -258,54 +258,52 @@ class ScheduleBuilder:
     
         return worker2_id in incompatible_with_1 or worker1_id in incompatible_with_2 
 
-    def _would_exceed_weekend_limit(self, worker_id, date):
-        """
-        Check if adding this date would exceed the worker's weekend limit
-
-        Args:
-            worker_id: ID of the worker to check
-            date: Date to potentially add
+    def _would_exceed_weekend_limit_simulated(self, worker_id, date, simulated_assignments):
+        """Check weekend limit using simulated assignments with STRICT enforcement."""
+        # Check if date is a weekend/holiday
+        is_target_weekend = date.weekday() >= 4 or date in self.scheduler.holidays
+        if not is_target_weekend:
+            return False  # Not a weekend/holiday, so no limit applies
     
-        Returns:
-            bool: True if weekend limit would be exceeded, False otherwise
-        """
-        # Skip if not a weekend
-        if not self.date_utils.is_weekend_day(date) and date not in self.holidays:
-            return False
-
-        # Get worker data
-        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
-        if not worker:
-            return True
-
-        # Get weekend assignments for this worker
-        weekend_dates = self.worker_weekends.get(worker_id, [])
-
-        # Calculate the maximum allowed weekend shifts based on work percentage
-        work_percentage = worker.get('work_percentage', 100)
-        max_weekend_shifts = self.max_consecutive_weekends  # Use the configurable parameter
-        if work_percentage < 100:
-            # For part-time workers, adjust max consecutive weekends proportionally
-            max_weekend_shifts = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
-
-        # Check if adding this date would exceed the limit for any 3-week period
-        if date in weekend_dates:
-            return False  # Already counted
-
-        # Add the date temporarily
-        test_dates = weekend_dates + [date]
-        test_dates.sort()
-
-        # Check for any 3-week period with too many weekend shifts
-        three_weeks = timedelta(days=21)
-        for i, start_date in enumerate(test_dates):
-            end_date = start_date + three_weeks
-            count = sum(1 for d in test_dates[i:] if d <= end_date)
-            if count > max_weekend_shifts:
+        # Get worker data to check work_percentage
+        worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
+        work_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
+    
+        # Calculate max_weekend_count - NEVER RELAX THIS VALUE
+        max_weekend_count = self.scheduler.max_consecutive_weekends
+        if work_percentage < 70:
+            max_weekend_count = max(1, int(self.scheduler.max_consecutive_weekends * work_percentage / 100))
+    
+        # Use CENTERED window check for strict enforcement - NEVER USE RELAXATION
+        # Get weekend assignments and add the current date
+        weekend_dates = []
+        for d in simulated_assignments.get(worker_id, set()):
+            if d.weekday() >= 4 or d in self.scheduler.holidays:
+                weekend_dates.append(d)
+    
+        # Add the date if it's not already in the list
+        if date not in weekend_dates:
+            weekend_dates.append(date)
+    
+        # Sort dates to ensure chronological order
+        weekend_dates.sort()
+    
+        # Use traditional centered window check for strict enforcement
+        for check_date in weekend_dates:
+            window_start = check_date - timedelta(days=10)
+            window_end = check_date + timedelta(days=10)
+    
+            # Count weekend days in this window
+            window_weekend_count = sum(
+                1 for d in weekend_dates
+                if window_start <= d <= window_end
+            )    
+    
+            if window_weekend_count > max_weekend_count:
+                logging.info(f"STRICT Weekend limit check FAILED: Worker {worker_id} would have {window_weekend_count} weekend shifts in window around {check_date} (max: {max_weekend_count})")
                 return True
-
-        return False
-
+    
+        return False  # All weekend limit checks passed
     def _get_post_counts(self, worker_id):
         """
         Get the count of assignments for each post for a specific worker
@@ -772,6 +770,18 @@ class ScheduleBuilder:
             return True
     
         return False
+
+        # Check ALL assignments against date for 7/14 day pattern
+        for prev_date in assignments:
+            if prev_date == date: continue  # Skip same date
+            days_between = abs((date - prev_date).days)
+        
+            # Add this check with explicit logging
+            if days_between in (7, 14) and date.weekday() == prev_date.weekday():
+                logging.debug(f"Worker {worker_id} would violate 7/14 day pattern between {prev_date} and {date}")
+                return False
+            
+        return True
     
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
@@ -1954,6 +1964,14 @@ class ScheduleBuilder:
             date2: Second worker's date
             post2: Second worker's post
         """
+        # First check - Never swap mandatory shifts
+        if self._is_mandatory(worker_id, date_from):
+            logging.error(f"Cannot swap mandatory shift for worker {worker_id} on {date_from}")
+            return False
+        if worker_X_id is not None and self._is_mandatory(worker_X_id, date_to):
+            logging.error(f"Cannot swap mandatory shift for worker {worker_X_id} on {date_to}")
+            return False
+        
         # Ensure both workers are currently assigned as expected
         if (self.schedule[date1][post1] != worker1_id or
             self.schedule[date2][post2] != worker2_id):
