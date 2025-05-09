@@ -336,8 +336,8 @@ class Scheduler:
             for worker in self.workers_data:
                 worker_id = worker['id']
                 # force a string so parse_dates() always parses your UI input
-                    mandatory_days = worker.get('mandatory_days', '') or ''
-                    mandatory_dates = self.date_utils.parse_dates(mandatory_days)
+                mandatory_days = worker.get('mandatory_days', '') or ''
+                mandatory_dates = self.date_utils.parse_dates(mandatory_days)
 
                 # Count only mandatory days within schedule period
                 valid_mandatory_dates = [d for d in mandatory_dates 
