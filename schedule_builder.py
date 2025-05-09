@@ -3024,7 +3024,7 @@ class ScheduleBuilder:
                     except KeyError as ke:
                         logging.error(f"KeyError during last post adjustment: {str(ke)}")
                         continue  # Skip this swap but continue with others
-                        except Exception as e:
+                    except Exception as e:
                         logging.error(f"Error during last post adjustment: {str(e)}", exc_info=True)
                         continue  # Skip this swap but continue with others
                 
