@@ -329,16 +329,16 @@ class Scheduler:
             total_days = (self.end_date - self.start_date).days + 1
             total_shifts = total_days * self.num_shifts
         
-            # First, account for mandatory shifts which cannot be redistributed
+            # ONLY per-worker mandatory_days (from UI); ignore any config['mandatory_shifts']
             mandatory_shifts_by_worker = {}
             total_mandatory_shifts = 0
-        
+
             for worker in self.workers_data:
                 worker_id = worker['id']
-                # always treat mandatory_days as a semicolon list string
-                mandatory_days = worker.get('mandatory_days', '') or ''
-                mandatory_dates = self.date_utils.parse_dates(mandatory_days)
-            
+                # force a string so parse_dates() always parses your UI input
+                    mandatory_days = worker.get('mandatory_days', '') or ''
+                    mandatory_dates = self.date_utils.parse_dates(mandatory_days)
+
                 # Count only mandatory days within schedule period
                 valid_mandatory_dates = [d for d in mandatory_dates 
                                         if self.start_date <= d <= self.end_date]
