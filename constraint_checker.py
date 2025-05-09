@@ -187,63 +187,14 @@ class ConstraintChecker:
         except Exception as e:
             logging.error(f"Error checking weekend limit: {str(e)}")
             return True  # Fail safe
-
-    def _is_mandatory(self, worker_id, date):
-        """
-        Check if a worker has a mandatory assignment on this date.
-    
-        Args:
-            worker_id: ID of the worker to check
-            date: Date to check
-        
-        Returns:
-            bool: True if the worker has a mandatory shift on this date
-        """
-        try:
-            # Normalize date to date object for comparison
-            check_date = date.date() if isinstance(date, datetime) else date
-        
-            # 1. Check worker's mandatory_days
-            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
-            if worker:
-                mandatory_days = worker.get('mandatory_days', '')
-                if mandatory_days:
-                    try:
-                        mandatory_dates = self.date_utils.parse_dates(mandatory_days)
-                        normalized_dates = [d.date() if isinstance(d, datetime) else d for d in mandatory_dates]
-                        if check_date in normalized_dates:
-                            return True
-                    except Exception as e:
-                        logging.debug(f"Error parsing mandatory days for {worker_id}: {str(e)}")
-                        pass
-        
-            # 2. Check config's mandatory_shifts in scheduler
-            if hasattr(self.scheduler, 'config') and self.scheduler.config:
-                date_str = check_date.strftime('%Y-%m-%d')
-                mandatory_shifts = self.scheduler.config.get('mandatory_shifts', {})
-            
-                if date_str in mandatory_shifts:
-                    post_assignments = mandatory_shifts[date_str]
-                    # Check if worker is assigned to any post on this date
-                    return worker_id in post_assignments.values()
-            
-            return False
-        except Exception as e:
-            logging.error(f"Error checking if date is mandatory: {str(e)}")
-            return False
             
     def _is_worker_unavailable(self, worker_id, date):
         """
         Check if worker is unavailable on a specific date
         """
         try:
-            # CRITICAL: First check if this is a mandatory shift - if so, worker is ALWAYS available
-            if self._is_mandatory(worker_id, date):
-                logging.debug(f"Worker {worker_id} has mandatory shift on {date} - overriding availability")
-                return False  # Mandatory shifts override availability constraints
-            
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
-    
+        
             # Check days off
             if worker.get('days_off'):
                 off_periods = self.date_utils.parse_date_ranges(worker['days_off'])
@@ -325,11 +276,6 @@ class ConstraintChecker:
         Returns: (bool, str) - (passed, reason_if_failed)
         """
         try:
-            # CRITICAL: First check if this is a mandatory shift - if so, all constraints are bypassed
-            if self._is_mandatory(worker_id, date):
-                logging.debug(f"Mandatory shift detected for worker {worker_id} on {date} - bypassing constraints")
-                return True, ""  # Mandatory shifts bypass all constraints
-            
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
             work_percentage = float(worker.get('work_percentage', 100))
 
@@ -350,10 +296,6 @@ class ConstraintChecker:
                         days_between = abs((date - prev_date).days)
                         if 0 < days_between < min_gap:  # Fixed to only check non-zero gaps within range
                             return False, f"gap constraint ({min_gap} days)"
-                        
-                        # CRITICAL: Strictly enforce 7/14 day pattern prevention
-                        if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
-                            return False, f"would create {days_between}-day pattern (same weekday)"
 
             # Incompatibility constraints
             if not skip_constraints and not self._check_incompatibility(worker_id, date):
@@ -411,57 +353,57 @@ class ConstraintChecker:
             logging.error(f"Error checking weekday balance for worker {worker_id}: {str(e)}")
             return True
         
-    #def _check_post_rotation(self, worker_id, post):
-    #    """
-    #    Check if assigning this post maintains the required distribution.
-    #    Specifically checks that the last post (highest number) is assigned
-    #    approximately 1/num_shifts of the time.
-    #
-    #    Args:
-    #        worker_id: Worker's ID
-    #        post: Post number being considered
-    #    Returns:
-    #        bool: True if assignment maintains proper distribution
-    #    """
-    #    try:
-    #        # Only check for last post position
-    #        last_post = self.num_shifts - 1
-    #        if post != last_post:
-    #            return True  # Don't restrict other post assignments
-    #    
-    #        # Get current post counts
-    #        post_counts = self._get_post_counts(worker_id)
-    #    
-    #        # Add the potential new assignment
-    #        new_counts = post_counts.copy()
-    #        new_counts[post] = new_counts.get(post, 0) + 1
-    #    
-    #        # Calculate total assignments including the new one
-    #        total_assignments = sum(new_counts.values())
-    #    
-    #        if total_assignments == 0:
-    #            return True
-    #    
-    #        # Calculate target ratio for last post (1/num_shifts)
-    #        target_ratio = 1.0 / self.num_shifts
-    #        actual_ratio = new_counts[last_post] / total_assignments
-    #    
-    #        # Allow ±1 shift deviation from perfect ratio
-    #        allowed_deviation = 1.0 / total_assignments
-    #    
-    #        if abs(actual_ratio - target_ratio) > allowed_deviation:
-    #            logging.debug(
-    #                f"Post rotation check failed for worker {worker_id}: "
-    #                f"Last post ratio {actual_ratio:.2f} deviates too much from "
-    #                f"target {target_ratio:.2f} (allowed deviation: ±{allowed_deviation:.2f})"
-    #            )    
-    #            return False
-    #    
-    #        return True
-    #
-    #    except Exception as e:
-    #        logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
-    #        return True
+     #def _check_post_rotation(self, worker_id, post):
+        """
+        Check if assigning this post maintains the required distribution.
+        Specifically checks that the last post (highest number) is assigned
+        approximately 1/num_shifts of the time.
+    
+        Args:
+            worker_id: Worker's ID
+            post: Post number being considered
+        Returns:
+            bool: True if assignment maintains proper distribution
+        """
+        "try:
+            # Only check for last post position
+            "last_post = self.num_shifts - 1
+            "if post != last_post:
+                "return True  # Don't restrict other post assignments
+        
+            # Get current post counts
+            post_counts = self._get_post_counts(worker_id)
+        
+            # Add the potential new assignment
+            new_counts = post_counts.copy()
+            new_counts[post] = new_counts.get(post, 0) + 1
+        
+            # Calculate total assignments including the new one
+            "total_assignments = sum(new_counts.values())
+        
+            "if total_assignments == 0:
+                "return True
+        
+            # Calculate target ratio for last post (1/num_shifts)
+            target_ratio = 1.0 / self.num_shifts
+            actual_ratio = new_counts[last_post] / total_assignments
+        
+            # Allow ±1 shift deviation from perfect ratio
+            allowed_deviation = 1.0 / total_assignments
+        
+            "if abs(actual_ratio - target_ratio) > allowed_deviation:
+                logging.debug(
+                    f"Post rotation check failed for worker {worker_id}: "
+                    f"Last post ratio {actual_ratio:.2f} deviates too much from "
+                    f"target {target_ratio:.2f} (allowed deviation: ±{allowed_deviation:.2f})"
+                )    
+                "return False
+        
+            "return True
+
+        "except Exception as e:
+            logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
+            "return True
     
     def _get_post_counts(self, worker_id):
         """
