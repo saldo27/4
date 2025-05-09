@@ -2119,13 +2119,8 @@ class ScheduleBuilder:
             # 1. First perform all basic scheduling optimizations
             if self._try_fill_empty_shifts():
                 logging.info("Improved schedule by filling empty shifts")
-                improved = True
-    
-            # 2. Try improving the overall post rotation balance
-            if self._improve_post_rotation():
-                logging.info("Improved schedule through post rotation")
-                improved = True
-        
+                improved = True   
+       
             # 3. Try weekend/holiday balancing 
             if self._balance_weekend_shifts():
                 logging.info("Improved schedule through weekend shift balancing")
@@ -2756,13 +2751,6 @@ class ScheduleBuilder:
             any_change_made = True
             # Re-verify integrity after potentially complex swaps
             self._verify_assignment_consistency()
-
-        # 2. Try to improve post rotation by swapping assignments
-        if self._improve_post_rotation():
-            logging.info(f"Attempt {attempt_number}: Improved post rotation.")
-            any_change_made = True
-            self._verify_assignment_consistency()
-
 
         # 3. Try to improve weekend distribution
         if self._improve_weekend_distribution():
