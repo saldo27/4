@@ -353,57 +353,57 @@ class ConstraintChecker:
             logging.error(f"Error checking weekday balance for worker {worker_id}: {str(e)}")
             return True
         
-     #def _check_post_rotation(self, worker_id, post):
-        """
-        Check if assigning this post maintains the required distribution.
-        Specifically checks that the last post (highest number) is assigned
-        approximately 1/num_shifts of the time.
-    
-        Args:
-            worker_id: Worker's ID
-            post: Post number being considered
-        Returns:
-            bool: True if assignment maintains proper distribution
-        """
-        #try:
-            # Only check for last post position
-            "last_post = self.num_shifts - 1
-            "if post != last_post:
-                "return True  # Don't restrict other post assignments
-        
-            # Get current post counts
-            post_counts = self._get_post_counts(worker_id)
-        
-            # Add the potential new assignment
-            new_counts = post_counts.copy()
-            new_counts[post] = new_counts.get(post, 0) + 1
-        
-            # Calculate total assignments including the new one
-            "total_assignments = sum(new_counts.values())
-        
-            "if total_assignments == 0:
-                "return True
-        
-            # Calculate target ratio for last post (1/num_shifts)
-            target_ratio = 1.0 / self.num_shifts
-            actual_ratio = new_counts[last_post] / total_assignments
-        
-            # Allow ±1 shift deviation from perfect ratio
-            allowed_deviation = 1.0 / total_assignments
-        
-            "if abs(actual_ratio - target_ratio) > allowed_deviation:
-                logging.debug(
-                    f"Post rotation check failed for worker {worker_id}: "
-                    f"Last post ratio {actual_ratio:.2f} deviates too much from "
-                    f"target {target_ratio:.2f} (allowed deviation: ±{allowed_deviation:.2f})"
-                )    
-                "return False
-        
-            "return True
-
-        "except Exception as e:
-            logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
-            "return True
+    #def _check_post_rotation(self, worker_id, post):
+    #    """
+    #    Check if assigning this post maintains the required distribution.
+    #    Specifically checks that the last post (highest number) is assigned
+    #    approximately 1/num_shifts of the time.
+    #
+    #    Args:
+    #        worker_id: Worker's ID
+    #        post: Post number being considered
+    #    Returns:
+    #        bool: True if assignment maintains proper distribution
+    #    """
+    #    try:
+    #        # Only check for last post position
+    #        last_post = self.num_shifts - 1
+    #        if post != last_post:
+    #            return True  # Don't restrict other post assignments
+    #    
+    #        # Get current post counts
+    #        post_counts = self._get_post_counts(worker_id)
+    #    
+    #        # Add the potential new assignment
+    #        new_counts = post_counts.copy()
+    #        new_counts[post] = new_counts.get(post, 0) + 1
+    #    
+    #        # Calculate total assignments including the new one
+    #        total_assignments = sum(new_counts.values())
+    #    
+    #        if total_assignments == 0:
+    #            return True
+    #    
+    #        # Calculate target ratio for last post (1/num_shifts)
+    #        target_ratio = 1.0 / self.num_shifts
+    #        actual_ratio = new_counts[last_post] / total_assignments
+    #    
+    #        # Allow ±1 shift deviation from perfect ratio
+    #        allowed_deviation = 1.0 / total_assignments
+    #    
+    #        if abs(actual_ratio - target_ratio) > allowed_deviation:
+    #            logging.debug(
+    #                f"Post rotation check failed for worker {worker_id}: "
+    #                f"Last post ratio {actual_ratio:.2f} deviates too much from "
+    #                f"target {target_ratio:.2f} (allowed deviation: ±{allowed_deviation:.2f})"
+    #            )    
+    #            return False
+    #    
+    #        return True
+    #
+    #    except Exception as e:
+    #        logging.error(f"Error checking post rotation for worker {worker_id}: {str(e)}")
+    #        return True
     
     def _get_post_counts(self, worker_id):
         """
