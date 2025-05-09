@@ -354,22 +354,35 @@ class ScheduleBuilder:
                 return True
     
         return False  # All weekend limit checks passed
+    
     def _get_post_counts(self, worker_id):
         """
-        Get the count of assignments for each post for a specific worker
+        Get the count of assignments for each post for a specific worker.
+        Modified to handle variable shifts and properly count last posts.
     
         Args:
             worker_id: ID of the worker
-        
+    
         Returns:
-            dict: Dictionary with post numbers as keys and counts as values
+            dict: Dictionary with post numbers as keys and counts as values,
+                  with special 'last_post' key for tracking last post assignments
         """
         post_counts = {post: 0 for post in range(self.num_shifts)}
+        last_post_count = 0
     
         for date, shifts in self.schedule.items():
+            date_last_post = len(shifts) - 1  # Last post index for this date
+        
             for post, assigned_worker in enumerate(shifts):
                 if assigned_worker == worker_id:
                     post_counts[post] = post_counts.get(post, 0) + 1
+                
+                    # Count if this is a last post assignment for the date
+                    if post == date_last_post:
+                        last_post_count += 1
+    
+        # Add special key for tracking last posts
+        post_counts['last_post'] = last_post_count
     
         return post_counts
 
@@ -2950,10 +2963,13 @@ class ScheduleBuilder:
     
         # Rebuild worker_assignments from schedule
         new_worker_assignments = {w['id']: set() for w in self.workers_data}
-        new_worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
+        new_worker_posts = {w['id']: {} for w in self.workers_data}  # Change to dict for more detailed tracking
+        new_worker_last_posts = {w['id']: 0 for w in self.workers_data}  # Track last post count separately
     
         # Count from schedule
         for date, shifts in self.schedule.items():
+            date_last_post = len(shifts) - 1  # Last post index for this specific date
+        
             for post_idx, worker_id in enumerate(shifts):
                 if worker_id is not None:
                     # Track assignment
@@ -2961,13 +2977,20 @@ class ScheduleBuilder:
                 
                     # Track post
                     if worker_id not in new_worker_posts:
-                        new_worker_posts[worker_id] = {p: 0 for p in range(self.num_shifts)}
+                        new_worker_posts[worker_id] = {}
+                    
                     new_worker_posts[worker_id][post_idx] = new_worker_posts[worker_id].get(post_idx, 0) + 1
-    
+                
+                    # Track if this is a last post assignment for the date
+                    if post_idx == date_last_post:
+                        new_worker_posts[worker_id]['last_post'] = new_worker_posts[worker_id].get('last_post', 0) + 1
+                        new_worker_last_posts[worker_id] += 1
+                        
         # Replace with consistent data
         self.worker_assignments = new_worker_assignments
         self.worker_posts = new_worker_posts
-    
+        self.worker_last_posts = new_worker_last_posts  # New tracking for last posts specifically
+        
         # Also update shift counts
         self.worker_shift_counts = {w_id: len(assignments) for w_id, assignments in new_worker_assignments.items()}
     
