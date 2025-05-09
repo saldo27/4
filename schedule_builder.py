@@ -292,7 +292,7 @@ class ScheduleBuilder:
         logging.debug(f"  CHECKING_INTERNAL: Worker={worker_id_to_check} vs List={assigned_workers_list} -> OK (No incompatibility detected)")
         return True # No incompatibilities found
 
-        def _check_incompatibility(self, worker_id, date):
+    def _check_incompatibility(self, worker_id, date):
         """Check if worker is incompatible with already assigned workers on a specific date"""
         try:
             if date not in self.schedule:
