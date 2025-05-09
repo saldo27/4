@@ -495,6 +495,10 @@ class ScheduleBuilder:
         Checks if moving worker_id from (date_from, post_from) to (date_to, post_to) is valid.
         Uses deepcopy for safer simulation.
         """
+        # First check if the date_from assignment is mandatory - if so, never allow swapping
+        if self._is_mandatory(worker_id, date_from):
+            logging.debug(f"Cannot swap mandatory shift for worker {worker_id} on {date_from}")
+            return False
         # --- Simulation Setup ---
         # Create deep copies of the schedule and assignments
         try:
@@ -623,7 +627,6 @@ class ScheduleBuilder:
                                (date.weekday() == 4 and prev_date.weekday() == 0)):
                                logging.debug(f"Sim Check Fail: Friday-Monday conflict for {worker_id} between {prev_date} and {date}")
                                return False
-
             # 8. 7/14 Day Pattern Check (Same day of week in consecutive weeks)
             for prev_date in sorted_sim_assignments:
                 if prev_date == date: 
@@ -633,7 +636,7 @@ class ScheduleBuilder:
                 if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
                     logging.debug(f"Sim Check Fail: {days_between} day pattern conflict for {worker_id} between {prev_date} and {date}")
                     return False
-                
+            
             return True # All checks passed on simulated data        
         except Exception as e:
             logging.error(f"Error during _check_constraints_on_simulated for {worker_id} on {date}: {e}", exc_info=True)
@@ -709,7 +712,7 @@ class ScheduleBuilder:
         worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
         work_percentage = worker_data.get('work_percentage', 100) if worker_data else 100
     
-        # Calculate max_weekend_count based on work_percentage
+        # Calculate max_weekend_count - never relax this value
         max_weekend_count = self.scheduler.max_consecutive_weekends
         if work_percentage < 70:
             max_weekend_count = max(1, int(self.scheduler.max_consecutive_weekends * work_percentage / 100))
