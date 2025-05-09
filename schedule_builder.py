@@ -1029,6 +1029,8 @@ class ScheduleBuilder:
         """Assigns mandatory shifts based on both configuration and worker mandatory_days."""
         logging.info("Starting mandatory guard assignment...")
         assigned_count = 0
+        # collect per-worker mandatory shifts
+        mandatory_assignments = []
 
         # [REMOVED] PART 1: ignore any global “mandatory_shifts” key —
         # we’re using only the UI-entered per-worker mandatory_days.
@@ -1038,9 +1040,8 @@ class ScheduleBuilder:
         worker_ids_set = set(w['id'] for w in self.workers_data)
  
         for worker in self.workers_data:
-            worker_id = worker['id']
-            # mandatory_days is a semicolon-separated DD-MM-YYYY list populated by WorkerDetailsScreen
-            mandatory_days = worker.get('mandatory_days', '') or ''
+             worker_id = worker['id']
+             mandatory_days = worker.get('mandatory_days', '') or ''
             
             if not mandatory_days:
                 continue
@@ -1054,7 +1055,7 @@ class ScheduleBuilder:
             except Exception as e:
                 logging.error(f"Error parsing mandatory days for worker {worker_id}: {str(e)}")
         logging.debug(f"Collected {len(mandatory_assignments)} mandatory assignments from worker data.")
-
+        
         # Second pass: assign all mandatory shifts
         logging.debug("Assigning collected worker mandatory shifts...")
         for worker_id, date in mandatory_assignments:
@@ -1116,68 +1117,7 @@ class ScheduleBuilder:
 
         logging.info(f"Finished mandatory guard assignment. Assigned {assigned_count} shifts.")
         # The original code returned assigned_count > 0, let's keep that
-        return assigned_count > 0
-    
-        # First pass: collect all mandatory shift requirements
-        for worker in self.workers_data:
-            worker_id = worker['id']
-            mandatory_days = worker.get('mandatory_days', '')
-        
-            if not mandatory_days:
-                continue
-            
-            try:
-                # Parse the mandatory days
-                mandatory_dates = self.date_utils.parse_dates(mandatory_days)
-            
-                for date in mandatory_dates:
-                    if date < self.start_date or date > self.end_date:
-                        continue  # Skip dates outside scheduling period
-                    
-                    mandatory_assignments.append((worker_id, date))
-                    logging.info(f"Mandatory shift identified: Worker {worker_id} on {date}")
-                
-            except Exception as e:
-                logging.error(f"Error parsing mandatory days for worker {worker_id}: {str(e)}")
-    
-        # Second pass: assign all mandatory shifts
-        for worker_id, date in mandatory_assignments:
-            # Check if already assigned
-            if date in self.schedule and worker_id in self.schedule[date]:
-                logging.debug(f"Worker {worker_id} already assigned on mandatory date {date}")
-                continue
-            
-            # Initialize the date in the schedule if needed
-            if date not in self.schedule:
-                self.schedule[date] = [None] * self.num_shifts
-            
-            # Try to assign the worker to any available post on the mandatory date
-            success = False
-            for post in range(self.num_shifts):
-                if post >= len(self.schedule[date]):
-                    # Extend list if needed
-                    self.schedule[date].extend([None] * (post - len(self.schedule[date]) + 1))
-                
-                if self.schedule[date][post] is None:
-                    # Check for incompatibility with already assigned workers
-                    if not self._check_incompatibility(worker_id, date):
-                        logging.warning(f"Cannot assign mandatory shift for worker {worker_id} on {date}: incompatibility")
-                        continue
-                    
-                    # Assign the worker to this post
-                    self.schedule[date][post] = worker_id
-                    self.worker_assignments[worker_id].add(date)
-                    self.scheduler._update_tracking_data(worker_id, date, post)
-                    logging.info(f"Assigned mandatory shift: Worker {worker_id} on {date} to post {post}")
-                    success = True
-                    assigned_count += 1
-                    break
-                
-            if not success:
-                logging.warning(f"Failed to assign mandatory shift for worker {worker_id} on {date}: all posts filled or incompatible")
-    
-        logging.info(f"Finished mandatory guard assignment. Assigned {assigned_count} shifts.")
-        return assigned_count > 0
+        return assigned_count > 0  
 
     def _assign_priority_days(self, forward):
         """Process weekend and holiday assignments first since they're harder to fill"""
