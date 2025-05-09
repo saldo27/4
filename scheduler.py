@@ -1441,10 +1441,6 @@ class Scheduler:
                      logging.info("Improvement Loop: Balanced workloads.")
                      improvement_made_in_cycle = True
 
-                if self.schedule_builder._improve_post_rotation():
-                     logging.info("Improvement Loop: Improved general post rotation.")
-                     improvement_made_in_cycle = True
-
                 self.schedule_builder._synchronize_tracking_data()
 
                 if self.schedule_builder._improve_weekend_distribution():
