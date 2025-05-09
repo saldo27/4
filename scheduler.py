@@ -1446,18 +1446,10 @@ class Scheduler:
                      improvement_made_in_cycle = True
 
                 self.schedule_builder._synchronize_tracking_data()
-                if self.schedule_builder._adjust_last_post_distribution():
-                    logging.info("Improvement Loop: Balanced last post assignments.")
-                    improvement_made_in_cycle = True
 
                 if self.schedule_builder._improve_weekend_distribution():
                      logging.info("Improvement Loop: Improved weekend distribution.")
                      improvement_made_in_cycle = True
-
-                # Add other steps like _fix_incompatibility_violations if needed
-                # if self.schedule_builder._fix_incompatibility_violations():
-                #      logging.info("Improvement Loop: Fixed incompatibilities.")
-                #      improvement_made_in_cycle = True
 
                 loop_end_time = datetime.now()
                 logging.info(f"--- Improvement Loop {improvement_loop_count + 1} finished in {(loop_end_time - loop_start_time).total_seconds():.2f}s. Changes made: {improvement_made_in_cycle} ---")
@@ -1468,6 +1460,7 @@ class Scheduler:
 
                 # Optional: Log schedule summary after each full loop
                 # self.log_schedule_summary(f"After Improvement Loop {improvement_loop_count}")
+                
 
 
             if improvement_loop_count >= max_improvement_loops:
@@ -1478,7 +1471,10 @@ class Scheduler:
              # Depending on severity, either raise or try to use the best schedule found so far
              # Let's raise for now, as an error here indicates a problem in the logic
              raise SchedulerError(f"Failed during improvement loop {improvement_loop_count}: {str(e)}")
-
+            
+        # ONE final pass to rebalance last-post slots (now that no more swaps occur)
+        self.schedule_builder._adjust_last_post_distribution(balance_tolerance=0.5)
+        logging.info("Post-generation: Final last-post distribution adjustment complete.")
 
         # --- 4. Finalization ---
         try:
