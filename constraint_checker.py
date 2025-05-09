@@ -365,7 +365,7 @@ class ConstraintChecker:
         Returns:
             bool: True if assignment maintains proper distribution
         """
-        "try:
+        #try:
             # Only check for last post position
             "last_post = self.num_shifts - 1
             "if post != last_post:
