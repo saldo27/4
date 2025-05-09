@@ -1023,101 +1023,104 @@ class ScheduleBuilder:
     
         return base_score
 
-    # 5. Schedule Generation Methods
+# 5. Schedule Generation Methods
             
     def _assign_mandatory_guards(self):
-        """Assigns mandatory shifts based on both configuration and worker mandatory_days."""
+        """Assigns mandatory shifts based on worker mandatory_days."""
         logging.info("Starting mandatory guard assignment...")
         assigned_count = 0
-        # collect per-worker mandatory shifts
         mandatory_assignments = []
 
-        # [REMOVED] PART 1: ignore any global “mandatory_shifts” key —
-        # we’re using only the UI-entered per-worker mandatory_days.
-        #
-        # PART 2: Process individual worker mandatory days
         logging.info("Processing worker mandatory days…")
-        worker_ids_set = set(w['id'] for w in self.workers_data)
- 
         for worker in self.workers_data:
-             worker_id = worker['id']
-             mandatory_days = worker.get('mandatory_days', '') or ''
-            
+            worker_id = worker['id']
+            mandatory_days = worker.get('mandatory_days', '') or ''
+
+            # skip if this worker has no mandatory days
             if not mandatory_days:
                 continue
+
             try:
-                # Ensure date_utils is correct reference
                 mandatory_dates = self.date_utils.parse_dates(mandatory_days)
                 for date in mandatory_dates:
-                    if self.start_date <= date <= self.end_date: # Ensure correct references
+                    if self.start_date <= date <= self.end_date:
                         mandatory_assignments.append((worker_id, date))
-                        logging.debug(f"  Identified worker mandatory shift: Worker {worker_id} on {date.strftime('%Y-%m-%d')}")
+                        logging.debug(
+                            f"  Identified worker mandatory shift: "
+                            f"Worker {worker_id} on {date.strftime('%Y-%m-%d')}"
+                        )
             except Exception as e:
-                logging.error(f"Error parsing mandatory days for worker {worker_id}: {str(e)}")
-        logging.debug(f"Collected {len(mandatory_assignments)} mandatory assignments from worker data.")
-        
-        # Second pass: assign all mandatory shifts
+                logging.error(f"Error parsing mandatory days for worker {worker_id}: {e}")
+
+        logging.debug(
+            f"Collected {len(mandatory_assignments)} mandatory assignments from worker data."
+        )
+
+        # Second pass: actually assign all mandatory shifts
         logging.debug("Assigning collected worker mandatory shifts...")
         for worker_id, date in mandatory_assignments:
-            logging.debug(f"  Attempting assignment for Worker {worker_id} on {date.strftime('%Y-%m-%d')}")
-            # Check if already assigned (handle potential KeyError if date not in schedule)
-            if date in self.schedule and worker_id in self.schedule.get(date, []):
-                logging.debug(f"    Worker {worker_id} already assigned on mandatory date {date}. Skipping.")
+            logging.debug(
+                f"  Attempting mandatory assignment: Worker {worker_id} on {date.strftime('%Y-%m-%d')}"
+            )
+            # already assigned?
+            if date in self.schedule and worker_id in self.schedule[date]:
+                logging.debug(f"    Already assigned, skipping.")
                 continue
 
-            # Initialize the date in the schedule if needed
+            # ensure the date is initialized
             if date not in self.schedule:
                 self.schedule[date] = [None] * self.num_shifts
                 logging.debug(f"    Initialized schedule for {date}")
 
-            # Try to assign the worker to any available post on the mandatory date
+            # try each post
             success = False
-            for post in range(self.num_shifts): # Ensure correct reference
-                logging.debug(f"    Checking post {post}...")
-                # Ensure list is long enough (should be handled by init)
+            for post in range(self.num_shifts):
                 if post >= len(self.schedule[date]):
-                    logging.warning(f"    Schedule list for {date} is unexpectedly short. Extending.")
-                    self.schedule[date].extend([None] * (post - len(self.schedule[date]) + 1))
-
+                    # safeguard against short lists
+                    self.schedule[date].extend(
+                        [None] * (post - len(self.schedule[date]) + 1)
+                    )
                 if self.schedule[date][post] is None:
-                    logging.debug(f"      Post {post} is empty. Checking incompatibility...")
-                    # Check for incompatibility with already assigned workers
+                    # check incompatibility
                     try:
-                         # Ensure _check_incompatibility exists and is correct
-                         is_compatible = self._check_incompatibility(worker_id, date)
-                    except Exception as e_incomp:
-                         logging.error(f"Exception during incompatibility check for {worker_id} on {date}: {e_incomp}", exc_info=True)
-                         is_compatible = False # Fail safe
+                        is_compatible = self._check_incompatibility(worker_id, date)
+                    except Exception as err:
+                        logging.error(
+                            f"Exception during incompatibility check for "
+                            f"{worker_id} on {date}: {err}", exc_info=True
+                        )
+                        is_compatible = False
 
                     if not is_compatible:
-                        logging.warning(f"      Cannot assign mandatory shift for worker {worker_id} on {date}: incompatibility detected at post {post}.")
-                        continue # Try next post
+                        logging.warning(
+                            f"    Incompatibility detected at post {post}, skipping."
+                        )
+                        continue
 
-                    # Assign the worker to this post
-                    logging.info(f"      Assigning worker mandatory shift: Worker {worker_id} on {date} to post {post}")
+                    # perform assignment
+                    logging.info(
+                        f"    Assigning Worker {worker_id} to {date} post {post}"
+                    )
                     self.schedule[date][post] = worker_id
-                    # Ensure worker_assignments is correct reference and worker_id exists
                     self.worker_assignments.setdefault(worker_id, set()).add(date)
-                    # Ensure _update_tracking_data exists and is correct
                     try:
                         self.scheduler._update_tracking_data(worker_id, date, post)
-                    except AttributeError:
-                         logging.error("AttributeError: Could not find _update_tracking_data method on scheduler.")
-                    except Exception as e_update2:
-                         logging.error(f"Exception during tracking update for {worker_id} on {date}: {e_update2}", exc_info=True)
-
+                    except Exception as err:
+                        logging.error(
+                            f"Error updating tracking for {worker_id} on {date}: {err}"
+                        )
                     success = True
                     assigned_count += 1
-                    break # Found a spot for this mandatory assignment
-                else:
-                    logging.debug(f"      Post {post} is already filled by {self.schedule[date][post]}.")
+                    break
 
             if not success:
-                logging.warning(f"    Failed to assign mandatory shift for worker {worker_id} on {date}: All posts filled or incompatible.")
+                logging.warning(
+                    f"    Could not place Worker {worker_id} on {date}: "
+                    "all posts filled or incompatible."
+                )
 
-        logging.info(f"Finished mandatory guard assignment. Assigned {assigned_count} shifts.")
-        # The original code returned assigned_count > 0, let's keep that
-        return assigned_count > 0  
+        logging.info(f"Finished mandatory guard assignment. "
+                     f"Assigned {assigned_coun  
 
     def _assign_priority_days(self, forward):
         """Process weekend and holiday assignments first since they're harder to fill"""
