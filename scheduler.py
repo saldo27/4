@@ -1335,7 +1335,7 @@ class Scheduler:
                 worker['work_periods'] = f"{start_str} - {end_str}"
                 logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
             
-    def generate_schedule(self, max_improvement_loops=30):
+    def generate_schedule(self, max_improvement_loops=50):
         """
         Generates the duty schedule.
 
@@ -1422,10 +1422,6 @@ class Scheduler:
                 # Now run other balancing/improvement steps
                 if self.schedule_builder._balance_workloads():
                      logging.info("Improvement Loop: Balanced workloads.")
-                     improvement_made_in_cycle = True
-
-                if self.schedule_builder._improve_post_rotation():
-                     logging.info("Improvement Loop: Improved general post rotation.")
                      improvement_made_in_cycle = True
 
                 self.schedule_builder._synchronize_tracking_data()
