@@ -187,14 +187,63 @@ class ConstraintChecker:
         except Exception as e:
             logging.error(f"Error checking weekend limit: {str(e)}")
             return True  # Fail safe
+
+    def _is_mandatory(self, worker_id, date):
+        """
+        Check if a worker has a mandatory assignment on this date.
+    
+        Args:
+            worker_id: ID of the worker to check
+            date: Date to check
+        
+        Returns:
+            bool: True if the worker has a mandatory shift on this date
+        """
+        try:
+            # Normalize date to date object for comparison
+            check_date = date.date() if isinstance(date, datetime) else date
+        
+            # 1. Check worker's mandatory_days
+            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+            if worker:
+                mandatory_days = worker.get('mandatory_days', '')
+                if mandatory_days:
+                    try:
+                        mandatory_dates = self.date_utils.parse_dates(mandatory_days)
+                        normalized_dates = [d.date() if isinstance(d, datetime) else d for d in mandatory_dates]
+                        if check_date in normalized_dates:
+                            return True
+                    except Exception as e:
+                        logging.debug(f"Error parsing mandatory days for {worker_id}: {str(e)}")
+                        pass
+        
+            # 2. Check config's mandatory_shifts in scheduler
+            if hasattr(self.scheduler, 'config') and self.scheduler.config:
+                date_str = check_date.strftime('%Y-%m-%d')
+                mandatory_shifts = self.scheduler.config.get('mandatory_shifts', {})
+            
+                if date_str in mandatory_shifts:
+                    post_assignments = mandatory_shifts[date_str]
+                    # Check if worker is assigned to any post on this date
+                    return worker_id in post_assignments.values()
+            
+            return False
+        except Exception as e:
+            logging.error(f"Error checking if date is mandatory: {str(e)}")
+            return False
             
     def _is_worker_unavailable(self, worker_id, date):
         """
         Check if worker is unavailable on a specific date
         """
         try:
+            # CRITICAL: First check if this is a mandatory shift - if so, worker is ALWAYS available
+            if self._is_mandatory(worker_id, date):
+                logging.debug(f"Worker {worker_id} has mandatory shift on {date} - overriding availability")
+                return False  # Mandatory shifts override availability constraints
+            
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
-        
+    
             # Check days off
             if worker.get('days_off'):
                 off_periods = self.date_utils.parse_date_ranges(worker['days_off'])
@@ -276,6 +325,11 @@ class ConstraintChecker:
         Returns: (bool, str) - (passed, reason_if_failed)
         """
         try:
+            # CRITICAL: First check if this is a mandatory shift - if so, all constraints are bypassed
+            if self._is_mandatory(worker_id, date):
+                logging.debug(f"Mandatory shift detected for worker {worker_id} on {date} - bypassing constraints")
+                return True, ""  # Mandatory shifts bypass all constraints
+            
             worker = next(w for w in self.workers_data if w['id'] == worker_id)
             work_percentage = float(worker.get('work_percentage', 100))
 
@@ -296,6 +350,10 @@ class ConstraintChecker:
                         days_between = abs((date - prev_date).days)
                         if 0 < days_between < min_gap:  # Fixed to only check non-zero gaps within range
                             return False, f"gap constraint ({min_gap} days)"
+                        
+                        # CRITICAL: Strictly enforce 7/14 day pattern prevention
+                        if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
+                            return False, f"would create {days_between}-day pattern (same weekday)"
 
             # Incompatibility constraints
             if not skip_constraints and not self._check_incompatibility(worker_id, date):

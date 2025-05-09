@@ -97,33 +97,47 @@ class ScheduleBuilder:
     # 3. Worker Constraint Check Methods
 
     def _is_mandatory(self, worker_id, date):
-        """Checks if a given date is mandatory for the worker."""
-        # Find the worker data from the scheduler's list
-        worker = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
-        if not worker:
-            logging.warning(f"_is_mandatory check failed: Worker {worker_id} not found.")
-            return False # Worker not found, cannot be mandatory
-
-        mandatory_days_str = worker.get('mandatory_days', '')
-        if not mandatory_days_str:
-            return False # No mandatory days defined
-
-        # Use the utility to parse dates, handle potential errors
+        """
+        Check if a worker has a mandatory assignment on a date.
+        Checks both worker's mandatory_days and config's mandatory_shifts.
+    
+        Args:
+            worker_id: Worker's ID
+            date: The date to check
+        
+        Returns:
+            bool: True if this date is mandatory for this worker
+        """
         try:
-            # Access date_utils via the scheduler reference
-            mandatory_dates = self.scheduler.date_utils.parse_dates(mandatory_days_str)
-            is_mand = date in mandatory_dates
-            # Add debug log
-            # logging.debug(f"Checking mandatory for {worker_id} on {date.strftime('%Y-%m-%d')}: Result={is_mand} (List: {mandatory_dates})")
-            return is_mand
-        except ValueError:
-             # Log error if parsing fails, treat as not mandatory for safety
-             logging.error(f"Could not parse mandatory_days for worker {worker_id}: '{mandatory_days_str}'")
-             return False
-        except AttributeError:
-             # Handle case where date_utils might not be initialized yet (shouldn't happen here, but safety)
-             logging.error("date_utils not available in scheduler during _is_mandatory check.")
-             return False
+            # Normalize date to date object for comparison
+            check_date = date.date() if isinstance(date, datetime) else date
+        
+            # 1. Check worker's mandatory_days
+            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+            if worker:
+                mandatory_days = worker.get('mandatory_days', '')
+                if mandatory_days:
+                    try:
+                        mandatory_dates = self.date_utils.parse_dates(mandatory_days)
+                        normalized_dates = [d.date() if isinstance(d, datetime) else d for d in mandatory_dates]
+                        if check_date in normalized_dates:
+                            return True
+                    except Exception:
+                        pass  # Continue to next check if this fails
+        
+            # 2. Check config's mandatory_shifts
+            date_str = check_date.strftime('%Y-%m-%d')
+            mandatory_shifts = self.scheduler.config.get('mandatory_shifts', {})
+        
+            if date_str in mandatory_shifts:
+                post_assignments = mandatory_shifts[date_str]
+                # Check if worker is assigned to any post on this date
+                return worker_id in post_assignments.values()
+            
+            return False
+        except Exception as e:
+            logging.error(f"Error checking if date is mandatory: {str(e)}")
+            return False
             
     def _is_worker_unavailable(self, worker_id, date):
         """
@@ -760,6 +774,35 @@ class ScheduleBuilder:
             if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
                 return False
         return True
+
+    def _is_mandatory_post(self, worker_id, date, post):
+        """
+        Check if a specific post is mandatory for a worker on a specific date.
+        This only applies to config-defined mandatory shifts.
+    
+        Args:
+            worker_id: Worker's ID
+            date: The date to check
+            post: The post number to check
+        
+        Returns:
+            bool: True if this specific post is mandatory for this worker
+        """
+        try:
+            # Convert date to string format used in config
+            date_str = date.strftime('%Y-%m-%d')
+        
+            # Check in mandatory_shifts config
+            mandatory_shifts = self.scheduler.config.get('mandatory_shifts', {})
+            if date_str in mandatory_shifts:
+                post_assignments = mandatory_shifts[date_str]
+                # Check if this exact post is assigned to this worker
+                return str(post) in post_assignments and post_assignments[str(post)] == worker_id
+            
+            return False
+        except Exception as e:
+            logging.error(f"Error checking mandatory post: {str(e)}")
+            return False
     
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """

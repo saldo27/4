@@ -318,7 +318,7 @@ class Scheduler:
             current = (current.replace(day=1) + timedelta(days=32)).replace(day=1)
     
         return month_days
-
+    
     def _calculate_target_shifts(self):
         """
         Calculate target number of shifts for each worker based on their work percentage,
@@ -538,7 +538,87 @@ class Scheduler:
     
         # Log the results
         logging.info("Monthly targets calculated")
-        return True  
+        return True
+
+    def _update_tracking_data(self, worker_id, date, post, removing=False):
+        """
+        Update all tracking variables when a worker is assigned or removed from a shift
+    
+        Args:
+            worker_id: ID of the worker
+            date: Date of the assignment
+            post: Post number
+            removing: Whether worker is being removed (True) or added (False)
+        """
+        if worker_id is None:
+            return
+        
+        # Update mandatory tracking
+        # Always prioritize mandatory assignments in tracking data
+        is_mandatory = removing is False and self._is_mandatory(worker_id, date)
+    
+        if removing:
+            # Removing worker from shift
+        
+            # Update worker_assignments
+            if date in self.worker_assignments.get(worker_id, set()):
+                self.worker_assignments[worker_id].remove(date)
+            
+            # Update worker_shift_counts
+            if worker_id in self.worker_shift_counts:
+                self.worker_shift_counts[worker_id] = max(0, self.worker_shift_counts[worker_id] - 1)
+            
+            # Update worker_posts
+            if worker_id in self.worker_posts and post in self.worker_posts[worker_id]:
+                self.worker_posts[worker_id][post] = max(0, self.worker_posts[worker_id][post] - 1)
+            
+            # Update weekday tracking
+            weekday = date.weekday()
+            if worker_id in self.worker_weekdays and weekday in self.worker_weekdays[worker_id]:
+                self.worker_weekdays[worker_id][weekday] = max(0, self.worker_weekdays[worker_id][weekday] - 1)
+            
+            # Update weekend tracking
+            if self.date_utils.is_weekend_day(date):
+                if worker_id in self.worker_weekend_shifts:
+                    self.worker_weekend_shifts[worker_id] = max(0, self.worker_weekend_shifts[worker_id] - 1)
+                
+        else:
+            # Adding worker to shift
+        
+            # Update worker_assignments
+            if worker_id not in self.worker_assignments:
+                self.worker_assignments[worker_id] = set()
+            self.worker_assignments[worker_id].add(date)
+        
+            # Update worker_shift_counts
+            if worker_id not in self.worker_shift_counts:
+                self.worker_shift_counts[worker_id] = 0
+            self.worker_shift_counts[worker_id] += 1
+        
+            # Update worker_posts
+            if worker_id not in self.worker_posts:
+                self.worker_posts[worker_id] = {}
+            if post not in self.worker_posts[worker_id]:
+                self.worker_posts[worker_id][post] = 0
+            self.worker_posts[worker_id][post] += 1
+        
+            # Update weekday tracking
+            weekday = date.weekday()
+            if worker_id not in self.worker_weekdays:
+                self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
+            self.worker_weekdays[worker_id][weekday] += 1
+        
+            # Update weekend tracking
+            if self.date_utils.is_weekend_day(date):
+                if worker_id not in self.worker_weekend_shifts:
+                    self.worker_weekend_shifts[worker_id] = 0
+                self.worker_weekend_shifts[worker_id] += 1
+        
+            # Special: Mark as mandatory in tracking data if applicable
+            if is_mandatory:
+                if not hasattr(self, 'mandatory_assignments'):
+                    self.mandatory_assignments = {}
+                self.mandatory_assignments.setdefault(worker_id, set()).add(date)
     
     def _redistribute_excess_shifts(self, excess_shifts, excluded_worker_id, mandatory_shifts_by_worker):
         """Helper method to redistribute excess shifts from one worker to others, respecting mandatory assignments"""
@@ -1335,7 +1415,7 @@ class Scheduler:
                 worker['work_periods'] = f"{start_str} - {end_str}"
                 logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
             
-    def generate_schedule(self, max_improvement_loops=50):
+    def generate_schedule(self, max_improvement_loops=70):
         """
         Generates the duty schedule.
 
