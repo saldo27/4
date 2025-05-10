@@ -1440,12 +1440,21 @@ class Scheduler:
                 if self.schedule_builder._balance_workloads():
                      logging.info("Improvement Loop: Balanced workloads.")
                      improvement_made_in_cycle = True
-
-                self.schedule_builder._synchronize_tracking_data()
-
+                
                 if self.schedule_builder._improve_weekend_distribution():
                      logging.info("Improvement Loop: Improved weekend distribution.")
                      improvement_made_in_cycle = True
+
+                # run weekend‐distribution **before** last-post
+                self.schedule_builder._synchronize_tracking_data()
+                if self.schedule_builder._improve_weekend_distribution():
+                    logging.info("Improvement Loop: Improved weekend distribution.")
+                    improvement_made_in_cycle = True
+
+                # only after all other swaps/balances, do last-post adjustment
+                if self.schedule_builder._adjust_last_post_distribution():
+                    logging.info("Improvement Loop: Balanced last post assignments.")
+                    improvement_made_in_cycle = True
 
                 loop_end_time = datetime.now()
                 logging.info(f"--- Improvement Loop {improvement_loop_count + 1} finished in {(loop_end_time - loop_start_time).total_seconds():.2f}s. Changes made: {improvement_made_in_cycle} ---")
@@ -1453,11 +1462,6 @@ class Scheduler:
                 if not improvement_made_in_cycle:
                     logging.info("No further improvements detected in this loop. Exiting improvement phase.")
                 improvement_loop_count += 1
-
-                # Optional: Log schedule summary after each full loop
-                # self.log_schedule_summary(f"After Improvement Loop {improvement_loop_count}")
-                
-
 
             if improvement_loop_count >= max_improvement_loops:
                 logging.warning(f"Reached maximum improvement loops ({max_improvement_loops}). Stopping improvements.")
