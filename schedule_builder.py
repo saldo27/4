@@ -1074,7 +1074,8 @@ class ScheduleBuilder:
                 if self.schedule[date][post] is None:
                     # For mandatory days, skip gap, weekly‐pattern, and weekend‐limits;
                     # only enforce incompatibility and double‐booking.
-                    ok = self._check_incompatibility(worker_id, date)                     if not ok:
+                    ok = self._check_incompatibility(worker_id, date)                     
+                    if not ok:
                          continue
                     # assign!
                     self.schedule[date][post] = worker_id
