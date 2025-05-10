@@ -669,7 +669,28 @@ class Scheduler:
             logging.debug(f"Skipping tracking update for None worker on {date.strftime('%Y-%m-%d')}, post {post}, removing={removing}")
             return
 
-        logging.debug(f"Updating tracking data for worker {worker_id} on {date.strftime('%Y-%m-%d')}, post {post}, removing={removing}")
+        # Also update the overall shift count for the worker
+        change = -1 if removing else 1
+        if hasattr(self, 'worker_shift_counts'):
+            # Initialize if missing
+            if worker_id not in self.worker_shift_counts:
+                self.worker_shift_counts[worker_id] = 0
+            # Apply change and guard against negative
+            self.worker_shift_counts[worker_id] = max(
+                0,
+                self.worker_shift_counts[worker_id] + change
+            )
+            logging.debug(
+                f"Worker {worker_id} total shift count updated to "
+                f"{self.worker_shift_counts[worker_id]}"
+            )
+        else:
+            # Fallback: create the dict
+            self.worker_shift_counts = {worker_id: max(0, change)}
+            logging.debug(
+                f"Initialized worker_shift_counts for {worker_id}: "
+                f"{self.worker_shift_counts[worker_id]}"
+            )
 
         # Determine the increment/decrement value for counts
         change = -1 if removing else 1
