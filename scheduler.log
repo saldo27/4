@@ -1,0 +1,1 @@
+all workers must have the same number of shifts allocated to them (tolerance +/- 1) according to their % of working time.   Mandatory days are not extra shifts.  Mandatory and non-mandatory days should not be balanced at all (e.g. if a worker has to be allocated 10-11 shifts and 3 are mandatory, he/she should be allocated 7-8 non-mandatory shifts). 
