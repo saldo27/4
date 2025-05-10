@@ -1034,9 +1034,10 @@ class ScheduleBuilder:
         logging.info("Processing worker mandatory days…")
         for worker in self.workers_data:
             worker_id = worker['id']
-            mandatory_str = worker.get('mandatory_days', '') or ''
+            # use same name for clarity
+            mandatory_days = worker.get('mandatory_days', '') or ''
 
-            if not mandatory_str:
+            if not mandatory_days:
                 continue
 
             try:
@@ -1074,7 +1075,7 @@ class ScheduleBuilder:
                 if self.schedule[date][post] is None:
                     # For mandatory days, skip gap, weekly‐pattern, and weekend‐limits;
                     # only enforce incompatibility and double‐booking.
-                    ok = self._check_incompatibility(worker_id, date)                     
+                    ok = self._check_incompatibility(worker_id, date)
                     if not ok:
                          continue
                     # assign!
