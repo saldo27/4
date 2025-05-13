@@ -10,7 +10,7 @@ from kivy.uix.checkbox import CheckBox
 from kivy.uix.popup import Popup
 from kivy.graphics import Color, Line, Rectangle
 from datetime import datetime, timedelta
-from scheduler import Scheduler
+from scheduler import  Scheduler, SchedulerError
 from exporters import StatsExporter
 from pdf_exporter import PDFExporter
 
@@ -2162,6 +2162,50 @@ class CalendarViewScreen(Screen):
         """Navigate to worker details after reset"""
         popup.dismiss()
         self.manager.current = 'worker_details'
+
+class GenerateScheduleScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # A button to kick off scheduling
+        btn = Button(text="Generar horario", size_hint=(1, None), height=50)
+        btn.bind(on_press=self.on_generate)
+        self.add_widget(btn)
+
+    def on_generate(self, instance):
+        app = App.get_running_app()
+        cfg = getattr(app, "schedule_config", None)
+        if not cfg:
+            return self._error("No hay configuración de turno guardada.")
+
+        # Sanity‐check that the gap parameters exist
+        if "gap_between_shifts" not in cfg or "max_consecutive_weekends" not in cfg:
+            return self._error("Faltan parámetros 'gap_between_shifts' o 'max_consecutive_weekends'.")
+
+        # Make sure workers list is ready
+        if not cfg.get("workers_data"):
+            return self._error("No se han introducido los datos de los médicos.")
+
+        try:
+            # Pass the entire dict (with your UI‐entered gaps) into Scheduler:
+            scheduler = Scheduler(cfg)
+            success   = scheduler.generate_schedule()
+            if not success:
+                return self._error("No se pudo generar un horario válido.")
+
+            # Store for later display/review
+            app.final_schedule = scheduler.schedule
+
+            # Switch to your “review” screen:
+            self.manager.current = "schedule_review"
+
+        except SchedulerError as e:
+            self._error(f"Error al generar: {e}")
+
+    def _error(self, msg):
+        p = Popup(title="Error", content=Label(text=msg),
+                  size_hint=(None, None), size=(400, 200))
+        p.open()
               
 class ShiftManagerApp(App):
     def __init__(self, **kwargs):
