@@ -1316,13 +1316,14 @@ class ScheduleBuilder:
                         # logging.debug(f"  [Relaxed Check] Worker {worker_id} incompatible on {date}")
                         is_valid_candidate = False
 
-                    # === ADDED: Gap Between Shifts Check ===
-                    if is_valid_candidate:
+                    # === ADDED: Gap Between Shifts Check (skip for mandatory days) ===
+                    # Only enforce gap if this slot is not a mandatory date for the worker
+                    if is_valid_candidate and not self._is_mandatory(worker_id, date):
                         assignments = sorted(list(self.scheduler.worker_assignments.get(worker_id, set())))
-                        min_days_between = self.gap_between_shifts + 1
+                        min_days_between = self.gap_between_shifts + 1  # need days_between > gap
 
                         for prev_date in assignments:
-                            # skip comparing the same date (double‐booking is handled separately)
+                            # ignore same-day previous assignment (double-booking is handled above)
                             if prev_date == date:
                                 continue
                             days_between = abs((date - prev_date).days)
