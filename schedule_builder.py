@@ -1881,7 +1881,7 @@ class ScheduleBuilder:
                     continue
 
                 # --- MANDATORY CHECK --- (you already had this, but now enforced globally)
-                skip if this date is mandatory for this worker
+                # skip if this date is mandatory for this worker
                 if self._is_mandatory(over_worker_id, date):
                     continue
 
