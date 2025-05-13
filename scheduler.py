@@ -1251,15 +1251,15 @@ class Scheduler:
             else:
                  raise SchedulerError(f"Initialization failed: {str(e)}")
 
-        # --- 2. Pre-assign mandatory shifts (irremovable) ---
-        logging.info("Pre-assigning mandatory shifts; these dates will be locked in place.")
-        # Assign all mandatory days now, before any other filling or swaps
+        # --- 2. Pre-assign mandatory shifts and lock them in place ---
+        logging.info("Pre-assigning mandatory shifts; these will be irremovable.")
+        # Place all mandatory days before any other assignments
         self.schedule_builder._assign_mandatory_guards()
-        # Re-sync tracking data so all counts and assignments reflect the mandatory guards
+        # Synchronize all tracking structures to include those mandatory assignments
         self.schedule_builder._synchronize_tracking_data()
-        # Save this as the initial “best” state
+        # Save this as the initial "best" state
         self.schedule_builder._save_current_as_best(initial=True)
-        self.log_schedule_summary("After Mandatory Assignment")        
+        self.log_schedule_summary("After Mandatory Assignment")    
 
         # --- 3. Iterative Improvement Loop ---
         improvement_loop_count = 0
