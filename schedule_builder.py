@@ -2862,7 +2862,7 @@ class ScheduleBuilder:
                    else:
                         current_consecutive = 1
                    if current_consecutive > max_allowed_consecutive:
-                        consecutive_penalty += 5.0
+                        consecutive_penalty += 10.0
          penalty += consecutive_penalty
 
          # --- Add other penalties ---
