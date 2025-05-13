@@ -1200,7 +1200,7 @@ class Scheduler:
                 worker['work_periods'] = f"{start_str} - {end_str}"
                 logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
             
-    def generate_schedule(self, max_improvement_loops=30):
+    def generate_schedule(self, max_improvement_loops=40):
         """
         Generates the duty schedule.
 
@@ -1251,11 +1251,15 @@ class Scheduler:
             else:
                  raise SchedulerError(f"Initialization failed: {str(e)}")
 
-        # --- 2. Treat mandatory days as constraints only (no pre-assignment) ---
-        logging.info("Skipping pre-assignment of mandatory shifts; mandatory days enforced as constraints.")
-        # Save the initial empty schedule state
+        # --- 2. Pre-assign mandatory shifts (irremovable) ---
+        logging.info("Pre-assigning mandatory shifts; these dates will be locked in place.")
+        # Assign all mandatory days now, before any other filling or swaps
+        self.schedule_builder._assign_mandatory_guards()
+        # Re-sync tracking data so all counts and assignments reflect the mandatory guards
+        self.schedule_builder._synchronize_tracking_data()
+        # Save this as the initial “best” state
         self.schedule_builder._save_current_as_best(initial=True)
-        self.log_schedule_summary("Before Filling Shifts")        
+        self.log_schedule_summary("After Mandatory Assignment")        
 
         # --- 3. Iterative Improvement Loop ---
         improvement_loop_count = 0
