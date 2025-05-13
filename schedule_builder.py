@@ -2796,4 +2796,82 @@ class ScheduleBuilder:
              logging.warning("get_best_schedule called but no best schedule was saved.")
         return self.best_schedule_data
 
+    def calculate_score(self, schedule_to_score=None, assignments_to_score=None):
+         """
+         Calculates the score of a given schedule state or the current state.
+         Higher score is better. Penalties decrease the score.
+         """
+         # Use current state if not provided
+         schedule = schedule_to_score if schedule_to_score is not None else self.scheduler.schedule
+         assignments = assignments_to_score if assignments_to_score is not None else self.scheduler.worker_assignments
 
+         base_score = 1000.0
+         penalty = 0.0
+
+         # --- Penalties ---
+         # 1. Empty Shifts
+         empty_shifts = 0
+         for date, posts in schedule.items():
+             empty_shifts += posts.count(None)
+         penalty += empty_shifts * 50.0
+
+         # 2. Workload Imbalance
+         # Use worker_shift_counts from the scheduler's current state
+         shift_counts = list(self.scheduler.worker_shift_counts.values())
+         if shift_counts:
+             min_shifts = min(shift_counts)
+             max_shifts = max(shift_counts)
+             penalty += (max_shifts - min_shifts) * 5.0
+
+         # 3. Weekend Imbalance
+         # Use worker_weekend_shifts from the scheduler's current state
+         weekend_counts = list(self.scheduler.worker_weekend_shifts.values())
+         if weekend_counts:
+             min_weekends = min(weekend_counts)
+             max_weekends = max(weekend_counts)
+             penalty += (max_weekends - min_weekends) * 10.0
+
+         # 4. Post Rotation Imbalance
+         total_post_deviation_penalty = 0
+         num_posts = self.num_shifts
+         if num_posts > 1:
+             # Use worker_posts from the scheduler's current state
+             for worker_id, worker_post_counts in self.scheduler.worker_posts.items():
+                 total_assigned = sum(worker_post_counts.values())
+                 if total_assigned > 0:
+                     target_per_post = total_assigned / num_posts
+                     worker_deviation = 0
+                     for post in range(num_posts):
+                          actual_count = worker_post_counts.get(post, 0)
+                          worker_deviation += abs(actual_count - target_per_post)
+                     total_post_deviation_penalty += worker_deviation * 1.0
+         penalty += total_post_deviation_penalty
+
+         # 5. Consecutive Shifts
+         consecutive_penalty = 0
+         # --- CORRECTED LINE: Access config via self.scheduler ---
+         max_allowed_consecutive = self.scheduler.config.get('max_consecutive_shifts', 3)
+         # --- END CORRECTION ---
+         # Use worker_assignments for calculation (or better tracking data if available)
+         for worker_id, dates in sorted(assignments.items()):
+              sorted_dates = sorted(list(dates))
+              current_consecutive = 0
+              for i, date in enumerate(sorted_dates):
+                   if i > 0 and (date - sorted_dates[i-1]).days == 1:
+                        current_consecutive += 1
+                   else:
+                        current_consecutive = 1
+                   if current_consecutive > max_allowed_consecutive:
+                        consecutive_penalty += 5.0
+         penalty += consecutive_penalty
+
+         # 6. Minimum Rest Violation (Example)
+         min_rest_hours = self.scheduler.config.get('min_rest_hours', 10) # Get from config via scheduler
+         rest_penalty = 0
+         # Add logic here to check rest periods based on assignments
+         # penalty += rest_penalty
+
+         # --- Add other penalties ---
+
+         final_score = base_score - penalty
+         return final_score
