@@ -1280,7 +1280,8 @@ class ScheduleBuilder:
         # Find all empty shifts (using scheduler's reference)
         for date, workers in self.scheduler.schedule.items():
             for post, worker in enumerate(workers):
-                if worker is None:
+                # Don't treat a locked mandatory shift as “empty”
+                if worker is None and (None, date) not in self._locked_mandatory:
                     empty_shifts.append((date, post))
         if not empty_shifts: return False
         logging.info(f"Attempting to fill {len(empty_shifts)} empty shifts...")
