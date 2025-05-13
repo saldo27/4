@@ -1031,12 +1031,22 @@ class ScheduleBuilder:
         """Assigns mandatory shifts based on worker mandatory_days."""
         logging.info("Starting mandatory guard assignment…")
 
+        # Build list of (worker_id, date) for every mandatory day
         mandatory_assignments = []
-        for worker in self.workers_data:
+        for worker in self.scheduler.workers_data:
+            worker_id = worker['id']
+            # Parse the semicolon-separated mandatory_days string into dates
+            mandatory_str = worker.get('mandatory_days', '')
+            try:
+                dates = self.scheduler.date_utils.parse_dates(mandatory_str)
+            except Exception as e:
+                logging.error(f"Error parsing mandatory_days for worker {worker_id}: {e}")
+                continue
+
             for date in dates:
                 if self.start_date <= date <= self.end_date:
                     mandatory_assignments.append((worker_id, date))
-                    logging.debug(f"[Identified mandatory shift] Worker {worker_id} on {date:%Y-%m-%d}")
+                    logging.debug(f"[Identified mandatory shift] Worker {worker_id} on {date:%d%m-%Y}")
  
         assigned_count = 0
         for worker_id, date in mandatory_assignments:
