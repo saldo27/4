@@ -34,6 +34,8 @@ class ScheduleBuilder:
         # Add references to the configurable parameters
         self.gap_between_shifts = scheduler.gap_between_shifts
         self.max_consecutive_weekends = scheduler.max_consecutive_weekends
+        # Keep track of which (worker_id, date) pairs are truly mandatory
+        self._locked_mandatory = set()
 
         # Add these lines:
         self.start_date = scheduler.start_date
@@ -1027,72 +1029,47 @@ class ScheduleBuilder:
             
     def _assign_mandatory_guards(self):
         """Assigns mandatory shifts based on worker mandatory_days."""
-        logging.info("Starting mandatory guard assignment...")
-        assigned_count = 0
+        logging.info("Starting mandatory guard assignment…")
+
         mandatory_assignments = []
-
-        logging.info("Processing worker mandatory days…")
         for worker in self.workers_data:
-            worker_id = worker['id']
-            # use same name for clarity
-            mandatory_days = worker.get('mandatory_days', '') or ''
-
-            if not mandatory_days:
-                continue
-
-            try:
-                dates = self.date_utils.parse_dates(mandatory_days)
-                for date in dates:
-                    if self.start_date <= date <= self.end_date:
-                        mandatory_assignments.append((worker_id, date))
-                        logging.debug(
-                            f"Identified mandatory shift: Worker {worker_id} on {date:%Y-%m-%d}"
-                        )
-            except Exception as e:
-                logging.error(
-                    f"Error parsing mandatory days for Worker {worker_id}: {e}",
-                    exc_info=True
-                )
-
-        # Second pass: assign all mandatory shifts — but respect **all** constraints!
-        logging.debug(f"Collected {len(mandatory_assignments)} mandatory assignments.")
+            for date in dates:
+                if self.start_date <= date <= self.end_date:
+                    mandatory_assignments.append((worker_id, date))
+                    logging.debug(f"[Identified mandatory shift] Worker {worker_id} on {date:%Y-%m-%d}")
+ 
         assigned_count = 0
-
         for worker_id, date in mandatory_assignments:
-            # skip if already there
+            # skip if already placed
             if date in self.schedule and worker_id in self.schedule[date]:
                 continue
-
-            # init date
+ 
+            # ensure the day exists
             if date not in self.schedule:
                 self.schedule[date] = [None] * self.num_shifts
-            placed = False
-            # try each post, but use full constraint check
+ 
             for post in range(self.num_shifts):
+                # pad if needed
                 if post >= len(self.schedule[date]):
-                    self.schedule[date].extend([None] * (post - len(self.schedule[date]) + 1))
+                    self.schedule[date].extend([None]*(post - len(self.schedule[date]) + 1))
  
                 if self.schedule[date][post] is None:
-                    # For mandatory days, skip gap, weekly‐pattern, and weekend‐limits;
-                    # only enforce incompatibility and double‐booking.
-                    ok = self._check_incompatibility(worker_id, date)
-                    if not ok:
-                         continue
-                    # assign!
+                    # only enforce incompatibility and double-booking here
+                    if not self._check_incompatibility(worker_id, date):
+                        continue
+ 
+                    # place the mandatory assignment
                     self.schedule[date][post] = worker_id
                     self.worker_assignments.setdefault(worker_id, set()).add(date)
-                    try:
-                        self.scheduler._update_tracking_data(worker_id, date, post)
-                    except Exception:
-                        pass
-                    assigned_count += 1
-                    placed = True
-                    break
-                if not placed:
-                    logging.warning(f"Could not place mandatory shift: Worker {worker_id} on {date}")
+                    self.scheduler._update_tracking_data(worker_id, date, post)
+                    # lock it so no later pass removes it
+                    self._locked_mandatory.add((worker_id, date))
  
-        logging.info(f"Finished mandatory guard assignment. Assigned {assigned_count} shifts.")
-        return assigned_count > 0
+                    assigned_count += 1
+                    break
+ 
+        logging.info(f"Finished mandatory guard assignment.  Assigned {assigned_count} shifts.")
+        return (assigned_count > 0)
     
     def _get_remaining_dates_to_process(self, forward):
         """Get remaining dates that need to be processed"""
@@ -1898,12 +1875,16 @@ class ScheduleBuilder:
             possible_shifts = []
     
             for date in sorted(self.scheduler.worker_assignments.get(over_worker_id, set())):
-                # --- MANDATORY CHECK ---
-                # Skip if this date is mandatory for this worker
+                # never touch a locked mandatory
+                if (over_worker_id, date) in self._locked_mandatory:
+                    logging.debug(f"Skipping workload‐balance move for mandatory shift: {over_worker_id} on {date}")
+                    continue
+
+                # --- MANDATORY CHECK --- (you already had this, but now enforced globally)
+                skip if this date is mandatory for this worker
                 if self._is_mandatory(over_worker_id, date):
-                     logging.debug(f"Cannot move worker {over_worker_id} from mandatory shift on {date.strftime('%Y-%m-%d')} for balancing.")
-                     continue
-                # --- END MANDATORY CHECK ---
+                    continue
+
             
                 # Make sure the worker is actually in the schedule for this date
                 if date not in self.schedule:
@@ -1934,7 +1915,9 @@ class ScheduleBuilder:
                 for under_worker_id, _ in underloaded:
                     # ... (check if under_worker already assigned) ...
                     if self._can_assign_worker(under_worker_id, date, post):
-                        # Make the reassignment (directly modify scheduler's references)
+                        # remove only if it wasn't locked mandatory
+                        if (over_worker_id, date) in self._locked_mandatory:
+                            continue
                         self.scheduler.schedule[date][post] = under_worker_id
                         self.scheduler.worker_assignments[over_worker_id].remove(date)
                         # Ensure under_worker tracking exists
