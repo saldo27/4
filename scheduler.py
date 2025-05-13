@@ -319,6 +319,25 @@ class Scheduler:
     
         return month_days
 
+    def _get_shifts_for_date(self, date):
+        """Determine the number of shifts for a specific date based on variable_shifts."""
+        logging.debug(f"Checking variable shifts for date: {date}")
+        # Normalize to date-only if datetime
+        check_date = date.date() if hasattr(date, 'date') else date
+        for cfg in self.variable_shifts:
+            start = cfg.get('start_date')
+            end   = cfg.get('end_date')
+            shifts = cfg.get('shifts')
+            # Normalize
+            sd = start.date() if hasattr(start, 'date') else start
+            ed = end.date() if hasattr(end, 'date') else end
+            if sd <= check_date <= ed:
+                logging.debug(f"Variable shifts: {shifts} for {date}")
+                return shifts
+        # Fallback to default
+        logging.debug(f"No variable shift override for {date}, default={self.num_shifts}")
+        return self.num_shifts
+
     def _calculate_target_shifts(self):
         """
         Recalculate each worker's target_shifts by:
