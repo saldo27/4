@@ -1126,6 +1126,9 @@ class ScheduleBuilder:
         start_post = len(self.schedule.get(date, []))
         total_slots = len(self.schedule.get(date, []))
         for post in range(start_post, total_slots):
+            # Skip any slot we’ve already locked for mandatory
+            if (self.schedule[date][post], date) in self._locked_mandatory:
+                continue
             assigned_this_post = False
             # Try each relaxation level until we succeed or run out of options
             for relax_level in range(relaxation_level + 1): # Start from specified level up to max (usually 0)
@@ -1294,6 +1297,9 @@ class ScheduleBuilder:
         # --- Pass 1: Direct Assignment (Relaxed Check + STRICT Incompatibility) ---
         logging.info("--- Starting Pass 1: Direct Fill (Relaxed Constraints + Strict Incompatibility) ---")
         for date, post in empty_shifts:
+            # Never touch a pre‐locked mandatory shift
+            if (self.scheduler.schedule[date][post], date) in self._locked_mandatory:
+                continue
             # Use scheduler's schedule reference
             if date in self.scheduler.schedule and len(self.scheduler.schedule[date]) > post and self.scheduler.schedule[date][post] is None:
                 candidates = []
