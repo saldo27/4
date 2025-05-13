@@ -321,177 +321,74 @@ class Scheduler:
 
     def _calculate_target_shifts(self):
         """
-        Calculate target number of shifts for each worker based on their work percentage,
-        ensuring optimal distribution and fairness while respecting mandatory shifts.
+        Recalculate each worker's target_shifts by:
+          1) Counting slots they can work (based on work_periods & days_off)
+          2) Weighting those slots by their work_percentage
+          3) Allocating all schedule slots proportionally (largest‐remainder rounding)
         """
         try:
-            logging.info("Calculating target shifts distribution...")
-            total_days = (self.end_date - self.start_date).days + 1
-            total_shifts = total_days * self.num_shifts
-        
-            # ONLY per-worker mandatory_days (from UI); ignore any config['mandatory_shifts']
-            mandatory_shifts_by_worker = {}
-            total_mandatory_shifts = 0
+            logging.info("Calculating target shifts based on availability and percentage")
 
-            for worker in self.workers_data:
-                worker_id = worker['id']
-                # force a string so parse_dates() always parses your UI input
-                mandatory_days = worker.get('mandatory_days', '') or ''
-                mandatory_dates = self.date_utils.parse_dates(mandatory_days)
+            # 1) Total open slots in the schedule (variable shifts considered)
+            total_slots = sum(len(slots) for slots in self.schedule.values())
+            if total_slots <= 0:
+                logging.warning("No slots in schedule; skipping allocation")
+                return False
 
-                # Count only mandatory days within schedule period
-                valid_mandatory_dates = [d for d in mandatory_dates 
-                                        if self.start_date <= d <= self.end_date]
-            
-                mandatory_count = len(valid_mandatory_dates)
-                mandatory_shifts_by_worker[worker_id] = mandatory_count
-                total_mandatory_shifts += mandatory_count
-            
-                logging.debug(f"Worker {worker_id} has {mandatory_count} mandatory shifts")
-        
-            # Remaining shifts to distribute
-            remaining_shifts = total_shifts - total_mandatory_shifts
-            logging.info(f"Total shifts: {total_shifts}, Mandatory shifts: {total_mandatory_shifts}, Remaining: {remaining_shifts}")
-        
-            if remaining_shifts < 0:
-                logging.error("More mandatory shifts than total available shifts!")
-                remaining_shifts = 0
-        
-            # Get and validate all worker percentages
-            percentages = []
-            for worker in self.workers_data:
+            # 2) Compute available_slots per worker
+            available_slots = {}
+            for w in self.workers_data:
+                wid = w['id']
+                wp = w.get('work_periods','').strip()
+                dp = w.get('days_off','').strip()
+                work_ranges = (self.date_utils.parse_date_ranges(wp) 
+                               if wp else [(self.start_date, self.end_date)])
+                off_ranges  = (self.date_utils.parse_date_ranges(dp) 
+                               if dp else [])
+                count = 0
+                for date, slots in self.schedule.items():
+                    in_work = any(s <= date <= e for s, e in work_ranges)
+                    in_off  = any(s <= date <= e for s, e in off_ranges)
+                    if in_work and not in_off:
+                        count += len(slots)
+                available_slots[wid] = count
+                logging.debug(f"Worker {wid}: available_slots={count}")
+
+            # 3) Build weight = available_slots * (work_percentage/100)
+            weights = []
+            for w in self.workers_data:
+                wid = w['id']
+                pct = 1.0
                 try:
-                    percentage = float(str(worker.get('work_percentage', 100)).strip())
-                    if percentage <= 0:
-                        logging.warning(f"Worker {worker['id']} has invalid percentage ({percentage}), using 100%")
-                        percentage = 100
-                    percentages.append(percentage)
-                except (ValueError, TypeError) as e:
-                    logging.warning(f"Invalid percentage for worker {worker['id']}, using 100%: {str(e)}")
-                    percentages.append(100)
-        
-            # Calculate the total percentage points available across all workers
-            total_percentage = sum(percentages)
-        
-            # First pass: Calculate exact targets based on percentages for remaining shifts
-            exact_targets = []
-            for percentage in percentages:
-                target = (percentage / total_percentage) * remaining_shifts
-                exact_targets.append(target)
-        
-            # Second pass: Round targets while minimizing allocation error
-            rounded_targets = []
-            leftover = 0.0
-        
-            for target in exact_targets:
-                # Add leftover from previous rounding
-                adjusted_target = target + leftover
-            
-                # Round to nearest integer
-                rounded = round(adjusted_target)
-            
-                # Calculate new leftover
-                leftover = adjusted_target - rounded
-            
-                # Ensure minimum of 0 non-mandatory shifts (since we add mandatory later)
-                rounded = max(0, rounded)
-            
-                rounded_targets.append(rounded)
-        
-            # Final adjustment to ensure total equals required remaining shifts
-            sum_targets = sum(rounded_targets)
-            difference = remaining_shifts - sum_targets
-        
-            if difference != 0:
-                logging.info(f"Adjusting allocation by {difference} shifts")
-            
-                # Create sorted indices based on fractional part distance from rounding threshold
-                frac_distances = [abs((t + leftover) - round(t + leftover)) for t in exact_targets]
-                sorted_indices = sorted(range(len(frac_distances)), key=lambda i: frac_distances[i], reverse=(difference > 0))
-            
-                # Add or subtract from workers with smallest rounding error first
-                for i in range(abs(difference)):
-                    adj_index = sorted_indices[i % len(sorted_indices)]
-                    rounded_targets[adj_index] += 1 if difference > 0 else -1
-                
-                    # Ensure minimums
-                    if rounded_targets[adj_index] < 0:
-                        rounded_targets[adj_index] = 0
-        
-            # Add mandatory shifts to calculated targets
-            for i, worker in enumerate(self.workers_data):
-                worker_id = worker['id']
-                # Total target = non-mandatory target + mandatory shifts
-                worker['target_shifts'] = rounded_targets[i] + mandatory_shifts_by_worker[worker_id]
-            
-                # Apply additional constraints based on work percentage
-                work_percentage = float(str(worker.get('work_percentage', 100)).strip())
-            
-                # Calculate reasonable maximum based on work percentage (excluding mandatory shifts)
-                max_reasonable = total_days * (work_percentage / 100) * 0.8
-            
-                # For target exceeding reasonable maximum, adjust non-mandatory part only
-                non_mandatory_target = worker['target_shifts'] - mandatory_shifts_by_worker[worker_id]
-                if non_mandatory_target > max_reasonable and max_reasonable >= 0:
-                    logging.warning(f"Worker {worker['id']} non-mandatory target {non_mandatory_target} exceeds reasonable maximum {max_reasonable}")
-                
-                    # Reduce target and redistribute, but preserve mandatory shifts
-                    excess = non_mandatory_target - int(max_reasonable)
-                    if excess > 0:
-                        worker['target_shifts'] = int(max_reasonable) + mandatory_shifts_by_worker[worker_id]
-                        self._redistribute_excess_shifts(excess, worker['id'], mandatory_shifts_by_worker)
-            
-                logging.info(f"Worker {worker['id']}: {work_percentage}% → {worker['target_shifts']} shifts "
-                             f"({mandatory_shifts_by_worker[worker_id]} mandatory, "
-                             f"{worker['target_shifts'] - mandatory_shifts_by_worker[worker_id]} calculated)")
-        
-            # Final verification - ensure at least 1 total shift per worker
-            for worker in self.workers_data:
-                if 'target_shifts' not in worker or worker['target_shifts'] <= 0:
-                    worker['target_shifts'] = 1
-                    logging.warning(f"Assigned minimum 1 shift to worker {worker['id']}")
-        
-            return True
-    
-        except Exception as e:
-            logging.error(f"Error in target calculation: {str(e)}", exc_info=True)
-        
-            # Emergency fallback - equal distribution plus mandatory shifts
-            default_target = max(1, round(remaining_shifts / len(self.workers_data)))
-            for worker in self.workers_data:
-                worker_id = worker['id']
-                worker['target_shifts'] = default_target + mandatory_shifts_by_worker.get(worker_id, 0)
-        
-            logging.warning(f"Using fallback distribution: {default_target} non-mandatory shifts per worker plus mandatory shifts")
-            return False
+                    pct = float(str(w.get('work_percentage',100)).strip())/100.0
+                except Exception:
+                    logging.warning(f"Worker {wid} invalid work_percentage; defaulting to 100%")
+                pct = max(0.0, pct)
+                weights.append(available_slots.get(wid,0) * pct)
 
-    def _get_shifts_for_date(self, date):
-        """Determine the number of shifts for a specific date based on variable shifts configuration"""
-        # Add debug logging to help identify issues
-        logging.debug(f"Checking variable shifts for date: {date}")
-        logging.debug(f"Have {len(self.variable_shifts)} variable shift configurations")
-    
-        # Convert input date to a date-only value for comparison
-        check_date = date.date() if isinstance(date, datetime) else date
-    
-        # Check if the date falls within any of the variable shifts ranges
-        for shift_range in self.variable_shifts:
-            start_date = shift_range['start_date']
-            end_date = shift_range['end_date']
-        
-            # Convert to date objects for a uniform comparison
-            start_date_normalized = start_date.date() if isinstance(start_date, datetime) else start_date
-            end_date_normalized = end_date.date() if isinstance(end_date, datetime) else end_date
-        
-            # Now compare with normalized date objects
-            if start_date_normalized <= check_date <= end_date_normalized:
-                shifts = shift_range['shifts']
-                logging.debug(f"Found variable shifts config: {shifts} shifts for date {date}")
-                return shifts
-    
-        # If no variable shifts apply, use the default number of shifts
-        logging.debug(f"No variable shifts config found for {date}, using default {self.num_shifts}")
-        return self.num_shifts
+            total_weight = sum(weights) or 1.0
+
+            # 4) Compute exact fractional targets
+            exact_targets = [wgt/total_weight*total_slots for wgt in weights]
+
+            # 5) Largest-remainder rounding
+            floors = [int(x) for x in exact_targets]
+            remainder = int(total_slots - sum(floors))
+            fracs = sorted(enumerate(exact_targets),
+                           key=lambda ix: exact_targets[ix[0]] - floors[ix[0]],
+                           reverse=True)
+            targets = floors[:]
+            for idx, _ in fracs[:remainder]:
+                targets[idx] += 1
+
+            # 6) Assign and log
+            for i, w in enumerate(self.workers_data):
+                w['target_shifts'] = targets[i]
+                logging.info(f"Worker {w['id']}: target_shifts={w['target_shifts']}")
+            return True
+        except Exception as e:
+            logging.error(f"Error in target calculation: {e}", exc_info=True)
+            return False
 
     def _calculate_monthly_targets(self):
         """
@@ -1006,95 +903,6 @@ class Scheduler:
     
         return total_assigned > 0
 
-    def _assign_mixed_strategy(self):
-        """
-        Try multiple assignment strategies and choose the best result.
-        """
-        logging.info("Using mixed strategy approach to generate optimal schedule")
-    
-        try:
-            # Strategy 1: Simple assignment
-            self._backup_best_schedule()  # Save current state
-            success1 = self._assign_workers_simple()
-        
-            # Ensure tracking is consistent
-            self._reconcile_schedule_tracking()
-        
-            coverage1 = self._calculate_coverage() if success1 else 0
-            post_rotation1 = self._calculate_post_rotation()['overall_score'] if success1 else 0
-        
-            # Create deep copies of the simple assignment result
-            simple_schedule = {}
-            for date, shifts in self.schedule.items():
-                simple_schedule[date] = shifts.copy() if shifts else []
-            
-            simple_assignments = {}
-            for worker_id, assignments in self.worker_assignments.items():
-                simple_assignments[worker_id] = set(assignments)
-        
-            logging.info(f"Simple assignment strategy: {coverage1:.1f}% coverage, {post_rotation1:.1f}% rotation")
-        
-            # Strategy 2: Cadence-based assignment
-            self._restore_best_schedule()  # Restore to original state
-            try:
-                success2 = self._assign_workers_cadence()
-            
-                # Ensure tracking is consistent
-                self._reconcile_schedule_tracking()
-            
-                coverage2 = self._calculate_coverage() if success2 else 0
-                post_rotation2 = self._calculate_post_rotation()['overall_score'] if success2 else 0
-            
-                # Create deep copies of the cadence result
-                cadence_schedule = {}
-                for date, shifts in self.schedule.items():
-                    cadence_schedule[date] = shifts.copy() if shifts else []
-                
-                cadence_assignments = {}
-                for worker_id, assignments in self.worker_assignments.items():
-                    cadence_assignments[worker_id] = set(assignments)
-                
-                logging.info(f"Cadence assignment strategy: {coverage2:.1f}% coverage, {post_rotation2:.1f}% rotation")
-            except Exception as e:
-                logging.error(f"Error in cadence assignment: {str(e)}", exc_info=True)
-                # Default to simple assignment if cadence fails
-                success2 = False
-                coverage2 = 0
-                post_rotation2 = 0
-        
-            # Compare results
-            logging.info(f"Strategy comparison: Simple ({coverage1:.1f}% coverage, {post_rotation1:.1f}% rotation) vs "
-                        f"Cadence ({coverage2:.1f}% coverage, {post_rotation2:.1f}% rotation)")
-        
-            # Choose the better strategy based on combined score (coverage is more important)
-            score1 = coverage1 * 0.7 + post_rotation1 * 0.3
-            score2 = coverage2 * 0.7 + post_rotation2 * 0.3
-        
-            if score1 >= score2 or not success2:
-                # Use simple assignment results
-                self.schedule = simple_schedule
-                self.worker_assignments = simple_assignments
-                logging.info(f"Selected simple assignment strategy (score: {score1:.1f})")
-            else:
-                # Use cadence assignment results
-                self.schedule = cadence_schedule
-                self.worker_assignments = cadence_assignments
-                logging.info(f"Selected cadence assignment strategy (score: {score2:.1f})")
-        
-            # Final reconciliation to ensure consistency
-            self._reconcile_schedule_tracking()
-        
-            # Final coverage calculation
-            final_coverage = self._calculate_coverage()
-            logging.info(f"Final mixed strategy coverage: {final_coverage:.1f}%")
-        
-            return final_coverage > 0
-        
-        except Exception as e:
-            logging.error(f"Error in mixed strategy assignment: {str(e)}", exc_info=True)
-            # Fall back to simple assignment if mixed strategy fails
-            return self._assign_workers_simple()
-
     def _check_schedule_constraints(self):
         """
         Check the current schedule for constraint violations.
@@ -1424,22 +1232,12 @@ class Scheduler:
             else:
                  raise SchedulerError(f"Initialization failed: {str(e)}")
 
+        # --- 2. Treat mandatory days as constraints only (no pre-assignment) ---
+        logging.info("Skipping pre-assignment of mandatory shifts; mandatory days enforced as constraints.")
+        # Save the initial empty schedule state
+        self.schedule_builder._save_current_as_best(initial=True)
+        self.log_schedule_summary("Before Filling Shifts")        
 
-        # --- 2. Assign Mandatory Shifts ---
-        try:
-            # Now self.schedule has the correct structure to place mandatory shifts
-            logging.info("Assigning mandatory shifts...")
-            self.schedule_builder._assign_mandatory_guards()
-            # Save this initial state (might have mandatory shifts now)
-            self.schedule_builder._save_current_as_best(initial=True)
-            logging.info("Mandatory shifts assigned.")
-            self.log_schedule_summary("After Mandatory Assignment") # This should now show total slots
-
-        except Exception as e:
-            # ... (error handling) ...
-            logging.exception("Error assigning mandatory guards.")
-            raise SchedulerError(f"Failed during mandatory assignment: {str(e)}")
-        
         # --- 3. Iterative Improvement Loop ---
         improvement_loop_count = 0
         improvement_made_in_cycle = True # Start as True to enter the loop
