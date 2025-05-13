@@ -613,7 +613,7 @@ class ScheduleBuilder:
 
             # 7. Friday-Monday Check (Only if gap constraint allows 3 days, i.e., gap_between_shifts == 1)
             # Apply strictly during simulation checks
-            if self.scheduler.gap_between_shifts == 1 and work_percentage >= 100: # Typically only for full-time
+            if self.scheduler.gap_between_shifts == 1: 
                  for prev_date in sorted_sim_assignments:
                       if prev_date == date: continue
                       days_between = abs((date - prev_date).days)
@@ -688,7 +688,7 @@ class ScheduleBuilder:
             if days_between < min_days_between:
                 return False
             # Add Friday-Monday / 7-14 day checks if needed here too, using relaxation_level=0 logic
-            if self.scheduler.gap_between_shifts == 1 and work_percentage >= 100:
+            if self.scheduler.gap_between_shifts == 1 and work_percentage >= 20:
                 if days_between == 3:
                     if ((prev_date.weekday() == 4 and date.weekday() == 0) or \
                         (date.weekday() == 4 and prev_date.weekday() == 0)):
@@ -902,8 +902,8 @@ class ScheduleBuilder:
                     if days_between < min_gap:
                         return float('-inf')
         
-                    # Special rule for full-time workers with gap=1: No Friday + Monday (3-day gap)
-                    if work_percentage >= 80 and relaxation_level == 0 and self.gap_between_shifts == 1:
+                    # Special rule No Friday + Monday (3-day gap)
+                    if relaxation_level == 0 and self.gap_between_shifts == 1:
                         if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
                             (date.weekday() == 4 and prev_date.weekday() == 0)):
                             if days_between == 3:
@@ -2821,7 +2821,7 @@ class ScheduleBuilder:
          if shift_counts:
              min_shifts = min(shift_counts)
              max_shifts = max(shift_counts)
-             penalty += (max_shifts - min_shifts) * 5.0
+             penalty += (max_shifts - min_shifts) * 10.0
 
          # 3. Weekend Imbalance
          # Use worker_weekend_shifts from the scheduler's current state
@@ -2829,7 +2829,7 @@ class ScheduleBuilder:
          if weekend_counts:
              min_weekends = min(weekend_counts)
              max_weekends = max(weekend_counts)
-             penalty += (max_weekends - min_weekends) * 10.0
+             penalty += (max_weekends - min_weekends) * 20.0
 
          # 4. Post Rotation Imbalance
          total_post_deviation_penalty = 0
@@ -2865,13 +2865,8 @@ class ScheduleBuilder:
                         consecutive_penalty += 5.0
          penalty += consecutive_penalty
 
-         # 6. Minimum Rest Violation (Example)
-         min_rest_hours = self.scheduler.config.get('min_rest_hours', 10) # Get from config via scheduler
-         rest_penalty = 0
-         # Add logic here to check rest periods based on assignments
-         # penalty += rest_penalty
-
          # --- Add other penalties ---
 
          final_score = base_score - penalty
          return final_score
+
