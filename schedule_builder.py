@@ -1416,6 +1416,9 @@ class ScheduleBuilder:
 
         # Iterate through the empty shifts remaining after Pass 1
         for date, post in remaining_empty_shifts:
+            # ← Skip any slot already locked as mandatory
+            if (self.scheduler.schedule[date][post], date) in self._locked_mandatory:
+                continue
             # Ensure the slot is *still* empty before attempting swap
             if not (date in self.scheduler.schedule and len(self.scheduler.schedule[date]) > post and self.scheduler.schedule[date][post] is None):
                 continue # Skip if it got filled somehow
@@ -1429,9 +1432,12 @@ class ScheduleBuilder:
                 original_assignments_W = sorted(list(self.scheduler.worker_assignments.get(worker_W_id, set())))
 
                 for conflict_date in original_assignments_W:
-                     # ← NEVER touch a locked‐mandatory assignment
-                     if (worker_W_id, conflict_date) in self._locked_mandatory:
-                         continue
+                    # ← Never touch a locked mandatory assignment
+                    if (worker_W_id, conflict_date) in self._locked_mandatory:
+                        continue
+                    # Also skip any date marked as mandatory
+                    if self._is_mandatory(worker_W_id, conflict_date):
+                        continue  # Skip mandatory
                         
                     # --- Simulation Block (Strict Check) ---
                     removed_during_check = False
