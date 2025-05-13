@@ -1107,7 +1107,7 @@ class ScheduleBuilder:
     
         return dates_to_process
     
-    def _assign_day_shifts_with_relaxation(self, date, attempt_number=20, relaxation_level=0):
+    def _assign_day_shifts_with_relaxation(self, date, attempt_number=50, relaxation_level=0):
         """Assign shifts for a given date with optional constraint relaxation"""
         logging.debug(f"Assigning shifts for {date.strftime('%d-%m-%Y')} (attempt: {attempt_number}, initial relax: {relaxation_level})")
 
@@ -1319,11 +1319,14 @@ class ScheduleBuilder:
                     # === ADDED: Gap Between Shifts Check ===
                     if is_valid_candidate:
                         assignments = sorted(list(self.scheduler.worker_assignments.get(worker_id, set())))
-                        min_days_between = self.gap_between_shifts + 1  # +1 because we need days_between > gap
-    
+                        min_days_between = self.gap_between_shifts + 1
+
                         for prev_date in assignments:
+                            # skip comparing the same date (double‐booking is handled separately)
+                            if prev_date == date:
+                                continue
                             days_between = abs((date - prev_date).days)
-                            if days_between < min_days_between:  # Minimum required gap not met
+                            if days_between < min_days_between:
                                 is_valid_candidate = False
                                 logging.debug(f"  [Relaxed Check] Worker {worker_id} skipped for {date} - insufficient gap ({days_between} days) from previous assignment on {prev_date}")
                                 break
@@ -1874,7 +1877,7 @@ class ScheduleBuilder:
         underloaded.sort(key=lambda x: x[1]['normalized_count'])
 
         changes_made = 0
-        max_changes = 10  # Limit number of changes to avoid disrupting the schedule too much
+        max_changes = 30  # Limit number of changes to avoid disrupting the schedule too much
 
         # Try to redistribute shifts from overloaded to underloaded workers
         for over_worker_id, over_data in overloaded:
