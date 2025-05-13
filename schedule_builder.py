@@ -1446,8 +1446,10 @@ class ScheduleBuilder:
                         try:
                             self.scheduler.worker_assignments[worker_W_id].remove(conflict_date)
                             removed_during_check = True
-                        except KeyError: continue
-                    else: continue
+                    except KeyError:
+                        continue
+                    else:
+                        continue
 
                     can_W_take_empty_slot = self._can_assign_worker(worker_W_id, date, post) # Strict Check
 
