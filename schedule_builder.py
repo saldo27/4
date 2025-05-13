@@ -1429,8 +1429,10 @@ class ScheduleBuilder:
                 original_assignments_W = sorted(list(self.scheduler.worker_assignments.get(worker_W_id, set())))
 
                 for conflict_date in original_assignments_W:
-                    if self._is_mandatory(worker_W_id, conflict_date): continue # Skip mandatory
-
+                     # ← NEVER touch a locked‐mandatory assignment
+                     if (worker_W_id, conflict_date) in self._locked_mandatory:
+                         continue
+                        
                     # --- Simulation Block (Strict Check) ---
                     removed_during_check = False
                     current_assignments_W = self.scheduler.worker_assignments.get(worker_W_id, set())
@@ -1464,10 +1466,19 @@ class ScheduleBuilder:
 
                          # --- Perform Swap if candidate X found ---
                     if worker_X_id:
-                        logging.info(f"[Swap Fill] Found swap: W={worker_W_id}, X={worker_X_id}, EmptySlot=({date.strftime('%Y-%m-%d')},{post}), ConflictSlot=({conflict_date.strftime('%Y-%m-%d')},{conflict_post})")
-                        # Perform the Swap (directly on scheduler's data)
-                        self._execute_swap(worker_W_id, date, post, worker_X_id, conflict_date, conflict_post) # Use helper if available
+                         # STRICT: ensure X can actually take the old slot
+                         if not self._can_assign_worker(worker_X_id, conflict_date, conflict_post):
+                             logging.debug(f"Skipping swap: Worker {worker_X_id} cannot obey gap/availability for {conflict_date}")
+                             continue
 
+                         logging.info(
+                             f"[Swap Fill] Found swap: W={worker_W_id}, X={worker_X_id}, "
+                             f"EmptySlot=({date.strftime('%Y-%m-%d')},{post}), "
+                             f"ConflictSlot=({conflict_date.strftime('%Y-%m-%d')},{conflict_post})"
+                         )
+                         # execute the swap
+                         self._execute_swap(worker_W_id, date, post,
+                                            worker_X_id, conflict_date, conflict_post)
                         shifts_filled_count += 1
                         made_change_in_pass = True
                         swap_found = True
