@@ -400,14 +400,47 @@ class Scheduler:
             for idx, _ in fracs[:remainder]:
                 targets[idx] += 1
 
-            # 6) Assign and log
+            # 6) Assign and log (subtract out mandatory days so they're not extra)
             for i, w in enumerate(self.workers_data):
-                w['target_shifts'] = targets[i]
-                logging.info(f"Worker {w['id']}: target_shifts={w['target_shifts']}")
-            return True
+                raw_target = targets[i]
+                mand_count = 0
+                mand_str = w.get('mandatory_days', '').strip()
+                if mand_str:
+                    try:
+                        mand_dates = self.date_utils.parse_dates(mand_str)
+                        mand_count = sum(1 for d in mand_dates
+                                         if self.start_date <= d <= self.end_date)
+                    except Exception as e:
+                        logging.error(f"Failed to parse mandatory_days for {w['id']}: {e}")
+                adjusted = max(0, raw_target - mand_count)
+                w['target_shifts'] = adjusted
+                logging.info(
+                    f"Worker {w['id']}: target_shifts={raw_target} → {adjusted}"
+                    f"{' (−'+str(mand_count)+' mandatory)' if mand_count else ''}"
+                )
+             return True
         except Exception as e:
             logging.error(f"Error in target calculation: {e}", exc_info=True)
             return False
+
+    def _adjust_for_mandatory(self):
+        """
+        Mandatory days are not extra shifts: reduce each worker's
+        target_shifts by the number of mandatories in range.
+        """
+        for w in self.workers_data:
+            mand_list = []
+            try:
+                mand_list = self.date_utils.parse_dates(w.get('mandatory_days',''))
+            except Exception:
+                pass
+
+            mand_count = sum(1 for d in mand_list
+                             if self.start_date <= d <= self.end_date)
+            # never go below zero
+            new_target = max(0, w.get('target_shifts',0) - mand_count)
+            logging.info(f"[Worker {w['id']}] target_shifts {w['target_shifts']} → {new_target} after mandatory")
+            w['target_shifts'] = new_target
 
     def _calculate_monthly_targets(self):
         """
@@ -1418,6 +1451,7 @@ class Scheduler:
                 raise e
             else:
                 raise SchedulerError(f"Failed during finalization: {str(e)}")
+            
     def log_schedule_summary(self, title="Schedule Summary"):
         """ Helper method to log key statistics about the current schedule state. """
         logging.info(f"--- {title} ---")
