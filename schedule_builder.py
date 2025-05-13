@@ -1079,6 +1079,10 @@ class ScheduleBuilder:
                     break
  
         logging.info(f"Finished mandatory guard assignment.  Assigned {assigned_count} shifts.")
+        # Sync up all of our internal counts so score/logs include these new assignments
+        self._synchronize_tracking_data()
+        # Now save this as the initial “best” state so score/logging picks it up
+        self._save_current_as_best(initial=True)
         return (assigned_count > 0)
     
     def _get_remaining_dates_to_process(self, forward):
