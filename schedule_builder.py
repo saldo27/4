@@ -1432,60 +1432,60 @@ class ScheduleBuilder:
                 original_assignments_W = sorted(list(self.scheduler.worker_assignments.get(worker_W_id, set())))
 
                 for conflict_date in original_assignments_W:
-                    # ← Never touch a locked mandatory assignment
+                    # ← never touch locked‐mandatory assignments
                     if (worker_W_id, conflict_date) in self._locked_mandatory:
                         continue
-                    # Also skip any date marked as mandatory
                     if self._is_mandatory(worker_W_id, conflict_date):
-                        continue  # Skip mandatory
-                        
-                    # --- Simulation Block (Strict Check) ---
-                    removed_during_check = False
-                    current_assignments_W = self.scheduler.worker_assignments.get(worker_W_id, set())
-                    if conflict_date in current_assignments_W:
-                        try:
-                            self.scheduler.worker_assignments[worker_W_id].remove(conflict_date)
-                            removed_during_check = True
-                    except KeyError:
                         continue
+                        
+                    # simulate removal of W's assignment to test empty slot
+                    removed = False
+                    assignments_W = self.scheduler.worker_assignments.get(worker_W_id, set())
+                    if conflict_date in assignments_W:
+                        try:
+                            assignments_W.remove(conflict_date)
+                            removed = True
+                        except KeyError:
+                            continue
                     else:
                         continue
 
+
                     can_W_take_empty_slot = self._can_assign_worker(worker_W_id, date, post) # Strict Check
 
-                    if removed_during_check:
-                        self.scheduler.worker_assignments[worker_W_id].add(conflict_date) # Restore state
-                    # --- End Simulation Block ---
+                    # restore W’s original assignment
+                    if removed:
+                        assignments_W.add(conflict_date)
 
+                    # --- End Simulation Block ---
                     if not can_W_take_empty_slot:
                         continue # Removing this conflict_date didn't help or W is still invalid
 
-                    # --- Find conflict_post and worker_X (using Strict Check) ---
+                    # locate W’s original post
                     try:
-                        if conflict_date not in self.scheduler.schedule or worker_W_id not in self.scheduler.schedule[conflict_date]: continue
-                        conflict_post = self.scheduler.schedule[conflict_date].index(worker_W_id)
-                    except (ValueError, IndexError, KeyError): continue
+                        day_posts = self.scheduler.schedule.get(conflict_date, [])
+                        if worker_W_id not in day_posts:
+                            continue
+                        conflict_post = day_posts.index(worker_W_id)
+                    except (ValueError, IndexError, KeyError):
+                        continue
 
-                    worker_X_id = self._find_swap_candidate(worker_W_id, conflict_date, conflict_post) # Strict Check
+                    worker_X_id = self._find_swap_candidate(worker_W_id, conflict_date, conflict_post)
                     
                     # --- Perform Swap if candidate X found ---
                     if worker_X_id:
-                        logging.info(f"[Swap Fill] Found swap: W={worker_W_id}, X={worker_X_id}, EmptySlot=({date.strftime('%Y-%m-%d')},{post}), ConflictSlot=({conflict_date.strftime('%Y-%m-%d')},{conflict_post})")
+                        # STRICT: ensure X can actually take the old slot
+                        if not self._can_assign_worker(worker_X_id, conflict_date, conflict_post):
+                            logging.debug(f"Skipping swap: Worker {worker_X_id} cannot obey gap/availability for {conflict_date}")
+                            continue
 
-                         # --- Perform Swap if candidate X found ---
-                    if worker_X_id:
-                         # STRICT: ensure X can actually take the old slot
-                         if not self._can_assign_worker(worker_X_id, conflict_date, conflict_post):
-                             logging.debug(f"Skipping swap: Worker {worker_X_id} cannot obey gap/availability for {conflict_date}")
-                             continue
-
-                         logging.info(
-                             f"[Swap Fill] Found swap: W={worker_W_id}, X={worker_X_id}, "
-                             f"EmptySlot=({date.strftime('%Y-%m-%d')},{post}), "
-                             f"ConflictSlot=({conflict_date.strftime('%Y-%m-%d')},{conflict_post})"
-                         )
-                         # execute the swap
-                         self._execute_swap(worker_W_id, date, post,
+                        logging.info(
+                            f"[Swap Fill] Found swap: W={worker_W_id}, X={worker_X_id}, "
+                            f"EmptySlot=({date.strftime('%Y-%m-%d')},{post}), "
+                            f"ConflictSlot=({conflict_date.strftime('%Y-%m-%d')},{conflict_post})"
+                        )
+                        # execute the swap
+                        self._execute_swap(worker_W_id, date, post,
                                             worker_X_id, conflict_date, conflict_post)
                         shifts_filled_count += 1
                         made_change_in_pass = True
@@ -1495,10 +1495,10 @@ class ScheduleBuilder:
                 if swap_found: break # Break from worker_W loop
 
             if not swap_found:
-                 # FIX: Removed extraneous text after the closing parenthesis
+                # FIX: Removed extraneous text after the closing parenthesis
                 logging.debug(f"Could not find direct fill or swap for empty shift on {date.strftime('%Y-%m-%d')} post {post}")
-        # --- End of loop for remaining_empty_shifts ---
 
+        # --- End of loop for remaining_empty_shifts ---
         logging.info(f"--- Finished Pass 2: Attempted swaps. Total shifts filled in this run (direct + swap): {shifts_filled_count} ---")
 
         if made_change_in_pass:
