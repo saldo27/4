@@ -1273,7 +1273,7 @@ class Scheduler:
             logging.info("Scheduler initialized and ScheduleBuilder created.")
 
             # Optional: Add your DEBUG 1 logs here if you want to verify builder's perspective immediately
-            logging.debug(f"DEBUG 1 (Post-Builder-Init): self.scheduler.schedule ID: {id(self.schedule)}, Keys: {list(self.schedule.keys())}")
+            logging.debug(f"DEBUG 1 (Post-Builder-Init): self.schedule ID: {id(self.schedule)}, Keys: {list(self.schedule.keys())}") # Corrected from self.scheduler.schedule
             if hasattr(self, 'schedule_builder') and self.schedule_builder:
                  logging.debug(f"DEBUG 1 (Post-Builder-Init): self.schedule_builder.schedule ID: {id(self.schedule_builder.schedule)}, Keys: {list(self.schedule_builder.schedule.keys())}")
 
@@ -1285,24 +1285,25 @@ class Scheduler:
                  raise e
             else:
                  raise SchedulerError(f"Initialization failed: {str(e)}")
-                
+
         # --- 2. Pre-assign mandatory shifts and lock them in place ---
+        # This section should now operate correctly as self.schedule_builder.schedule
+        # will point to the fully initialized self.scheduler.schedule.
         logging.info("Pre-assigning mandatory shifts; these will be irremovable.")
         self.schedule_builder._assign_mandatory_guards()
-        
-        # Synchronize all tracking structures to include those mandatory assignments
+        # (Your DEBUG 2 log for after _assign_mandatory_guards)
         logging.debug(f"DEBUG 2 (After _assign_mandatory_guards): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
         
         self.schedule_builder._synchronize_tracking_data()
-
-        self.schedule_builder._save_current_as_best(initial=True)
+        # (Your DEBUG 3 log - if you re-add it)
         
-        # Save this as the initial "best" state
+        self.schedule_builder._save_current_as_best(initial=True)
+        # (Your DEBUG 4 log)
         logging.debug(f"DEBUG 4 (After _save_current_as_best): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
         
-        self.log_schedule_summary("After Mandatory Assignment")
+        self.log_schedule_summary("After Mandatory Assignment")  
+        # (Your DEBUG 5 log)
         logging.debug(f"DEBUG 5 (After log_schedule_summary): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
-
 
         # --- 3. Iterative Improvement Loop ---DEBUG 6
         improvement_loop_count = 0
@@ -1312,45 +1313,47 @@ class Scheduler:
         
 
         
+        # --- 3. Iterative Improvement Loop ---
+        improvement_loop_count = 0
+        improvement_made_in_cycle = True 
+        # (Your DEBUG 6 log)
+        logging.debug(f"DEBUG 6 (BEFORE Improvement Loop WHILE): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
+        
         try:
             while improvement_made_in_cycle and improvement_loop_count < max_improvement_loops:
                 improvement_made_in_cycle = False
                 logging.info(f"--- Starting Improvement Loop {improvement_loop_count + 1} ---")
-                # DEBUG 7
+                # (Your DEBUG 7 log)
                 logging.debug(f"DEBUG 7 (TOP OF Improvement Loop {improvement_loop_count + 1}): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
                 loop_start_time = datetime.now()
-                # Log builder's schedule ID right before calling the method
-                logging.debug(f"[generate_schedule PRE-CALL _try_fill_empty_shifts] self.schedule_builder.schedule object ID: {id(self.schedule_builder.schedule)}")
 
-                if self.schedule_builder._try_fill_empty_shifts():
-                    # (Your POST-CALL log for _try_fill_empty_shifts)
-                    logging.debug(f"[generate_schedule POST-CALL _try_fill_empty_shifts] self.scheduler.schedule object ID: {id(self.scheduler.schedule)}, Keys: {list(self.scheduler.schedule.keys())}")
-                    logging.info("Improvement Loop: Filled empty shifts.")
-                    improvement_made_in_cycle = True
+                # (Your PRE-CALL log for _try_fill_empty_shifts)
+                logging.debug(f"[generate_schedule PRE-CALL _try_fill_empty_shifts] self.schedule_builder.schedule object ID: {id(self.schedule_builder.schedule)}")
 
                 if self.schedule_builder._balance_workloads():
                      logging.info("Improvement Loop: Balanced workloads.")
                      improvement_made_in_cycle = True
                 
-                if self.schedule_builder._improve_weekend_distribution(): # This is called twice, one is L1337
+                if self.schedule_builder._improve_weekend_distribution(): 
                      logging.info("Improvement Loop: Improved weekend distribution (1st call).")
                      improvement_made_in_cycle = True
 
-                self.schedule_builder._synchronize_tracking_data() # L1336
-                # DEBUG 8
+                self.schedule_builder._synchronize_tracking_data() 
+
+                # (Your DEBUG 8 log)
                 logging.debug(f"DEBUG 8 (After _synchronize_tracking_data in loop): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
-                if self.schedule_builder._improve_weekend_distribution(): # L1337
+                if self.schedule_builder._improve_weekend_distribution(): 
                     logging.info("Improvement Loop: Improved weekend distribution (2nd call).")
                     improvement_made_in_cycle = True
-                # DEBUG 9
+
+                # (Your DEBUG 9 log)
                 logging.debug(f"DEBUG 9 (After 2nd _improve_weekend_distribution in loop): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
                 if self.schedule_builder._adjust_last_post_distribution():
                     logging.info("Improvement Loop: Balanced last post assignments.")
                     improvement_made_in_cycle = True
-                    
-                # DEBUG 10
+                # (Your DEBUG 10 log)
                 logging.debug(f"DEBUG 10 (After _adjust_last_post_distribution in loop): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
                 loop_end_time = datetime.now()
@@ -1366,11 +1369,10 @@ class Scheduler:
         except Exception as e:
              logging.exception("Error during schedule improvement loop.")
              raise SchedulerError(f"Failed during improvement loop {improvement_loop_count}: {str(e)}")
-              
-        # ONE final pass to rebalance last-post slots (now that no more swaps occur)
+                         
         self.schedule_builder._adjust_last_post_distribution(balance_tolerance=0.5)
         logging.info("Post-generation: Final last-post distribution adjustment complete.")
-        # DEBUG 11
+        # (Your DEBUG 11 log)
         logging.debug(f"DEBUG 11 (After final _adjust_last_post_distribution): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
         # --- 4. Finalization ---
@@ -1461,10 +1463,8 @@ class Scheduler:
 
             # Log summary of the final schedule state
             self.log_schedule_summary("Final Generated Schedule")
-
             end_time = datetime.now()
             logging.info(f"Schedule generation completed successfully in {(end_time - start_time).total_seconds():.2f} seconds.")
-            # Return True indicating the process finished, even if the schedule has empty slots
             return True
 
         except Exception as e:
@@ -1473,7 +1473,7 @@ class Scheduler:
                 raise e
             else:
                 raise SchedulerError(f"Failed during finalization: {str(e)}")
-            
+   
     def log_schedule_summary(self, title="Schedule Summary"):
         """ Helper method to log key statistics about the current schedule state. """
         logging.info(f"--- {title} ---")
