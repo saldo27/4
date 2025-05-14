@@ -23,7 +23,8 @@ class ScheduleBuilder:
 
         # IMPORTANT: Use direct references, not copies
         self.workers_data = scheduler.workers_data
-        self.schedule = scheduler.schedule  # Use the same reference
+        self.schedule = scheduler.schedule # self.schedule IS scheduler.schedule
+        logging.debug(f"[ScheduleBuilder.__init__] self.schedule object ID: {id(self.schedule)}, Initial keys: {list(self.schedule.keys())}")
         self.config = scheduler.config
         self.worker_assignments = scheduler.worker_assignments  # Use the same reference
         self.num_shifts = scheduler.num_shifts
@@ -1291,24 +1292,18 @@ class ScheduleBuilder:
         Pass 1: Direct assignment using RELAXED constraints.
         Pass 2: Attempt swaps using STRICT constraints for remaining empty shifts.
         Relies on _assign_mandatory_guards having correctly pre-filled mandatory slots.
-        """
-        empty_shifts = []
+        """  
         logging.debug(f"[_try_fill_empty_shifts] Initializing. Current schedule keys: {list(self.schedule.keys())}")
-
-        for date, workers_in_posts in self.schedule.items(): # self.schedule is self.scheduler.schedule
+        empty_shifts = []
+        
+          for date, workers_in_posts in self.schedule.items(): 
             logging.debug(f"[_try_fill_empty_shifts] Checking date: {date.strftime('%Y-%m-%d')}, current posts: {workers_in_posts}")
             for post_index, worker_in_post in enumerate(workers_in_posts):
                 logging.debug(f"  Date: {date.strftime('%Y-%m-%d')}, Post: {post_index}, Worker: {worker_in_post} (Type: {type(worker_in_post)})")
                 if worker_in_post is None:
-                    # The original problematic line was: if worker is None and (None, date) not in self._locked_mandatory:
-                    # Let's simplify the condition for identifying empty slots first, then re-evaluate if any
-                    # empty slots that *should* be protected are being wrongly added.
-                    # For now, if it's None, it's empty.
                     logging.debug(f"    Found empty slot: ({date.strftime('%Y-%m-%d')}, {post_index}). Appending to empty_shifts.")
                     empty_shifts.append((date, post_index))
-                # else:
-                #     logging.debug(f"    Slot ({date.strftime('%Y-%m-%d')}, {post_index}) is NOT None, occupied by: {worker_in_post}")
-        
+            
         logging.debug(f"[_try_fill_empty_shifts] After loop, empty_shifts count: {len(empty_shifts)}")
         if not empty_shifts:
             # This log implies the empty_shifts list is actually empty
