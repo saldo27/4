@@ -2100,7 +2100,7 @@ class ScheduleBuilder:
         """
         # First check: Make sure neither assignment is mandatory
         if self._is_mandatory(worker1_id, date1) or self._is_mandatory(worker2_id, date2):
-            logging.debug(f"Swap rejected: Mandatory guard assignment detected")
+            logging.debug(f"Swap rejected: Config-defined mandatory assignment detected by _is_mandatory. W1_mandatory: {self._is_mandatory(worker1_id, date1)}, W2_mandatory: {self._is_mandatory(worker2_id, date2)}")
             return False
     
         # Make a copy of the schedule and assignments to simulate the swap
@@ -2459,9 +2459,12 @@ class ScheduleBuilder:
                 for weekend_date in possible_dates_to_move:
 
                     # --- ADDED MANDATORY CHECK ---
-                    if self._is_mandatory(over_worker_id, weekend_date):
-                        logging.debug(f"Cannot move worker {over_worker_id} from mandatory weekend shift on {weekend_date.strftime('%Y-%m-%d')} for balancing.")
-                        continue # Skip this date for this worker
+                    if (over_worker_id, weekend_date) in self._locked_mandatory:
+                        logging.debug(f"Cannot move worker {over_worker_id} from locked mandatory weekend shift on {weekend_date.strftime('%Y-%m-%d')} for balancing.")
+                        continue
+                    if self._is_mandatory(over_worker_id, weekend_date): # Existing check
+                        logging.debug(f"Cannot move worker {over_worker_id} from config-mandatory weekend shift on {weekend_date.strftime('%Y-%m-%d')} for balancing.")
+                        continue
                     # --- END ADDED CHECK ---
 
                     # Find the post this worker is assigned to
@@ -2567,11 +2570,12 @@ class ScheduleBuilder:
         Try to find a new date to assign this worker to fix an incompatibility
         """
         # --- ADD MANDATORY CHECK ---
-        if self._is_mandatory(worker_id, date):
-            logging.warning(f"Cannot reassign worker {worker_id} from mandatory shift on {date.strftime('%Y-%m-%d')} to fix incompatibility.")
-            # Option 1: Try removing the *other* incompatible worker instead? (More complex logic)
-            # Option 2: Just log and fail for now.
-            return False # Cannot move from mandatory shift
+        if (worker_id, date) in self._locked_mandatory:
+            logging.warning(f"Cannot reassign worker {worker_id} from locked mandatory shift on {date.strftime('%Y-%m-%d')} to fix incompatibility.")
+            return False
+        if self._is_mandatory(worker_id, date): # Existing check
+            logging.warning(f"Cannot reassign worker {worker_id} from config-mandatory shift on {date.strftime('%Y-%m-%d')} to fix incompatibility.")
+            return False
         # --- END MANDATORY CHECK ---
         # Find the position this worker is assigned to
         try:
