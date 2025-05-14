@@ -1296,7 +1296,7 @@ class ScheduleBuilder:
         logging.debug(f"[_try_fill_empty_shifts] Initializing. Current schedule keys: {list(self.schedule.keys())}")
         empty_shifts = []
         
-          for date, workers_in_posts in self.schedule.items(): 
+        for date, workers_in_posts in self.schedule.items(): 
             logging.debug(f"[_try_fill_empty_shifts] Checking date: {date.strftime('%Y-%m-%d')}, current posts: {workers_in_posts}")
             for post_index, worker_in_post in enumerate(workers_in_posts):
                 logging.debug(f"  Date: {date.strftime('%Y-%m-%d')}, Post: {post_index}, Worker: {worker_in_post} (Type: {type(worker_in_post)})")
