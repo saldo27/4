@@ -113,7 +113,7 @@ class ConstraintChecker:
                     return False
             
                 # Special rule for full-time workers: Prevent Friday + Monday assignments
-                if work_percentage >= 100:
+                if work_percentage >= 10:
                     if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
                         (date.weekday() == 4 and prev_date.weekday() == 0)):
                         if days_between == 3:  # The gap between Friday and Monday

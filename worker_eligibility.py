@@ -89,11 +89,12 @@ class WorkerEligibilityTracker:
             if days_between < min_days_between:
                 return False
         
-            # Special case for Friday-Monday if gap is only 1 day
-            if self.gap_between_shifts == 1 and days_between == 3:
-                if ((date.weekday() == 0 and last_worked.weekday() == 4) or
-                    (date.weekday() == 4 and last_worked.weekday() == 0)):
-                    return False
+            # Special case for Friday-Monday 
+            if days_between == 3 and (
+                 (date.weekday() == 0 and last_worked.weekday() == 4) or
+                 (date.weekday() == 4 and last_worked.weekday() == 0)
+            ):
+                return False
     
         return True
     

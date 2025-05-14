@@ -5,3 +5,31 @@ b) días de la semana asignados.
 c) shifts asignados al last post.
 
 Lo deseable es que entre todos los trabajadores la diferencia fuese +/- 1 para cada valor.
+
+
+[INFO   ] [Worker 1    ] target_shifts=4
+[INFO   ] [Worker 2    ] target_shifts=4
+[INFO   ] [Worker 3    ] target_shifts=4
+[INFO   ] [Worker 4    ] target_shifts=2
+[INFO   ] [Worker 5    ] target_shifts=2
+[INFO   ] [Worker 6    ] target_shifts=4
+[INFO   ] [Worker 7    ] target_shifts=3
+[INFO   ] [Worker 8    ] target_shifts=3
+[INFO   ] [Worker 9    ] target_shifts=3
+[INFO   ] [Worker 10   ] target_shifts=3
+[INFO   ] [Worker 11   ] target_shifts=3
+[INFO   ] [Worker 12   ] target_shifts=3
+
+[INFO   ] [Shift Counts per Worker]
+[INFO   ] [  Worker 1  ] 4 shifts
+[INFO   ] [  Worker 10 ] 3 shifts
+[INFO   ] [  Worker 11 ] 3 shifts
+[INFO   ] [  Worker 12 ] 3 shifts
+[INFO   ] [  Worker 2  ] 4 shifts
+[INFO   ] [  Worker 3  ] 3 shifts
+[INFO   ] [  Worker 4  ] 3 shifts
+[INFO   ] [  Worker 5  ] 3 shifts
+[INFO   ] [  Worker 6  ] 4 shifts
+[INFO   ] [  Worker 7  ] 4 shifts
+[INFO   ] [  Worker 8  ] 5 shifts
+[INFO   ] [  Worker 9  ] 4 shifts
