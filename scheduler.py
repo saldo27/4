@@ -1301,6 +1301,8 @@ class Scheduler:
                 # DEBUG 7
                 logging.debug(f"DEBUG 7 (TOP OF Improvement Loop {improvement_loop_count + 1}): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
                 loop_start_time = datetime.now()
+                # Log builder's schedule ID right before calling the method
+                logging.debug(f"[generate_schedule PRE-CALL _try_fill_empty_shifts] self.schedule_builder.schedule object ID: {id(self.schedule_builder.schedule)}")
 
                 if self.schedule_builder._try_fill_empty_shifts():
                     logging.info("Improvement Loop: Filled empty shifts.")
