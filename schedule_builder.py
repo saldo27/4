@@ -1287,13 +1287,14 @@ class ScheduleBuilder:
     # 6. Schedule Improvement Methods
 
     def _try_fill_empty_shifts(self):
+        logging.debug(f"[_try_fill_empty_shifts] Initializing. Current schedule keys: {list(self.schedule.keys())}")
+
         """
         Try to fill empty shifts in the authoritative self.schedule.
         Pass 1: Direct assignment using RELAXED constraints.
         Pass 2: Attempt swaps using STRICT constraints for remaining empty shifts.
         Relies on _assign_mandatory_guards having correctly pre-filled mandatory slots.
         """  
-        logging.debug(f"[_try_fill_empty_shifts] Initializing. Current schedule keys: {list(self.schedule.keys())}")
         empty_shifts = []
         
         for date, workers_in_posts in self.schedule.items(): 
