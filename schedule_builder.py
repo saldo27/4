@@ -1050,75 +1050,48 @@ class ScheduleBuilder:
  
         assigned_count = 0
         for worker_id, date in mandatory_assignments:
-            # Check if this worker is already placed on this date in the authoritative schedule
-            # This uses self.scheduler.schedule, which should be the master schedule object
             if date in self.scheduler.schedule and worker_id in self.scheduler.schedule.get(date, []):
                 logging.debug(f"Mandatory shift for {worker_id} on {date} already in scheduler's schedule. Ensuring lock.")
-                # Even if already there, make sure it's locked.
                 if (worker_id, date) not in self._locked_mandatory:
                     self._locked_mandatory.add((worker_id, date))
                     logging.debug(f"Locked previously assigned (in scheduler) mandatory shift for {worker_id} on {date}")
-                continue # Move to next mandatory assignment
+                continue
  
-            # Ensure the date entry exists in the authoritative scheduler.schedule
             if date not in self.scheduler.schedule:
-                self.scheduler.schedule[date] = [None] * self.num_shifts # num_shifts = posts per day
-            
-            # If the builder maintains its own self.schedule copy, keep it in sync (optional, depends on design)
-            # For simplicity, we'll assume direct modification of self.scheduler.schedule is primary.
-            # If self.schedule IS self.scheduler.schedule, this second check/init is redundant.
-            if date not in self.schedule: # self.schedule is the builder's internal reference
+                self.scheduler.schedule[date] = [None] * self.num_shifts
+            if date not in self.schedule: 
                  self.schedule[date] = [None] * self.num_shifts
 
-
-            # Find the first available post for this mandatory assignment
             for post in range(self.num_shifts):
-                # Pad the list for the day if it's shorter than the current post index (safety check)
                 while post >= len(self.scheduler.schedule[date]):
                     self.scheduler.schedule[date].append(None)
-                # Sync local builder's copy if it's separate
-                while post >= len(self.schedule.get(date, [])): # Use .get for safety if self.schedule might not have date
+                while post >= len(self.schedule.get(date, [])): 
                     self.schedule.setdefault(date, []).extend([None])
 
-
-                # Check the authoritative scheduler.schedule for an open slot
                 if self.scheduler.schedule[date][post] is None:
-                    # Perform incompatibility checks using the scheduler's context and authoritative schedule
-                    # Assuming _check_incompatibility uses self.scheduler.schedule for its checks
-                    if not self._check_incompatibility(worker_id, date, post): 
+                    # MODIFIED LINE: Removed the 'post' argument from the call
+                    if not self._check_incompatibility(worker_id, date): 
                         logging.debug(f"Mandatory shift for {worker_id} on {date} post {post} incompatible. Trying next post.")
-                        continue # Try next post
+                        continue 
  
-                    # **** CRITICAL FIX PART 1: Update the authoritative schedule ****
                     self.scheduler.schedule[date][post] = worker_id
-                    
-                    # If self.schedule is a distinct copy, update it too.
-                    # If self.schedule is just a reference to self.scheduler.schedule, this is redundant but harmless.
                     self.schedule[date][post] = worker_id 
                     
-                    # Update worker_assignments tracking (often managed by builder or needs sync with scheduler)
                     self.worker_assignments.setdefault(worker_id, set()).add(date)
-                    
-                    # Update detailed tracking data (e.g., shift counts, weekday counts) via the scheduler
                     self.scheduler._update_tracking_data(worker_id, date, post)
-                    
-                    # **** CRITICAL FIX PART 2: Lock the assignment ****
-                    # This lock uses the actual worker_id and date.
                     self._locked_mandatory.add((worker_id, date))
                     logging.debug(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')} post {post} (mandatory) and locked. Lock: ({worker_id}, {date})")
  
                     assigned_count += 1
-                    break # Mandatory assignment for this (worker_id, date) is placed, move to the next.
+                    break 
             
-            # Log if a mandatory assignment could not be placed for a worker on a specific date
             if not (date in self.scheduler.schedule and worker_id in self.scheduler.schedule.get(date, [])):
                  logging.warning(f"Could not place mandatory shift for {worker_id} on {date}. All posts on this day were filled or incompatible.")
  
         logging.info(f"Finished mandatory guard assignment. Assigned {assigned_count} shifts to the authoritative schedule.")
         
-        # These should now operate on the updated self.scheduler.schedule
         self._synchronize_tracking_data() 
-        self._save_current_as_best(initial=True) # This will score the now-updated schedule
+        self._save_current_as_best(initial=True)
 
         return (assigned_count > 0)
     
