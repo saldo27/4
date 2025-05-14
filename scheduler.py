@@ -418,7 +418,19 @@ class Scheduler:
                     f"Worker {w['id']}: target_shifts={raw_target} → {adjusted}"
                     f"{' (−'+str(mand_count)+' mandatory)' if mand_count else ''}"
                 )
-             return True
+
+            for i,w in enumerate(self.workers_data):
+                raw = targets[i]
+                mand_count = 0
+                if w.get('mandatory_days','').strip():
+                    mand_count = sum(1 for d in self.date_utils.parse_dates(w['mandatory_days'])
+                                     if self.start_date <= d <= self.end_date)
+            w['_raw_target']      = raw
+            w['_mandatory_count'] = mand_count
+            w['target_shifts']    = max(0, raw - mand_count)
+            
+            return True
+        
         except Exception as e:
             logging.error(f"Error in target calculation: {e}", exc_info=True)
             return False
