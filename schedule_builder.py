@@ -31,26 +31,24 @@ class ScheduleBuilder:
         self.holidays = scheduler.holidays
         self.constraint_checker = scheduler.constraint_checker
         self.best_schedule_data = None # Initialize the attribute to store the best state found
-
-        # Add references to the configurable parameters
-        self.gap_between_shifts = scheduler.gap_between_shifts
-        self.max_consecutive_weekends = scheduler.max_consecutive_weekends
-        # Keep track of which (worker_id, date) pairs are truly mandatory
         self._locked_mandatory = set()
-
-        # Add these lines:
+        # Keep track of which (worker_id, date) pairs are truly mandatory
         self.start_date = scheduler.start_date
         self.end_date = scheduler.end_date
         self.date_utils = scheduler.date_utils
+        self.gap_between_shifts = scheduler.gap_between_shifts 
+        self.max_shifts_per_worker = scheduler.max_shifts_per_worker
         self.data_manager = scheduler.data_manager
         self.worker_posts = scheduler.worker_posts
         self.worker_weekdays = scheduler.worker_weekdays
         self.worker_weekends = scheduler.worker_weekends
         self.constraint_skips = scheduler.constraint_skips
-        self.max_shifts_per_worker = scheduler.max_shifts_per_worker
+        self.last_assigned_date = scheduler.last_assigned_date # Used in calculate_score
+        self.consecutive_shifts = scheduler.consecutive_shifts # Used in calculate_score
 
+        logging.debug(f"[ScheduleBuilder.__init__] self.schedule object ID: {id(self.schedule)}, Initial keys: {list(self.schedule.keys())[:5]}")
         logging.info("ScheduleBuilder initialized")
-    
+        
     # 2. Utility Methods
     def _parse_dates(self, date_str):
         """
@@ -100,33 +98,17 @@ class ScheduleBuilder:
     # 3. Worker Constraint Check Methods
 
     def _is_mandatory(self, worker_id, date):
-        """Checks if a given date is mandatory for the worker."""
-        # Find the worker data from the scheduler's list
-        worker = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
-        if not worker:
-            logging.warning(f"_is_mandatory check failed: Worker {worker_id} not found.")
-            return False # Worker not found, cannot be mandatory
-
+        # This is a placeholder for your actual implementation
+        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        if not worker: return False
         mandatory_days_str = worker.get('mandatory_days', '')
-        if not mandatory_days_str:
-            return False # No mandatory days defined
-
-        # Use the utility to parse dates, handle potential errors
+        if not mandatory_days_str: return False
         try:
-            # Access date_utils via the scheduler reference
-            mandatory_dates = self.scheduler.date_utils.parse_dates(mandatory_days_str)
-            is_mand = date in mandatory_dates
-            # Add debug log
-            # logging.debug(f"Checking mandatory for {worker_id} on {date.strftime('%Y-%m-%d')}: Result={is_mand} (List: {mandatory_dates})")
-            return is_mand
-        except ValueError:
-             # Log error if parsing fails, treat as not mandatory for safety
-             logging.error(f"Could not parse mandatory_days for worker {worker_id}: '{mandatory_days_str}'")
-             return False
-        except AttributeError:
-             # Handle case where date_utils might not be initialized yet (shouldn't happen here, but safety)
-             logging.error("date_utils not available in scheduler during _is_mandatory check.")
-             return False    
+            mandatory_dates = self.date_utils.parse_dates(mandatory_days_str)
+            return date in mandatory_dates
+        except:
+            return False
+            
     def _is_worker_unavailable(self, worker_id, date):
         """
         Check if a worker is unavailable on a specific date
@@ -147,14 +129,18 @@ class ScheduleBuilder:
         logging.debug(f"Checking availability for worker {worker_id} on {date.strftime('%d-%m-%Y')}")
 
         # Check work periods - if work_periods is empty, worker is available for all dates
-        work_periods = worker.get('work_periods', '').strip()
-        if work_periods:
-            date_str = date.strftime('%d-%m-%Y')
-            if 'work_dates' in worker:
-                # If we've precomputed work dates, use those
-                if date_str not in worker.get('work_dates', set()):
-                    logging.debug(f"Worker {worker_id} not available - date {date_str} not in work_dates")
-                    return True
+        work_periods_str = worker_data.get('work_periods', '')
+        if work_periods_str:
+            try:
+                work_ranges = self.date_utils.parse_date_ranges(work_periods_str)
+                if not any(start <= date <= end for start, end in work_ranges):
+                    return True # Not within any defined work period
+            except Exception as e:
+                logging.error(f"Error parsing work_periods for {worker_id}: {e}")
+                return True # Fail safe
+
+            return False
+    
             else:
                 # Otherwise, parse the work periods
                 try:
@@ -173,13 +159,15 @@ class ScheduleBuilder:
                     logging.error(f"Error parsing work periods for worker {worker_id}: {str(e)}")
     
         # Check days off
-        days_off = worker.get('days_off', '')
-        if days_off:
-            day_ranges = self.date_utils.parse_date_ranges(days_off)
-            for start_date, end_date in day_ranges:
-                if start_date <= date <= end_date:
-                    logging.debug(f"Worker {worker_id} not available - date in days off")
+        days_off_str = worker_data.get('days_off', '')
+        if days_off_str:
+            try:
+                off_ranges = self.date_utils.parse_date_ranges(days_off_str)
+                if any(start <= date <= end for start, end in off_ranges):
                     return True
+            except Exception as e:
+                logging.error(f"Error parsing days_off for {worker_id}: {e}")
+                return True # Fail safe
 
         logging.debug(f"Worker {worker_id} is available on {date.strftime('%d-%m-%Y')}")
         return False
@@ -189,54 +177,30 @@ class ScheduleBuilder:
         worker_to_check_data = next((w for w in self.workers_data if w['id'] == worker_id_to_check), None)
         if not worker_to_check_data: return True # Should not happen, but fail safe
 
-        incompatible_with = worker_to_check_data.get('incompatible_with', [])
+        incompatible_with_candidate = set(worker_to_check_data.get('incompatible_with', []))
 
         # *** ADD TYPE LOGGING HERE ***
         logging.debug(f"  CHECKING_INTERNAL: Worker={worker_id_to_check} (Type: {type(worker_id_to_check)}), AgainstList={assigned_workers_list}, IncompListForCheckWorker={incompatible_with}")
 
         for assigned_id in assigned_workers_list:
-             if assigned_id is None: # Removed redundant check assigned_id == worker_id_to_check due to type mismatch possibility
-                  continue
+            if assigned_id is None or assigned_id == worker_id_to_check:
+                continue
+            if str(assigned_id) in incompatible_with_candidate: # Ensure type consistency if IDs might be mixed
+                return False # Candidate is incompatible with an already assigned worker
 
-             # *** ADD TYPE LOGGING FOR LOOP VARIABLES ***
-             logging.debug(f"    Comparing: Candidate {worker_id_to_check} (Type: {type(worker_id_to_check)}) vs Assigned {assigned_id} (Type: {type(assigned_id)})")
-
-             # Check 1: Is the assigned worker in the candidate's incompatible list?
-             # *** ADD TYPE LOGGING FOR CHECK 1 ***
-             logging.debug(f"      Check 1: Is {assigned_id} (Type: {type(assigned_id)}) in {incompatible_with}?")
-             if assigned_id in incompatible_with:
-                  logging.debug(f"      -> YES. Incompatibility found.")
-                  return False # Found incompatibility
-
-             # Check 2: Is the candidate in the assigned worker's incompatible list?
-             assigned_worker_data = next((w for w in self.workers_data if w['id'] == assigned_id), None)
-             if assigned_worker_data:
-                 assigned_incompatible_list = assigned_worker_data.get('incompatible_with', [])
-                 # *** ADD TYPE LOGGING FOR CHECK 2 ***
-                 logging.debug(f"      Check 2: Is {worker_id_to_check} (Type: {type(worker_id_to_check)}) in {assigned_incompatible_list}?")
-                 if worker_id_to_check in assigned_incompatible_list:
-                     logging.debug(f"      -> YES. Incompatibility found.")
-                     return False # Found incompatibility
-             else:
-                 logging.warning(f"    Could not find data for assigned worker ID: {assigned_id}")
-
-
+            # Bidirectional check
+            assigned_worker_data = next((w for w in self.workers_data if w['id'] == assigned_id), None)
+            if assigned_worker_data:
+                if str(worker_id_to_check) in set(assigned_worker_data.get('incompatible_with', [])):
+                    return False # Assigned worker is incompatible with the ca
         logging.debug(f"  CHECKING_INTERNAL: Worker={worker_id_to_check} vs List={assigned_workers_list} -> OK (No incompatibility detected)")
         return True # No incompatibilities found
 
     def _check_incompatibility(self, worker_id, date):
-        """Check if worker is incompatible with already assigned workers on a specific date"""
-        try:
-            if date not in self.schedule:
-                return True # No one assigned yet, so compatible
+        # Placeholder using _check_incompatibility_with_list
+        assigned_workers_on_date = [w for w in self.schedule.get(date, []) if w is not None]
+        return self._check_incompatibility_with_list(worker_id, assigned_workers_on_date)
 
-            assigned_workers_list = self.schedule.get(date, [])
-            return self._check_incompatibility_with_list(worker_id, assigned_workers_list)
-
-        except Exception as e:
-            logging.error(f"Error checking incompatibility for worker {worker_id} on {date}: {str(e)}")
-            return False # Fail safe - assume incompatible on error
-        
     def _are_workers_incompatible(self, worker1_id, worker2_id):
         """
         Check if two workers are incompatible with each other
@@ -1029,72 +993,50 @@ class ScheduleBuilder:
 # 5. Schedule Generation Methods
             
     def _assign_mandatory_guards(self):
-        """Assigns mandatory shifts based on worker mandatory_days.
-        Ensures the authoritative scheduler.schedule is updated.
-        """
         logging.info("Starting mandatory guard assignment…")
-
-        mandatory_assignments = []
-        for worker in self.scheduler.workers_data: # Assuming this is the list of all worker objects/dicts
+        assigned_count = 0
+        for worker in self.workers_data: # Use self.workers_data
             worker_id = worker['id']
             mandatory_str = worker.get('mandatory_days', '')
             try:
-                dates = self.scheduler.date_utils.parse_dates(mandatory_str) # Helper to parse dates
+                dates = self.date_utils.parse_dates(mandatory_str)
             except Exception as e:
                 logging.error(f"Error parsing mandatory_days for worker {worker_id}: {e}")
                 continue
 
             for date in dates:
-                if self.start_date <= date <= self.end_date: # Ensure date is within scheduling period
-                    mandatory_assignments.append((worker_id, date))
-                    logging.debug(f"[Identified mandatory shift] Worker {worker_id} on {date:%d%m-%Y}")
- 
-        assigned_count = 0
-        for worker_id, date in mandatory_assignments:
-            if date in self.scheduler.schedule and worker_id in self.scheduler.schedule.get(date, []):
-                logging.debug(f"Mandatory shift for {worker_id} on {date} already in scheduler's schedule. Ensuring lock.")
-                if (worker_id, date) not in self._locked_mandatory:
-                    self._locked_mandatory.add((worker_id, date))
-                    logging.debug(f"Locked previously assigned (in scheduler) mandatory shift for {worker_id} on {date}")
-                continue
- 
-            if date not in self.scheduler.schedule:
-                self.scheduler.schedule[date] = [None] * self.num_shifts
-            if date not in self.schedule: 
-                 self.schedule[date] = [None] * self.num_shifts
+                if not (self.start_date <= date <= self.end_date): continue
 
-            for post in range(self.num_shifts):
-                while post >= len(self.scheduler.schedule[date]):
-                    self.scheduler.schedule[date].append(None)
-                while post >= len(self.schedule.get(date, [])): 
-                    self.schedule.setdefault(date, []).extend([None])
+                if date not in self.schedule: # self.schedule is scheduler.schedule
+                    self.schedule[date] = [None] * self.num_shifts
+                
+                # Try to place in any available post for that date
+                placed_mandatory = False
+                for post in range(self.num_shifts):
+                    if len(self.schedule[date]) <= post: self.schedule[date].extend([None] * (post + 1 - len(self.schedule[date])))
 
-                if self.scheduler.schedule[date][post] is None:
-                    # MODIFIED LINE: Removed the 'post' argument from the call
-                    if not self._check_incompatibility(worker_id, date): 
-                        logging.debug(f"Mandatory shift for {worker_id} on {date} post {post} incompatible. Trying next post.")
-                        continue 
- 
-                    self.scheduler.schedule[date][post] = worker_id
-                    self.schedule[date][post] = worker_id 
-                    
-                    self.worker_assignments.setdefault(worker_id, set()).add(date)
-                    self.scheduler._update_tracking_data(worker_id, date, post)
-                    self._locked_mandatory.add((worker_id, date))
-                    logging.debug(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')} post {post} (mandatory) and locked. Lock: ({worker_id}, {date})")
- 
-                    assigned_count += 1
-                    break 
-            
-            if not (date in self.scheduler.schedule and worker_id in self.scheduler.schedule.get(date, [])):
-                 logging.warning(f"Could not place mandatory shift for {worker_id} on {date}. All posts on this day were filled or incompatible.")
- 
-        logging.info(f"Finished mandatory guard assignment. Assigned {assigned_count} shifts to the authoritative schedule.")
+                    if self.schedule[date][post] is None:
+                        # Check incompatibility before placing
+                        others_on_date = [w for i, w in enumerate(self.schedule.get(date, [])) if i != post and w is not None]
+                        if not self._check_incompatibility_with_list(worker_id, others_on_date):
+                            logging.debug(f"Mandatory shift for {worker_id} on {date.strftime('%Y-%m-%d')} post {post} incompatible. Trying next post.")
+                            continue
+                        
+                        self.schedule[date][post] = worker_id
+                        self.worker_assignments.setdefault(worker_id, set()).add(date) # Use self.worker_assignments
+                        self.scheduler._update_tracking_data(worker_id, date, post, removing=False) # Call scheduler's central update
+                        self._locked_mandatory.add((worker_id, date)) # Lock it
+                        logging.debug(f"Assigned worker {worker_id} to {date.strftime('%Y-%m-%d')} post {post} (mandatory) and locked.")
+                        assigned_count += 1
+                        placed_mandatory = True
+                        break 
+                if not placed_mandatory:
+                     logging.warning(f"Could not place mandatory shift for {worker_id} on {date.strftime('%Y-%m-%d')}. All posts filled or incompatible.")
         
-        self._synchronize_tracking_data() 
-        self._save_current_as_best(initial=True)
-
-        return (assigned_count > 0)
+        logging.info(f"Finished mandatory guard assignment. Assigned {assigned_count} shifts.")
+        # No _save_current_as_best here; scheduler's generate_schedule will handle it after this.
+        # self._synchronize_tracking_data() # Ensure builder's view is also synced if it has separate copies (it shouldn't for core data)
+        return assigned_count > 0
     
     def _get_remaining_dates_to_process(self, forward):
         """Get remaining dates that need to be processed"""
@@ -1287,183 +1229,184 @@ class ScheduleBuilder:
     # 6. Schedule Improvement Methods
 
     def _try_fill_empty_shifts(self):
-        logging.debug(f"[_try_fill_empty_shifts] Initializing. Current schedule keys: {list(self.schedule.keys())}")
-
         """
         Try to fill empty shifts in the authoritative self.schedule.
-        Pass 1: Direct assignment using RELAXED constraints.
-        Pass 2: Attempt swaps using STRICT constraints for remaining empty shifts.
-        Relies on _assign_mandatory_guards having correctly pre-filled mandatory slots.
-        """  
-        empty_shifts = []
-        
-        for date, workers_in_posts in self.schedule.items(): 
-            logging.debug(f"[_try_fill_empty_shifts] Checking date: {date.strftime('%Y-%m-%d')}, current posts: {workers_in_posts}")
+        Pass 1: Direct assignment.
+        Pass 2: Attempt swaps for remaining empty shifts.
+        """
+        logging.debug(f"ENTERED _try_fill_empty_shifts. self.schedule ID: {id(self.schedule)}. Keys count: {len(self.schedule.keys())}. Sample: {dict(list(self.schedule.items())[:2])}")
+
+        initial_empty_slots = []
+        for date, workers_in_posts in self.schedule.items(): # self.schedule refers to scheduler.schedule
             for post_index, worker_in_post in enumerate(workers_in_posts):
-                logging.debug(f"  Date: {date.strftime('%Y-%m-%d')}, Post: {post_index}, Worker: {worker_in_post} (Type: {type(worker_in_post)})")
                 if worker_in_post is None:
-                    logging.debug(f"    Found empty slot: ({date.strftime('%Y-%m-%d')}, {post_index}). Appending to empty_shifts.")
-                    empty_shifts.append((date, post_index))
-            
-        logging.debug(f"[_try_fill_empty_shifts] After loop, empty_shifts count: {len(empty_shifts)}")
-        if not empty_shifts:
-            # This log implies the empty_shifts list is actually empty
-            logging.info(f"--- No empty shifts to fill. ---") 
-            return False 
-
-        logging.info(f"Attempting to fill {len(empty_shifts)} empty shifts...")
-        empty_shifts.sort(key=lambda x: x[0])  # Process chronologically
-
-        shifts_filled_this_pass_total = 0 
-        made_change_overall = False 
+                    # Check if this slot is part of a _locked_mandatory assignment that somehow became None (should not happen)
+                    # A slot is truly empty if it's None and not associated with a failed mandatory placement.
+                    # For simplicity, we assume None means empty and available to fill.
+                    # _locked_mandatory is primarily to prevent *moving* an assigned mandatory worker.
+                    initial_empty_slots.append((date, post_index))
         
+        logging.debug(f"[_try_fill_empty_shifts] Initial identified empty_slots count: {len(initial_empty_slots)}")
+        if not initial_empty_slots:
+            logging.info(f"--- No initial empty shifts to fill. ---")
+            return False
+
+        logging.info(f"Attempting to fill {len(initial_empty_slots)} empty shifts...")
+        initial_empty_slots.sort(key=lambda x: (x[0], x[1])) # Process chronologically, then by post
+
+        shifts_filled_this_pass_total = 0
+        made_change_overall = False
         remaining_empty_shifts_after_pass1 = []
 
-        # --- Pass 1: Direct Assignment (Relaxed Constraints + Strict Incompatibility) ---
-        logging.info("--- Starting Pass 1: Direct Fill (Relaxed Constraints + Strict Incompatibility) ---")
-        
-        for date, post in empty_shifts:
-            current_occupant = self.schedule.get(date, [])[post] if date in self.schedule and len(self.schedule.get(date, [])) > post else None
-
-            if current_occupant is not None:
-                if (current_occupant, date) in self._locked_mandatory:
-                    logging.debug(f"[Pass 1 Direct Fill] Skipping ({date.strftime('%Y-%m-%d')}, {post}): schedule shows it's filled by locked mandatory worker {current_occupant}.")
-                    continue 
-                else:
-                    logging.warning(f"[Pass 1 Direct Fill] Slot ({date.strftime('%Y-%m-%d')}, {post}) was in empty_shifts but is now filled by {current_occupant}. Skipping.")
-                    continue
-
-            assigned_this_post_pass1 = False
+        logging.info("--- Starting Pass 1: Direct Fill ---")
+        for date, post in initial_empty_slots:
+            # Ensure the slot is still empty before trying to fill
+            # It could have been filled by a previous assignment on the same date if num_shifts > 1
+            if self.schedule[date][post] is not None:
+                logging.debug(f"[Pass 1] Slot ({date.strftime('%Y-%m-%d')}, {post}) already filled by {self.schedule[date][post]}. Skipping.")
+                continue
             
+            assigned_this_post_pass1 = False
             pass1_candidates = []
-            # Using the structure from your file's _try_fill_empty_shifts (around L1345)
-            for worker_data in self.workers_data: 
-                worker_id = worker_data['id']
-                is_valid_for_pass1 = True 
-                if self._is_worker_unavailable(worker_id, date):
-                    is_valid_for_pass1 = False
-                
-                if is_valid_for_pass1 and worker_id in [w for i, w in enumerate(self.schedule.get(date,[])) if i != post and w is not None]:
-                    is_valid_for_pass1 = False
 
-                if is_valid_for_pass1 and not self._check_incompatibility(worker_id, date): 
+            for worker_data in self.workers_data:
+                worker_id = worker_data['id']
+                logging.debug(f"  [Pass 1 Candidate Check] Worker: {worker_id} for Date: {date.strftime('%Y-%m-%d')}, Post: {post}")
+                is_valid_for_pass1 = True
+
+                if self._is_worker_unavailable(worker_id, date):
+                    logging.debug(f"    -> Pass1 REJECTED (Unavailable): Worker {worker_id} on {date.strftime('%Y-%m-%d')}")
                     is_valid_for_pass1 = False
                 
-                if is_valid_for_pass1 and not self._is_mandatory(worker_id, date): 
-                    current_worker_assignments = self.worker_assignments.get(worker_id, set()) 
-                    min_days_between_for_pass1 = self.gap_between_shifts + 1 
+                if is_valid_for_pass1:
+                    already_on_date_other_post = False
+                    for idx, assigned_w_id in enumerate(self.schedule.get(date, [])):
+                        if idx != post and assigned_w_id == worker_id:
+                            already_on_date_other_post = True; break
+                    if already_on_date_other_post:
+                        logging.debug(f"    -> Pass1 REJECTED (Already Assigned): Worker {worker_id} on {date.strftime('%Y-%m-%d')} (other post)")
+                        is_valid_for_pass1 = False
+
+                if is_valid_for_pass1:
+                    others_on_date = [w for i, w in enumerate(self.schedule.get(date, [])) if i != post and w is not None]
+                    if not self._check_incompatibility_with_list(worker_id, others_on_date):
+                        logging.debug(f"    -> Pass1 REJECTED (Incompatible): Worker {worker_id} with others {others_on_date} on {date.strftime('%Y-%m-%d')}")
+                        is_valid_for_pass1 = False
+                
+                skip_gap_check = False
+                if is_valid_for_pass1 and self._is_mandatory(worker_id, date):
+                    skip_gap_check = True
+                    logging.debug(f"    -> Pass1 INFO (Gap Check Skipped): Date {date.strftime('%Y-%m-%d')} is mandatory for Worker {worker_id}.")
+
+                if is_valid_for_pass1 and not skip_gap_check:
+                    current_worker_assignments = self.worker_assignments.get(worker_id, set())
+                    min_days_between = self.gap_between_shifts + 1
                     for prev_date in sorted(list(current_worker_assignments)):
                         if prev_date == date: continue
                         days_between = abs((date - prev_date).days)
-                        if days_between < min_days_between_for_pass1:
+                        if days_between < min_days_between:
+                            logging.debug(f"    -> Pass1 REJECTED (Gap): Worker {worker_id}, prev {prev_date.strftime('%Y-%m-%d')}, target {date.strftime('%Y-%m-%d')} ({days_between}d < {min_days_between}d)")
                             is_valid_for_pass1 = False; break
                 
-                if is_valid_for_pass1 and len(self.worker_assignments.get(worker_id, set())) >= self.max_shifts_per_worker:
+                current_total_shifts = len(self.worker_assignments.get(worker_id, set()))
+                if is_valid_for_pass1 and current_total_shifts >= self.max_shifts_per_worker:
+                    logging.debug(f"    -> Pass1 REJECTED (Max Shifts): Worker {worker_id} ({current_total_shifts} >= {self.max_shifts_per_worker})")
                     is_valid_for_pass1 = False
 
                 if is_valid_for_pass1:
-                    score = 1000 - len(self.worker_assignments.get(worker_id, set())) * 10 
-                    if len(self.worker_assignments.get(worker_id, set())) < worker_data.get('target_shifts', 0):
-                        score += 500
+                    logging.debug(f"    -> Pass1 ACCEPTED as candidate: Worker {worker_id} for {date.strftime('%Y-%m-%d')} Post {post}")
+                    score = 1000.0
+                    shifts_needed = worker_data.get('target_shifts', 0) - current_total_shifts
+                    score += shifts_needed * 100 
+                    score -= current_total_shifts * 10 
+                    if self._is_mandatory(worker_id, date): score += 10000
                     pass1_candidates.append((worker_data, score))
             
             if pass1_candidates:
                 pass1_candidates.sort(key=lambda x: x[1], reverse=True)
-                for candidate_worker, candidate_score in pass1_candidates:
-                    worker_id_to_assign = candidate_worker['id']
-                    
-                    if self.schedule[date][post] is None:
-                        self.schedule[date][post] = worker_id_to_assign 
-                        self.worker_assignments.setdefault(worker_id_to_assign, set()).add(date)
-                        self.scheduler._update_tracking_data(worker_id_to_assign, date, post) 
+                logging.debug(f"  [Pass 1] Candidates for {date.strftime('%Y-%m-%d')} Post {post}: {[(c[0]['id'], c[1]) for c in pass1_candidates]}")
+                for candidate_worker_data, candidate_score in pass1_candidates:
+                    worker_id_to_assign = candidate_worker_data['id']
+                    if self.schedule[date][post] is None: # Final check
+                        others_now = [w for i, w in enumerate(self.schedule.get(date, [])) if i != post and w is not None]
+                        if not self._check_incompatibility_with_list(worker_id_to_assign, others_now):
+                            logging.debug(f"    -> Pass1 Assignment REJECTED (Last Minute Incompat): W:{worker_id_to_assign} for {date.strftime('%Y-%m-%d')} P:{post}")
+                            continue
 
-                        logging.info(f"[Relaxed Direct Fill] Filled empty shift on {date.strftime('%Y-%m-%d')} post {post} with worker {worker_id_to_assign} (Score: {candidate_score:.2f})")
+                        self.schedule[date][post] = worker_id_to_assign
+                        self.worker_assignments.setdefault(worker_id_to_assign, set()).add(date)
+                        self.scheduler._update_tracking_data(worker_id_to_assign, date, post, removing=False)
+                        logging.info(f"[Pass 1 Direct Fill] Filled empty shift on {date.strftime('%Y-%m-%d')} Post {post} with W:{worker_id_to_assign} (Score: {candidate_score:.2f})")
                         shifts_filled_this_pass_total += 1
                         made_change_overall = True
                         assigned_this_post_pass1 = True
                         break 
-                    else:
-                        logging.warning(f"  [Relaxed Direct Fill] Slot {date.strftime('%Y-%m-%d')} post {post} was unexpectedly filled by {self.schedule[date][post]} before assigning candidate {worker_id_to_assign}.")
+                    else: # Slot got filled unexpectedly
+                        assigned_this_post_pass1 = True; break 
             
-            if not assigned_this_post_pass1:
+            if not assigned_this_post_pass1 and self.schedule[date][post] is None:
                 remaining_empty_shifts_after_pass1.append((date, post))
-                if self.schedule[date][post] is None:
-                     logging.debug(f"Could not find compatible direct candidate (relaxed+incomp) for {date.strftime('%Y-%m-%d')} post {post}.")
+                logging.debug(f"Could not find compatible direct candidate in Pass 1 for {date.strftime('%Y-%m-%d')} Post {post}.")
 
-        # --- Pass 2: Swap Attempt ---
         if not remaining_empty_shifts_after_pass1:
             logging.info(f"--- Finished Pass 1. No remaining empty shifts for Pass 2. ---")
         else:
-            logging.info(f"--- Finished Pass 1. Starting Pass 2: Attempting swaps for {len(remaining_empty_shifts_after_pass1)} remaining empty shifts (Strict Constraints) ---")
-            # ... (Pass 2 logic as previously discussed, ensuring it checks _locked_mandatory before moving anyone) ...
-            # For brevity, I'll assume the Pass 2 logic from our prior correct version is here.
-            # The key is that it operates on remaining_empty_shifts_after_pass1.
-            # If remaining_empty_shifts_after_pass1 is empty, Pass 2 does nothing.
-
+            logging.info(f"--- Finished Pass 1. Starting Pass 2: Attempting swaps for {len(remaining_empty_shifts_after_pass1)} empty shifts ---")
             for date_empty, post_empty in remaining_empty_shifts_after_pass1:
                 if self.schedule[date_empty][post_empty] is not None:
-                    logging.warning(f"[Pass 2 Swap] Slot ({date_empty.strftime('%Y-%m-%d')}, {post_empty}) is no longer empty. Skipping swap attempt.")
+                    logging.warning(f"[Pass 2 Swap] Slot ({date_empty.strftime('%Y-%m-%d')}, {post_empty}) no longer empty. Skipping.")
                     continue
-
-                swap_found_for_this_empty_slot = False
-                potential_workers_W = [w_data for w_data in self.workers_data] 
-                random.shuffle(potential_workers_W)
-
-                for worker_W_data in potential_workers_W:
+                swap_found = False
+                potential_W_data = list(self.workers_data); random.shuffle(potential_W_data)
+                for worker_W_data in potential_W_data:
                     worker_W_id = worker_W_data['id']
-                    if worker_W_id not in self.worker_assignments: continue 
-                    original_assignments_W = list(self.worker_assignments[worker_W_id])
-                    random.shuffle(original_assignments_W)
+                    if not self.worker_assignments.get(worker_W_id): continue
+                    
+                    original_W_assignments = list(self.worker_assignments[worker_W_id]); random.shuffle(original_W_assignments)
+                    for date_conflict in original_W_assignments:
+                        if (worker_W_id, date_conflict) in self._locked_mandatory: continue
+                        try: post_conflict = self.schedule[date_conflict].index(worker_W_id)
+                        except (ValueError, KeyError, IndexError): continue
 
-                    for date_conflict in original_assignments_W:
-                        if (worker_W_id, date_conflict) in self._locked_mandatory:
-                            logging.debug(f"[Pass 2 Swap] Skipping attempt to move Worker {worker_W_id} from locked mandatory shift on {date_conflict.strftime('%Y-%m-%d')}.")
-                            continue
-                        if self._is_mandatory(worker_W_id, date_conflict):
-                             logging.debug(f"[Pass 2 Swap] Skipping attempt to move Worker {worker_W_id} from (config-defined) mandatory shift on {date_conflict.strftime('%Y-%m-%d')}.")
-                             continue
-                        try:
-                            post_conflict = self.schedule[date_conflict].index(worker_W_id)
-                        except (ValueError, KeyError, IndexError):
-                            logging.warning(f"[Pass 2 Swap] Inconsistency: Worker {worker_W_id} tracked for {date_conflict.strftime('%Y-%m-%d')} but not found in schedule's post list.")
-                            continue
+                        # Simulate W moving out of (date_conflict, post_conflict)
+                        original_val_conflict = self.schedule[date_conflict][post_conflict]
+                        self.schedule[date_conflict][post_conflict] = None
+                        self.worker_assignments[worker_W_id].remove(date_conflict)
                         
-                        original_W_at_conflict = self.schedule[date_conflict][post_conflict]
-                        self.schedule[date_conflict][post_conflict] = None 
-                        if date_conflict in self.worker_assignments[worker_W_id]: # Check before removing
-                            self.worker_assignments[worker_W_id].remove(date_conflict)
-
-                        can_W_take_empty_slot_strictly = self._can_assign_worker(worker_W_id, date_empty, post_empty) 
-
-                        self.schedule[date_conflict][post_conflict] = original_W_at_conflict
+                        can_W_take_empty = self.constraint_checker._can_assign_worker(worker_W_id, date_empty, post_empty, relaxed=False)
+                        
+                        # Rollback W's temporary move for now
+                        self.schedule[date_conflict][post_conflict] = original_val_conflict
                         self.worker_assignments[worker_W_id].add(date_conflict)
 
-                        if not can_W_take_empty_slot_strictly:
-                            continue 
+                        if not can_W_take_empty: continue
 
-                        worker_X_id_found = self._find_swap_candidate(worker_W_id, date_conflict, post_conflict) 
+                        worker_X_id = self._find_swap_candidate(worker_W_id, date_conflict, post_conflict)
+                        if worker_X_id:
+                            logging.info(f"[Pass 2 Swap Attempt] W:{worker_W_id} ({date_conflict.strftime('%Y-%m-%d')},P{post_conflict}) -> ({date_empty.strftime('%Y-%m-%d')},P{post_empty}); X:{worker_X_id} -> W's old slot.")
+                            # Actual execution of swap
+                            self.schedule[date_conflict][post_conflict] = None
+                            self.worker_assignments[worker_W_id].remove(date_conflict)
+                            self.scheduler._update_tracking_data(worker_W_id, date_conflict, post_conflict, removing=True)
 
-                        if worker_X_id_found:
-                            logging.info(f"[Swap Fill] Attempting to execute swap: W={worker_W_id} from ({date_conflict.strftime('%Y-%m-%d')},{post_conflict}) to ({date_empty.strftime('%Y-%m-%d')},{post_empty}), X={worker_X_id_found} takes W's old slot.")
-                            if self._execute_swap(worker_W_id, date_empty, post_empty, worker_X_id_found, date_conflict, post_conflict):
-                                shifts_filled_this_pass_total += 1 
-                                made_change_overall = True
-                                swap_found_for_this_empty_slot = True
-                                break 
-                            else:
-                                logging.warning(f"[Swap Fill] _execute_swap failed for W={worker_W_id}, X={worker_X_id_found}.")
-                    if swap_found_for_this_empty_slot:
-                        break 
-                if not swap_found_for_this_empty_slot:
-                    logging.debug(f"Could not find suitable swap for empty shift on {date_empty.strftime('%Y-%m-%d')} post {post_empty}.")
-
-
-        logging.info(f"--- Finished _try_fill_empty_shifts. Total shifts filled/swapped: {shifts_filled_this_pass_total} ---")
-
-        if made_change_overall:
-            self._save_current_as_best() 
+                            self.schedule[date_conflict][post_conflict] = worker_X_id
+                            self.worker_assignments.setdefault(worker_X_id, set()).add(date_conflict)
+                            self.scheduler._update_tracking_data(worker_X_id, date_conflict, post_conflict, removing=False)
+                            
+                            self.schedule[date_empty][post_empty] = worker_W_id
+                            self.worker_assignments[worker_W_id].add(date_empty)
+                            self.scheduler._update_tracking_data(worker_W_id, date_empty, post_empty, removing=False)
+                            
+                            shifts_filled_this_pass_total += 1; made_change_overall = True; swap_found = True; break
+                    if swap_found: break
+                if not swap_found: logging.debug(f"No swap for empty {date_empty.strftime('%Y-%m-%d')} P{post_empty}")
         
+        logging.info(f"--- Finished _try_fill_empty_shifts. Total filled/swapped: {shifts_filled_this_pass_total} ---")
+        if made_change_overall:
+            self._synchronize_tracking_data()
+            self._save_current_as_best()
         return made_change_overall
+
     
     def _find_swap_candidate(self, worker_W_id, conflict_date, conflict_post):
         """
@@ -2633,43 +2576,27 @@ class ScheduleBuilder:
         return any_change_made # Return True if any step made a change
 
     def _synchronize_tracking_data(self):
-        """
-        Synchronize all tracking data structures to ensure consistency.
-        This should be called before running final optimizations like last post adjustment.
-        """
-        logging.info("Synchronizing worker tracking data...")
-    
-        # Rebuild worker_assignments from schedule
-        new_worker_assignments = {w['id']: set() for w in self.workers_data}
-        new_worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
-    
-        # Count from schedule
-        for date, shifts in self.schedule.items():
-            for post_idx, worker_id in enumerate(shifts):
-                if worker_id is not None:
-                    # Track assignment
-                    new_worker_assignments[worker_id].add(date)
-                
-                    # Track post
-                    if worker_id not in new_worker_posts:
-                        new_worker_posts[worker_id] = {p: 0 for p in range(self.num_shifts)}
-                    new_worker_posts[worker_id][post_idx] = new_worker_posts[worker_id].get(post_idx, 0) + 1
-    
-        # Replace with consistent data
-        self.worker_assignments = new_worker_assignments
-        self.worker_posts = new_worker_posts
-    
-        # Also update shift counts
-        self.worker_shift_counts = {w_id: len(assignments) for w_id, assignments in new_worker_assignments.items()}
-    
-        # Update weekend counts too
-        self.worker_weekend_shifts = {}
-        for worker_id, dates in new_worker_assignments.items():
-            weekend_count = sum(1 for date in dates if self.date_utils.is_weekend_day(date))
-            self.worker_weekend_shifts[worker_id] = weekend_count
-    
-        logging.info("Tracking data synchronization complete")
-
+        # Placeholder for your method in ScheduleBuilder if it exists, or call scheduler's
+        if hasattr(self.scheduler, '_synchronize_tracking_data'):
+            self.scheduler._synchronize_tracking_data()
+        else:
+            logging.warning("Scheduler's _synchronize_tracking_data not found by builder.")
+            # Fallback or simplified sync if necessary:
+            new_worker_assignments = {w['id']: set() for w in self.workers_data}
+            new_worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
+            for date, shifts_on_date in self.schedule.items():
+                for post_idx, worker_id_in_post in enumerate(shifts_on_date):
+                    if worker_id_in_post is not None:
+                        new_worker_assignments.setdefault(worker_id_in_post, set()).add(date)
+                        new_worker_posts.setdefault(worker_id_in_post, {p: 0 for p in range(self.num_shifts)})[post_idx] += 1
+            self.worker_assignments = new_worker_assignments # Update builder's reference
+            self.scheduler.worker_assignments = new_worker_assignments # Update scheduler's reference
+            self.worker_posts = new_worker_posts
+            self.scheduler.worker_posts = new_worker_posts
+            self.worker_shift_counts = {wid: len(dates) for wid, dates in new_worker_assignments.items()}
+            self.scheduler.worker_shift_counts = self.worker_shift_counts
+            # Add other tracking data sync if needed (weekends, etc.)
+            
     def _adjust_last_post_distribution(self, balance_tolerance=0.5, date=None):
         """
         Adjust the distribution of last-post slots (the highest-index shift each day)
@@ -2754,29 +2681,25 @@ class ScheduleBuilder:
         return self.scheduler._restore_best_schedule()
 
     def _save_current_as_best(self, initial=False):
-        """
-        Calculates the score of the current schedule state and saves it as the
-        best schedule found so far if it's better than the current best, or if
-        it's the initial save.
-        """
-        current_score = self.calculate_score()
-        old_score = self.best_schedule_data['score'] if self.best_schedule_data is not None else float('-inf')
-
-        if initial or self.best_schedule_data is None or current_score > old_score:
-            log_prefix = "[Initial Save]" if initial else "[New Best]"
-            logging.info(f"{log_prefix} Saving current state as best. Score: {current_score:.2f} (Previous best: {old_score:.2f})")
-
-            # This part requires the 'copy' module to be imported
-            self.best_schedule_data = {
-                'schedule': copy.deepcopy(self.scheduler.schedule),
-                'worker_assignments': copy.deepcopy(self.scheduler.worker_assignments),
-                'worker_shift_counts': copy.deepcopy(self.scheduler.worker_shift_counts),
-                'worker_weekend_shifts': copy.deepcopy(self.scheduler.worker_weekend_shifts),
-                'worker_posts': copy.deepcopy(self.scheduler.worker_posts),
-                'last_assigned_date': copy.deepcopy(self.scheduler.last_assigned_date),
-                'consecutive_shifts': copy.deepcopy(self.scheduler.consecutive_shifts),
-                'score': current_score
-            }
+        # Placeholder for your method in ScheduleBuilder or call scheduler's
+        if hasattr(self.scheduler, '_save_current_as_best') and not initial : # initial is handled by scheduler itself
+             # This might be complex if the scheduler's method relies on its own context deeply
+             # For now, let's assume it's mostly about copying data.
+             # The builder should update its own best_schedule_data
+            current_score = self.calculate_score()
+            old_score = self.best_schedule_data['score'] if self.best_schedule_data is not None else float('-inf')
+            if initial or self.best_schedule_data is None or current_score > old_score:
+                self.best_schedule_data = {
+                    'schedule': copy.deepcopy(self.schedule),
+                    'worker_assignments': copy.deepcopy(self.worker_assignments),
+                    'worker_shift_counts': copy.deepcopy(self.scheduler.worker_shift_counts), # Use scheduler's as source of truth
+                    'worker_weekend_shifts': copy.deepcopy(self.scheduler.worker_weekend_shifts),
+                    'worker_posts': copy.deepcopy(self.worker_posts),
+                    'last_assigned_date': copy.deepcopy(self.scheduler.last_assigned_date),
+                    'consecutive_shifts': copy.deepcopy(self.scheduler.consecutive_shifts),
+                    'score': current_score
+                }
+                logging.info(f"Builder saved new best schedule. Score: {current_score:.2f}")
 
     def get_best_schedule(self):
         """ Returns the best schedule data dictionary found. """
@@ -2785,75 +2708,5 @@ class ScheduleBuilder:
         return self.best_schedule_data
 
     def calculate_score(self, schedule_to_score=None, assignments_to_score=None):
-         """
-         Calculates the score of a given schedule state or the current state.
-         Higher score is better. Penalties decrease the score.
-         """
-         # Use current state if not provided
-         schedule = schedule_to_score if schedule_to_score is not None else self.scheduler.schedule
-         assignments = assignments_to_score if assignments_to_score is not None else self.scheduler.worker_assignments
-
-         base_score = 1000.0
-         penalty = 0.0
-
-         # --- Penalties ---
-         # 1. Empty Shifts
-         empty_shifts = 0
-         for date, posts in schedule.items():
-             empty_shifts += posts.count(None)
-         penalty += empty_shifts * 50.0
-
-         # 2. Workload Imbalance
-         # Use worker_shift_counts from the scheduler's current state
-         shift_counts = list(self.scheduler.worker_shift_counts.values())
-         if shift_counts:
-             min_shifts = min(shift_counts)
-             max_shifts = max(shift_counts)
-             penalty += (max_shifts - min_shifts) * 10.0
-
-         # 3. Weekend Imbalance
-         # Use worker_weekend_shifts from the scheduler's current state
-         weekend_counts = list(self.scheduler.worker_weekend_shifts.values())
-         if weekend_counts:
-             min_weekends = min(weekend_counts)
-             max_weekends = max(weekend_counts)
-             penalty += (max_weekends - min_weekends) * 20.0
-
-         # 4. Post Rotation Imbalance
-         total_post_deviation_penalty = 0
-         num_posts = self.num_shifts
-         if num_posts > 1:
-             # Use worker_posts from the scheduler's current state
-             for worker_id, worker_post_counts in self.scheduler.worker_posts.items():
-                 total_assigned = sum(worker_post_counts.values())
-                 if total_assigned > 0:
-                     target_per_post = total_assigned / num_posts
-                     worker_deviation = 0
-                     for post in range(num_posts):
-                          actual_count = worker_post_counts.get(post, 0)
-                          worker_deviation += abs(actual_count - target_per_post)
-                     total_post_deviation_penalty += worker_deviation * 1.0
-         penalty += total_post_deviation_penalty
-
-         # 5. Consecutive Shifts
-         consecutive_penalty = 0
-         # --- CORRECTED LINE: Access config via self.scheduler ---
-         max_allowed_consecutive = self.scheduler.config.get('max_consecutive_shifts', 3)
-         # --- END CORRECTION ---
-         # Use worker_assignments for calculation (or better tracking data if available)
-         for worker_id, dates in sorted(assignments.items()):
-              sorted_dates = sorted(list(dates))
-              current_consecutive = 0
-              for i, date in enumerate(sorted_dates):
-                   if i > 0 and (date - sorted_dates[i-1]).days == 1:
-                        current_consecutive += 1
-                   else:
-                        current_consecutive = 1
-                   if current_consecutive > max_allowed_consecutive:
-                        consecutive_penalty += 10.0
-         penalty += consecutive_penalty
-
-         # --- Add other penalties ---
-
-         final_score = base_score - penalty
-         return final_score
+        # Placeholder - use scheduler's score calculation for consistency
+        return self.scheduler.calculate_score(schedule_to_score or self.schedule, assignments_to_score or self.worker_assignments)
