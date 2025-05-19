@@ -76,22 +76,19 @@ class Scheduler:
             self.max_consecutive_weekends = config.get('max_consecutive_weekends', 3)
 
             # Initialize tracking dictionaries
-            self.schedule = {} 
+            self.schedule = {}
             self.worker_assignments = {w['id']: set() for w in self.workers_data}
-            self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
+            self.worker_posts = {w['id']: set() for w in self.workers_data} # CORRECTED: Initialize as a set
             self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
-            self.worker_weekends = {w['id']: [] for w in self.workers_data}
-
+            self.worker_weekends = {w['id']: [] for w in self.workers_data} # This is a list of dates, which is fine
             # Initialize the schedule structure with the appropriate number of shifts for each date
             self._initialize_schedule_with_variable_shifts() 
-
-            # Initialize tracking data structures
+            # Initialize tracking data structures (These seem to be for overall counts, distinct from worker_posts which tracks *which* posts)
             self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
-            self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data} # Renamed from self.worker_weekend_shifts for consistency with ScheduleBuilder
-            self.worker_post_counts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
+            self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data} 
+            self.worker_post_counts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data} # This is for counting how many times each post is worked by a worker, distinct from self.worker_posts
             self.worker_weekday_counts = {w['id']: {d: 0 for d in range(7)} for w in self.workers_data}
             self.worker_holiday_counts = {w['id']: 0 for w in self.workers_data}
-            # Store last assignment date for gap checks
             self.last_assignment_date = {w['id']: None for w in self.workers_data} # Corrected attribute name
             # Initialize consecutive_shifts
             self.consecutive_shifts = {w['id']: 0 for w in self.workers_data} # <<< --- ADD THIS LINE
@@ -613,49 +610,68 @@ class Scheduler:
         """
         try:
             # Ensure basic data structures exist for the worker
-            if worker_id not in self.worker_assignments: self.worker_assignments[worker_id] = set()
-            if worker_id not in self.worker_posts: self.worker_posts[worker_id] = set() # Tracks posts worked by worker
-            if worker_id not in self.worker_weekdays: self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
-            if worker_id not in self.worker_weekends: self.worker_weekends[worker_id] = [] # List of weekend/holiday dates worked
+            if worker_id not in self.worker_assignments: 
+                self.worker_assignments[worker_id] = set()
+            
+            # Robust check and initialization for self.worker_posts[worker_id]
+            # Ensures it's a set even if worker_id was already a key but with a wrong type (e.g., dict)
+            if worker_id not in self.worker_posts or not isinstance(self.worker_posts.get(worker_id), set):
+                logging.warning(f"Re-initializing self.worker_posts[{worker_id}] as a set due to incorrect type.") # Optional: log this
+                self.worker_posts[worker_id] = set() 
+            
+            if worker_id not in self.worker_weekdays: 
+                self.worker_weekdays[worker_id] = {i: 0 for i in range(7)}
+            if worker_id not in self.worker_weekends: 
+                self.worker_weekends[worker_id] = [] # List of weekend/holiday dates worked
 
             if removing:
                 # Remove from worker assignments
                 if date in self.worker_assignments.get(worker_id, set()):
                     self.worker_assignments[worker_id].remove(date)
                 
-                # Note: Removing from self.worker_posts is complex as it just stores a set of all posts worked.
-                # A full rebuild of self.worker_posts (e.g., self._rebuild_worker_post_assignments()) 
-                # might be needed if precise post removal tracking per worker is critical here.
+                # Note: Removing from self.worker_posts for a specific post is not done here
+                # as self.worker_posts[worker_id] is a set of all posts worked.
+                # If a worker no longer works ANY instance of a post, that post would remain
+                # in their set unless explicitly managed or self.worker_posts is rebuilt.
 
                 # Update weekday counts
                 weekday = date.weekday()
-                if self.worker_weekdays[worker_id][weekday] > 0:
-                    self.worker_weekdays[worker_id][weekday] -= 1
+                # Ensure weekday key exists before decrementing, though init above should handle it.
+                if weekday in self.worker_weekdays.get(worker_id, {}): # Defensive access
+                    if self.worker_weekdays[worker_id][weekday] > 0:
+                        self.worker_weekdays[worker_id][weekday] -= 1
+                else:
+                    logging.warning(f"Weekday {weekday} not found in self.worker_weekdays for worker {worker_id} during removal.")
+
 
                 # Update weekend tracking
                 is_special_day = (date.weekday() >= 4 or
                                   date in self.holidays or
                                   (date + timedelta(days=1)) in self.holidays)
                 
-                if is_special_day and date in self.worker_weekends.get(worker_id, []):
-                    self.worker_weekends[worker_id].remove(date)
-                    # self.worker_weekends[worker_id].sort() # Keep sorted if order matters
+                if is_special_day:
+                    current_weekends = self.worker_weekends.get(worker_id) # Use .get for safety
+                    if current_weekends is not None and date in current_weekends:
+                        current_weekends.remove(date)
+                        # current_weekends.sort() # Re-sort if removal changes order and order matters
 
             else: # Adding assignment
                 self.worker_assignments[worker_id].add(date)
-                self.worker_posts[worker_id].add(post)
+                self.worker_posts[worker_id].add(post) # This should now work
                 
                 weekday = date.weekday()
-                self.worker_weekdays[worker_id][weekday] += 1
+                self.worker_weekdays[worker_id][weekday] = self.worker_weekdays[worker_id].get(weekday, 0) + 1
+
 
                 is_special_day = (date.weekday() >= 4 or
                                   date in self.holidays or
                                   (date + timedelta(days=1)) in self.holidays)
 
                 if is_special_day:
-                    if date not in self.worker_weekends.get(worker_id, []):
-                        self.worker_weekends.setdefault(worker_id, []).append(date)
-                        self.worker_weekends[worker_id].sort()
+                    current_weekends = self.worker_weekends.setdefault(worker_id, []) # Ensures list exists
+                    if date not in current_weekends:
+                        current_weekends.append(date)
+                        current_weekends.sort()
 
             # Update eligibility tracker if it exists and is configured
             if hasattr(self, 'eligibility_tracker') and self.eligibility_tracker:
@@ -663,8 +679,6 @@ class Scheduler:
                     self.eligibility_tracker.remove_worker_assignment(worker_id, date)
                 else:
                     self.eligibility_tracker.update_worker_status(worker_id, date)
-
-            # self.mark_data_dirty() # REMOVED - Method does not exist
 
             logging.debug(f"{'Removed' if removing else 'Added'} assignment and updated tracking for worker {worker_id} on {date.strftime('%Y-%m-%d')}, post {post}")
 
