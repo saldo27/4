@@ -1245,29 +1245,22 @@ class Scheduler:
 
         try:
             # 1. Initialize all of the Scheduler's own attributes for this run.
-            # This self.schedule will be THE schedule dictionary for this generation run.
             self.schedule = {} 
             self.worker_assignments = {w['id']: set() for w in self.workers_data} 
             self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
-            self.worker_weekend_shifts = {w['id']: 0 for w in self.workers_data}
-            # Ensure worker_posts is initialized correctly for the number of shifts
+            # Assuming self.worker_weekend_counts is the correct attribute name based on __init__
+            self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data} 
             self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
-            self.last_assigned_date = {w['id']: None for w in self.workers_data}
+            self.last_assignment_date = {w['id']: None for w in self.workers_data}
             self.consecutive_shifts = {w['id']: 0 for w in self.workers_data}            
 
-            # 2. Populate the self.schedule dictionary.
-            # The _initialize_schedule_with_variable_shifts method will use the self.schedule created above.
             logging.info("Initializing schedule structure with variable shift counts...")
             self._initialize_schedule_with_variable_shifts() 
-            # At this point, self.schedule is populated, and other tracking attributes are reset.
-
-            # 3. Now that scheduler's state (especially self.schedule) is prepared for this run,
-            #    create the ScheduleBuilder. It will get references to the current state.
+            
             self.schedule_builder = ScheduleBuilder(self)
             logging.info("Scheduler initialized and ScheduleBuilder created.")
 
-            # Optional: Add your DEBUG 1 logs here if you want to verify builder's perspective immediately
-            logging.debug(f"DEBUG 1 (Post-Builder-Init): self.schedule ID: {id(self.schedule)}, Keys: {list(self.schedule.keys())}") # Corrected from self.scheduler.schedule
+            logging.debug(f"DEBUG 1 (Post-Builder-Init): self.schedule ID: {id(self.schedule)}, Keys: {list(self.schedule.keys())}") 
             if hasattr(self, 'schedule_builder') and self.schedule_builder:
                  logging.debug(f"DEBUG 1 (Post-Builder-Init): self.schedule_builder.schedule ID: {id(self.schedule_builder.schedule)}, Keys: {list(self.schedule_builder.schedule.keys())}")
 
@@ -1281,80 +1274,66 @@ class Scheduler:
                  raise SchedulerError(f"Initialization failed: {str(e)}")
 
         # --- 2. Pre-assign mandatory shifts and lock them in place ---
-        # This section should now operate correctly as self.schedule_builder.schedule
-        # will point to the fully initialized self.scheduler.schedule.
         logging.info("Pre-assigning mandatory shifts; these will be irremovable.")
         self.schedule_builder._assign_mandatory_guards()
-        # (Your DEBUG 2 log for after _assign_mandatory_guards)
         logging.debug(f"DEBUG 2 (After _assign_mandatory_guards): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
         
         self.schedule_builder._synchronize_tracking_data()
-        # (Your DEBUG 3 log - if you re-add it)
         
         self.schedule_builder._save_current_as_best(initial=True)
-        # (Your DEBUG 4 log)
         logging.debug(f"DEBUG 4 (After _save_current_as_best): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
         
         self.log_schedule_summary("After Mandatory Assignment")  
-        # (Your DEBUG 5 log)
         logging.debug(f"DEBUG 5 (After log_schedule_summary): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
-        # --- 3. Iterative Improvement Loop ---DEBUG 6
-        improvement_loop_count = 0
-        improvement_made_in_cycle = True
-        
-        logging.debug(f"DEBUG 6 (BEFORE Improvement Loop WHILE): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
-        
-
-        
         # --- 3. Iterative Improvement Loop ---
         improvement_loop_count = 0
         improvement_made_in_cycle = True 
-        # (Your DEBUG 6 log)
+        
         logging.debug(f"DEBUG 6 (BEFORE Improvement Loop WHILE): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
         
         try:
             while improvement_made_in_cycle and improvement_loop_count < max_improvement_loops:
-                improvement_made_in_cycle = False
+                improvement_made_in_cycle = False # Reset for the current loop
                 logging.info(f"--- Starting Improvement Loop {improvement_loop_count + 1} ---")
-                # (Your DEBUG 7 log)
                 logging.debug(f"DEBUG 7 (TOP OF Improvement Loop {improvement_loop_count + 1}): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
                 loop_start_time = datetime.now()
 
-                # (Your PRE-CALL log for _try_fill_empty_shifts)
+                # --- MODIFICATION START: Attempt to fill empty shifts first ---
                 logging.debug(f"[generate_schedule PRE-CALL _try_fill_empty_shifts] self.schedule_builder.schedule object ID: {id(self.schedule_builder.schedule)}")
-
+                if self.schedule_builder._try_fill_empty_shifts():
+                     logging.info("Improvement Loop: Attempted to fill empty shifts and made changes.")
+                     improvement_made_in_cycle = True
+                else:
+                    logging.info("Improvement Loop: Attempted to fill empty shifts, but no changes were made by this step.")
+                # --- MODIFICATION END ---
+                
                 if self.schedule_builder._balance_workloads():
                      logging.info("Improvement Loop: Balanced workloads.")
-                     improvement_made_in_cycle = True
+                     improvement_made_in_cycle = True # If this made a change, ensure the loop continues
                 
                 if self.schedule_builder._improve_weekend_distribution(): 
                      logging.info("Improvement Loop: Improved weekend distribution (1st call).")
                      improvement_made_in_cycle = True
 
                 self.schedule_builder._synchronize_tracking_data() 
-
-                # (Your DEBUG 8 log)
                 logging.debug(f"DEBUG 8 (After _synchronize_tracking_data in loop): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
                 if self.schedule_builder._improve_weekend_distribution(): 
                     logging.info("Improvement Loop: Improved weekend distribution (2nd call).")
                     improvement_made_in_cycle = True
-
-                # (Your DEBUG 9 log)
                 logging.debug(f"DEBUG 9 (After 2nd _improve_weekend_distribution in loop): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
                 if self.schedule_builder._adjust_last_post_distribution():
                     logging.info("Improvement Loop: Balanced last post assignments.")
                     improvement_made_in_cycle = True
-                # (Your DEBUG 10 log)
                 logging.debug(f"DEBUG 10 (After _adjust_last_post_distribution in loop): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
                 loop_end_time = datetime.now()
-                logging.info(f"--- Improvement Loop {improvement_loop_count + 1} finished in {(loop_end_time - loop_start_time).total_seconds():.2f}s. Changes made: {improvement_made_in_cycle} ---")
+                logging.info(f"--- Improvement Loop {improvement_loop_count + 1} finished in {(loop_end_time - loop_start_time).total_seconds():.2f}s. Changes made in this iteration: {improvement_made_in_cycle} ---")
 
                 if not improvement_made_in_cycle:
-                    logging.info("No further improvements detected in this loop. Exiting improvement phase.")
+                    logging.info("No further improvements detected in this specific loop iteration. Exiting improvement phase.")
                 improvement_loop_count += 1
             
             if improvement_loop_count >= max_improvement_loops:
@@ -1366,14 +1345,12 @@ class Scheduler:
                          
         self.schedule_builder._adjust_last_post_distribution(balance_tolerance=0.5)
         logging.info("Post-generation: Final last-post distribution adjustment complete.")
-        # (Your DEBUG 11 log)
         logging.debug(f"DEBUG 11 (After final _adjust_last_post_distribution): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
         # --- 4. Finalization ---
         try:
             logging.info("Finalizing schedule...")
             final_schedule_data = self.schedule_builder.get_best_schedule()
-            # (Your DEBUG 12 log)
             if final_schedule_data and 'schedule' in final_schedule_data:
                 logging.debug(f"DEBUG 12 (In finalization, from get_best_schedule): final_schedule_data['schedule'] keys: {list(final_schedule_data['schedule'].keys())}")
             else:
@@ -1382,33 +1359,31 @@ class Scheduler:
 
             if final_schedule_data is None or not final_schedule_data.get('schedule'):
                 logging.error("No best schedule was saved or the best schedule found is empty.")
-                # Fallback logic
-                if not self.schedule or all(all(p is None for p in posts) for posts in self.schedule.values()): # Check current self.schedule
+                if not self.schedule or all(all(p is None for p in posts) for posts in self.schedule.values()): 
                      logging.error("Current schedule state is also empty or contains no assignments.")
                      raise SchedulerError("Schedule generation process completed, but no valid schedule data was generated or saved.")
                 else:
                      logging.warning("Using current schedule state as final schedule; best schedule data was missing or empty.")
                      final_schedule_data = { 
-                          'schedule': self.schedule, # Use current self.schedule
+                          'schedule': self.schedule, 
                           'worker_assignments': self.worker_assignments,
                           'worker_shift_counts': self.worker_shift_counts,
-                          'worker_weekend_shifts': self.worker_weekend_shifts,
+                          'worker_weekend_counts': self.worker_weekend_counts, # Changed from worker_weekend_shifts
                           'worker_posts': self.worker_posts,
                           'last_assigned_date': self.last_assigned_date,
                           'consecutive_shifts': self.consecutive_shifts,
-                          'score': self.schedule_builder.calculate_score() # Recalculate score based on current state
+                          'score': self.calculate_score() # Use self.calculate_score directly
                      }
-                     if not final_schedule_data.get('schedule'): # Should not happen if self.schedule was used
+                     if not final_schedule_data.get('schedule'): 
                           raise SchedulerError("Failed to reconstruct final schedule data from current state.")
 
             logging.info("Updating scheduler state with the selected final schedule.")
             self.schedule = final_schedule_data['schedule'] 
-            # (Your DEBUG 13 log)
             logging.debug(f"DEBUG 13 (After self.schedule = final_schedule_data['schedule']): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
 
             self.worker_assignments = final_schedule_data['worker_assignments']
             self.worker_shift_counts = final_schedule_data['worker_shift_counts']
-            self.worker_weekend_shifts = final_schedule_data['worker_weekend_shifts']
+            self.worker_weekend_counts = final_schedule_data.get('worker_weekend_shifts', final_schedule_data.get('worker_weekend_counts', {})) # Handle both possible keys
             self.worker_posts = final_schedule_data['worker_posts']
             self.last_assigned_date = final_schedule_data['last_assigned_date']
             self.consecutive_shifts = final_schedule_data['consecutive_shifts']
@@ -1416,17 +1391,14 @@ class Scheduler:
 
             logging.info(f"Final schedule selected with score: {final_score:.2f}")
 
-            # --- Final Validation ---
             empty_shifts_final = []
             total_slots_final = 0
             total_assignments_final = 0
 
-            # Check if the final schedule dictionary itself is empty
             if not self.schedule:
                  logging.error("CRITICAL: Final schedule dictionary (self.schedule) is empty!")
                  raise SchedulerError("Generated schedule dictionary is empty after finalization process.")
 
-            # Iterate through the final schedule to count slots and assignments
             for date, posts in self.schedule.items():
                 if not isinstance(posts, list):
                      logging.error(f"CRITICAL: Schedule entry for date {date} is not a list: {type(posts)}")
@@ -1438,24 +1410,16 @@ class Scheduler:
                     else:
                         total_assignments_final += 1
 
-            # Sanity check: If the date range is valid, we expect > 0 total slots
             schedule_duration_days = (self.end_date - self.start_date).days + 1
             if total_slots_final == 0 and schedule_duration_days > 0:
                  logging.error(f"CRITICAL: Final schedule has 0 total slots, but date range ({self.start_date} to {self.end_date}) covers {schedule_duration_days} days.")
-                 # This indicates a fundamental failure, likely during schedule structure initialization or retrieval
                  raise SchedulerError("Generated schedule has zero total slots despite a valid date range.")
             elif total_slots_final > 0 and total_assignments_final == 0:
                  logging.warning(f"Final schedule has {total_slots_final} slots but contains ZERO assignments.")
-                 # This might be acceptable if constraints are impossible, but it's suspicious.
 
-            # Report remaining empty shifts
             if empty_shifts_final:
                 logging.warning(f"Final schedule has {len(empty_shifts_final)} empty shifts remaining out of {total_slots_final} total slots.")
-                # Depending on requirements, you might return False or raise an error here.
-                # For now, we proceed but log the warning.
-                # Example: if len(empty_shifts_final) > allowed_empty_threshold: return False
 
-            # Log summary of the final schedule state
             self.log_schedule_summary("Final Generated Schedule")
             end_time = datetime.now()
             logging.info(f"Schedule generation completed successfully in {(end_time - start_time).total_seconds():.2f} seconds.")
