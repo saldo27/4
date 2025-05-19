@@ -147,7 +147,9 @@ class ConstraintChecker:
         """ 
         try:
             # If it's not a weekend day or holiday, no need to check
-            is_target_weekend = date.weekday() >= 4 or date in self.scheduler.holidays
+            is_target_weekend = (date.weekday() >= 4 or # Fri, Sat, Sun
+                                 date in self.scheduler.holidays or
+                                 (date + timedelta(days=1)) in self.scheduler.holidays)
             if not is_target_weekend:
                 return False
 
@@ -165,7 +167,9 @@ class ConstraintChecker:
             current_worker_assignments = self.scheduler.worker_assignments.get(worker_id, set())
             weekend_dates = []
             for d_val in current_worker_assignments:
-                if d_val.weekday() >= 4 or d_val in self.scheduler.holidays:
+                if (d_val.weekday() >= 4 or 
+                    d_val in self.scheduler.holidays or
+                    (d_val + timedelta(days=1)) in self.scheduler.holidays):
                     weekend_dates.append(d_val)
         
             if date not in weekend_dates: # Add the date being checked
@@ -249,10 +253,13 @@ class ConstraintChecker:
 
             # Check weekend constraints (replacing the custom weekend check)
             # Only check if this is a weekend day or holiday to improve performance
-            if date.weekday() >= 4 or date in self.holidays:
-                if self._would_exceed_weekend_limit(worker_id, date):
-                    logging.debug(f"Worker {worker_id} would exceed weekend limit if assigned on {date}")
-                    return True
+            is_special_day_for_unavailability_check = (date.weekday() >= 4 or
+                                                        date in self.holidays or
+                                                        (date + timedelta(days=1)) in self.holidays)
+            if is_special_day_for_unavailability_check:
+                if self._would_exceed_weekend_limit(worker_id, date): # This now calls the consistently defined limit
+                logging.debug(f"Worker {worker_id} would exceed weekend limit if assigned on {date}")
+                return True
 
             return False
 
@@ -335,7 +342,10 @@ class ConstraintChecker:
                 return False, "incompatibility"
 
             # Weekend constraints
-            if date.weekday() >= 4 or date in self.holidays:  
+            is_special_day_for_constraints_check = (date.weekday() >= 4 or
+                                                    date in self.holidays or
+                                                    (date + timedelta(days=1)) in self.holidays)
+            if is_special_day_for_constraints_check:  
                 if self._would_exceed_weekend_limit(worker_id, date):
                     return False, "too many weekend shifts in period"
 
@@ -406,9 +416,11 @@ class ConstraintChecker:
         return post_counts
     
     def is_weekend_day(self, date):
-        """Check if a date is a weekend day or holiday"""
+        """Check if a date is a weekend day or holiday or day before holiday."""
         try:
-            return date.weekday() >= 4 or date in self.holidays
+            return (date.weekday() >= 4 or # Friday, Saturday, Sunday
+                    date in self.holidays or
+                    (date + timedelta(days=1)) in self.holidays) # Day before a holiday
         except Exception as e:
             logging.error(f"Error checking if date is weekend: {str(e)}")
             return False
