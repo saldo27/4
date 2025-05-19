@@ -911,7 +911,8 @@ class ScheduleBuilder:
                         return float('-inf')
         
             # --- Weekend Limits ---\
-            if relaxation_level < 2 and self._would_exceed_weekend_limit(worker_id, date):
+            if self._would_exceed_weekend_limit(worker_id, date):
+                logging.debug(f"Score check fail: Worker {worker_id} would exceed weekend limit on {date.strftime('%Y-%m-%d')}")
                 return float('-inf')
         
             # --- Weekday Balance Check ---\
