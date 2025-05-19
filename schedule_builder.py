@@ -222,6 +222,13 @@ class ScheduleBuilder:
         Returns:
             bool: True if weekend limit would be exceeded, False otherwise
         """
+
+        is_special_day = (date.weekday() >= 4 or # Friday, Saturday, Sunday
+                  date in self.holidays or 
+                  (date + timedelta(days=1)) in self.holidays)
+        if not is_special_day:
+            return False # Not a day relevant for this constraint
+        
         # Skip if not a weekend
         if not self.date_utils.is_weekend_day(date) and date not in self.holidays:
             return False
@@ -232,7 +239,18 @@ class ScheduleBuilder:
             return True
 
         # Get weekend assignments for this worker
-        weekend_dates = self.worker_weekends.get(worker_id, [])
+        weekend_dates = [
+            d for d in self.worker_assignments.get(worker_id, [])
+            if (d.weekday() >= 4 or 
+                d in self.holidays or 
+                (d + timedelta(days=1)) in self.holidays)
+
+        # When checking the target 'date' itself:
+        if (date.weekday() >= 4 or 
+            date in self.holidays or 
+            (date + timedelta(days=1)) in self.holidays):
+            if date not in weekend_dates: # if it's a special day being added
+                weekend_dates.append(date)
 
         # Calculate the maximum allowed weekend shifts based on work percentage
         work_percentage = worker.get('work_percentage', 100)
@@ -654,9 +672,11 @@ class ScheduleBuilder:
     def _would_exceed_weekend_limit_simulated(self, worker_id, date, simulated_assignments):
         """Check weekend limit using simulated assignments."""
         # Check if date is a weekend/holiday
-        is_target_weekend = date.weekday() >= 4 or date in self.scheduler.holidays
+        is_target_weekend = (date.weekday() >= 4 or 
+                     date in self.scheduler.holidays or
+                     (date + timedelta(days=1)) in self.scheduler.holidays)
         if not is_target_weekend:
-            return False  # Not a weekend/holiday, so no limit applies
+            return False
     
         # Get worker data to check work_percentage
         worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
@@ -669,8 +689,10 @@ class ScheduleBuilder:
     
         # Get weekend assignments and add the current date
         weekend_dates = []
-        for d_val in simulated_assignments.get(worker_id, set()): # Renamed d to d_val
-            if d_val.weekday() >= 4 or d_val in self.scheduler.holidays:
+        for d_val in simulated_assignments.get(worker_id, set()):
+            if (d_val.weekday() >= 4 or 
+                d_val in self.scheduler.holidays or
+                (d_val + timedelta(days=1)) in self.scheduler.holidays):
                 weekend_dates.append(d_val)
     
         # Add the date if it's not already in the list
@@ -936,13 +958,17 @@ class ScheduleBuilder:
                  score -= 5000 # Keep penalty if over overall target at high relaxation
         
             # 2. Weekend Balance Score
-            if date.weekday() >= 4:  # Friday, Saturday, Sunday
-                weekend_assignments = sum(\
-                    1 for d in self.worker_assignments[worker_id]\
-                    if d.weekday() >= 4\
+            is_special_day_for_scoring = (date.weekday() >= 4 or 
+                                          date in self.holidays or
+                                          (date + timedelta(days=1)) in self.holidays)
+            if is_special_day_for_scoring:
+                special_day_assignments = sum(
+                    1 for d in self.worker_assignments[worker_id]
+                    if (d.weekday() >= 4 or 
+                        d in self.holidays or
+                        (d + timedelta(days=1)) in self.holidays)
                 )
-                # Lower score for workers with more weekend assignments
-                score -= weekend_assignments * 300
+                score -= special_day_assignments * 300 
 
         
             # 4. Weekly Balance Score - avoid concentration in some weeks
