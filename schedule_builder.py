@@ -239,11 +239,13 @@ class ScheduleBuilder:
             return True
 
         # Get weekend assignments for this worker
-        weekend_dates = [
-            d for d in self.worker_assignments.get(worker_id, [])
-            if (d.weekday() >= 4 or 
-                d in self.holidays or 
-                (d + timedelta(days=1)) in self.holidays)
+        current_worker_assignments = self.scheduler.worker_assignments.get(worker_id, set())
+        weekend_dates = []
+        for d_val in current_worker_assignments:
+            if (d_val.weekday() >= 4 or 
+                d_val in self.scheduler.holidays or
+                (d_val + timedelta(days=1)) in self.scheduler.holidays):
+                weekend_dates.append(d_val)
 
         # When checking the target 'date' itself:
         if (date.weekday() >= 4 or 
@@ -2397,144 +2399,179 @@ class ScheduleBuilder:
 
     def _improve_weekend_distribution(self):
         """
-        Improve weekend distribution by balancing weekend shifts more evenly among workers
-        and attempting to resolve weekend overloads
+        Improve weekend distribution by balancing "special constraint days" 
+        (Fri/Sat/Sun, Holiday, Day-before-Holiday) more evenly among workers
+        and attempting to resolve overloads based on max_consecutive_weekends 
+        interpreted as a monthly cap for these days.
         """
-        logging.info("Attempting to improve weekend distribution")
+        logging.info("Attempting to improve special day (weekend/holiday/eve) distribution")
     
         # Ensure data consistency before proceeding
-        self._ensure_data_integrity()
+        # self._ensure_data_integrity() # This should call scheduler's data sync if it exists
+                                      # or be robust enough on its own.
+                                      # For now, assuming scheduler's data is the source of truth.
 
-        # Count weekend assignments for each worker by month
-        weekend_counts_by_month = {}
+        # Count "special constraint day" assignments for each worker per month
+        special_day_counts_by_month = {} 
         months = {}
-        current_date_iter = self.start_date # Renamed current_date
+        current_date_iter = self.start_date
         while current_date_iter <= self.end_date:
             month_key = (current_date_iter.year, current_date_iter.month)
             if month_key not in months: months[month_key] = []
             months[month_key].append(current_date_iter)
             current_date_iter += timedelta(days=1)
 
-        for month_key, dates_in_month in months.items(): # Renamed dates
-            weekend_counts = {}
-            for worker_val in self.workers_data: # Renamed worker
-                worker_id_val = worker_val['id'] # Renamed worker_id
-                # Use scheduler references
-                weekend_count = sum(1 for date_val in dates_in_month if date_val in self.scheduler.worker_assignments.get(worker_id_val, set()) and self.date_utils.is_weekend_day(date_val)) # Renamed date
-                weekend_counts[worker_id_val] = weekend_count
-            weekend_counts_by_month[month_key] = weekend_counts
+        for month_key, dates_in_month in months.items():
+            current_month_special_day_counts = {} 
+            for worker_val in self.workers_data:
+                worker_id_val = worker_val['id']
+                
+                count = 0
+                for date_val in dates_in_month:
+                    # MANUALLY EMBEDDED CHECK
+                    is_special_day = (date_val.weekday() >= 4 or  # Friday, Saturday, Sunday
+                                      date_val in self.holidays or
+                                      (date_val + timedelta(days=1)) in self.holidays)
+
+                    if date_val in self.scheduler.worker_assignments.get(worker_id_val, set()) and is_special_day:
+                        count += 1
+                current_month_special_day_counts[worker_id_val] = count
+            special_day_counts_by_month[month_key] = current_month_special_day_counts
     
         changes_made = 0
     
-         # Identify months with overloaded workers
-        for month_key, weekend_counts_val in weekend_counts_by_month.items(): # Renamed weekend_counts
+        for month_key, current_month_counts in special_day_counts_by_month.items():
             overloaded_workers = []
             underloaded_workers = []
 
-            for worker_val in self.workers_data: # Renamed worker
-                worker_id_val = worker_val['id'] # Renamed worker_id
+            for worker_val in self.workers_data:
+                worker_id_val = worker_val['id']
                 work_percentage = worker_val.get('work_percentage', 100)
-                max_weekends = self.max_consecutive_weekends # Use configured param
-                if work_percentage < 100:
-                    max_weekends = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
+                
+                # Using max_consecutive_weekends as a type of monthly limit for these special days.
+                # This value comes from the scheduler's config.
+                max_special_days_limit_for_month = self.max_consecutive_weekends 
+                if work_percentage < 100: # Apply part-time adjustment
+                    max_special_days_limit_for_month = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
 
-                weekend_count = weekend_counts_val.get(worker_id_val, 0)
+                actual_special_days_this_month = current_month_counts.get(worker_id_val, 0)
 
-                if weekend_count > max_weekends:
-                    overloaded_workers.append((worker_id_val, weekend_count, max_weekends))
-                elif weekend_count < max_weekends:
-                    available_slots = max_weekends - weekend_count
-                    underloaded_workers.append((worker_id_val, weekend_count, available_slots))
+                if actual_special_days_this_month > max_special_days_limit_for_month:
+                    overloaded_workers.append((worker_id_val, actual_special_days_this_month, max_special_days_limit_for_month))
+                elif actual_special_days_this_month < max_special_days_limit_for_month:
+                    available_slots = max_special_days_limit_for_month - actual_special_days_this_month
+                    underloaded_workers.append((worker_id_val, actual_special_days_this_month, available_slots))
 
-            overloaded_workers.sort(key=lambda x: x[1] - x[2], reverse=True)
-            underloaded_workers.sort(key=lambda x: x[2], reverse=True)
+            overloaded_workers.sort(key=lambda x: x[1] - x[2], reverse=True) 
+            underloaded_workers.sort(key=lambda x: x[2], reverse=True) 
 
-            month_dates = months[month_key]
-            # Use scheduler reference for holidays
-            weekend_dates_in_month = [date_val for date_val in month_dates if self.date_utils.is_weekend_day(date_val) or date_val in self.scheduler.holidays] # Renamed weekend_dates, date
+            month_dates_list = months[month_key]
+            
+            special_days_this_month_list = []
+            for date_val in month_dates_list:
+                # MANUALLY EMBEDDED CHECK
+                is_special_day = (date_val.weekday() >= 4 or
+                                  date_val in self.holidays or
+                                  (date_val + timedelta(days=1)) in self.holidays)
+                if is_special_day:
+                    special_days_this_month_list.append(date_val)
 
-            # Try to redistribute weekend shifts
-            for over_worker_id, over_count, over_limit in overloaded_workers:
-                if not underloaded_workers: break # No one to give shifts to
+            for over_worker_id, _, _ in overloaded_workers: # Removed unused over_count, over_limit
+                if not underloaded_workers: break 
 
-                # Iterate through potential dates to move FROM
-                possible_dates_to_move = [wd for wd in weekend_dates_in_month if over_worker_id in self.scheduler.schedule.get(wd, [])]
-                random.shuffle(possible_dates_to_move) # Randomize
+                # Iterate only through the worker's assigned special days in this month
+                possible_dates_to_move_from = []
+                for s_day in special_days_this_month_list: # Iterate only over actual special days
+                    if s_day in self.scheduler.worker_assignments.get(over_worker_id, set()) and \
+                       over_worker_id in self.scheduler.schedule.get(s_day, []): # Check if actually in schedule slot
+                        possible_dates_to_move_from.append(s_day)
+                
+                random.shuffle(possible_dates_to_move_from)
 
-                for weekend_date_val in possible_dates_to_move: # Renamed weekend_date
-
-                    # --- ADDED MANDATORY CHECK ---\
-                    if (over_worker_id, weekend_date_val) in self._locked_mandatory:
-                        logging.debug(f"Cannot move worker {over_worker_id} from locked mandatory weekend shift on {weekend_date_val.strftime('%Y-%m-%d')} for balancing.")
+                for special_day_to_reassign in possible_dates_to_move_from:
+                    # --- MANDATORY CHECKS ---
+                    if (over_worker_id, special_day_to_reassign) in self._locked_mandatory:
+                        logging.debug(f"Cannot move worker {over_worker_id} from locked mandatory shift on {special_day_to_reassign.strftime('%Y-%m-%d')} for balancing.")
                         continue
-                    if self._is_mandatory(over_worker_id, weekend_date_val): # Existing check
-                        logging.debug(f"Cannot move worker {over_worker_id} from config-mandatory weekend shift on {weekend_date_val.strftime('%Y-%m-%d')} for balancing.")
+                    if self._is_mandatory(over_worker_id, special_day_to_reassign): 
+                        logging.debug(f"Cannot move worker {over_worker_id} from config-mandatory shift on {special_day_to_reassign.strftime('%Y-%m-%d')} for balancing.")
                         continue
-                    # --- END ADDED CHECK ---\
-
-                    # Find the post this worker is assigned to
+                    # --- END MANDATORY CHECKS ---
+                    
                     try:
-                        # Use scheduler reference
-                        post_val = self.scheduler.schedule[weekend_date_val].index(over_worker_id) # Renamed post
-                    except (ValueError, KeyError, IndexError):
-                         logging.warning(f"Inconsistency finding post for {over_worker_id} on {weekend_date_val} during weekend balance.")
-                         continue # Skip if schedule state is inconsistent
+                        # Ensure the worker is actually in the schedule for this date and find post
+                        if special_day_to_reassign not in self.scheduler.schedule or \
+                           over_worker_id not in self.scheduler.schedule[special_day_to_reassign]:
+                            logging.warning(f"Data inconsistency: Worker {over_worker_id} tracked for {special_day_to_reassign} but not in schedule slot.")
+                            continue
+                        post_val = self.scheduler.schedule[special_day_to_reassign].index(over_worker_id)
+                    except (ValueError, KeyError, IndexError) as e: # Added specific exception logging
+                        logging.warning(f"Inconsistency finding post for {over_worker_id} on {special_day_to_reassign} during special day balance: {e}")
+                        continue
 
-                    swap_done_for_date = False
-                    # Try to find a suitable replacement (underloaded worker X)
-                    for under_worker_id, _, _ in underloaded_workers:
-                        # Skip if X is already assigned on this date
-                        # Use scheduler reference
-                        if under_worker_id in self.scheduler.schedule[weekend_date_val]:
+                    swap_done_for_this_shift = False
+                    for under_worker_id, _, _ in underloaded_workers: # Removed unused counts/slots
+                        # Check if under_worker is already assigned on this special day
+                        if special_day_to_reassign in self.scheduler.schedule and \
+                           under_worker_id in self.scheduler.schedule.get(special_day_to_reassign, []):
                             continue
 
-                        # Check if X can be assigned to this shift (using strict check)
-                        if self._can_assign_worker(under_worker_id, weekend_date_val, post_val):
-                            # Make the swap (directly modify scheduler's data)
-                            self.scheduler.schedule[weekend_date_val][post_val] = under_worker_id
-                            self.scheduler.worker_assignments[over_worker_id].remove(weekend_date_val)
-                            self.scheduler.worker_assignments.setdefault(under_worker_id, set()).add(weekend_date_val)
+                        # _can_assign_worker MUST use the same consistent definition of special day for its internal checks
+                        # (especially its call to _would_exceed_weekend_limit)
+                        if self._can_assign_worker(under_worker_id, special_day_to_reassign, post_val):
+                            # Perform the assignment change
+                            self.scheduler.schedule[special_day_to_reassign][post_val] = under_worker_id
+                            self.scheduler.worker_assignments[over_worker_id].remove(special_day_to_reassign)
+                            self.scheduler.worker_assignments.setdefault(under_worker_id, set()).add(special_day_to_reassign)
 
-                            # Update tracking data for BOTH workers
-                            self.scheduler._update_tracking_data(over_worker_id, weekend_date_val, post_val, removing=True)
-                            self.scheduler._update_tracking_data(under_worker_id, weekend_date_val, post_val) # Corrected: removed removing=False
-
-                            # Update local counts for this month
-                            weekend_counts_val[over_worker_id] -= 1
-                            weekend_counts_val[under_worker_id] = weekend_counts_val.get(under_worker_id, 0) + 1 # Ensure key exists
-
+                            self.scheduler._update_tracking_data(over_worker_id, special_day_to_reassign, post_val, removing=True)
+                            self.scheduler._update_tracking_data(under_worker_id, special_day_to_reassign, post_val) # Default is adding=False
+                            
+                            # Update local counts for the current month
+                            current_month_counts[over_worker_id] -= 1
+                            current_month_counts[under_worker_id] = current_month_counts.get(under_worker_id, 0) + 1
+                            
                             changes_made += 1
-                            logging.info(f"Improved weekend distribution: Moved weekend shift on {weekend_date_val.strftime('%Y-%m-%d')} "\
+                            logging.info(f"Improved special day distribution: Moved shift on {special_day_to_reassign.strftime('%Y-%m-%d')} "
                                          f"from worker {over_worker_id} to worker {under_worker_id}")
 
-                            # Update overloaded/underloaded lists locally for this month
-                            if weekend_counts_val[over_worker_id] <= over_limit:
+                            # --- Re-evaluate overloaded/underloaded lists locally ---
+                            # Check if 'over_worker_id' is still overloaded
+                            over_worker_new_count = current_month_counts[over_worker_id]
+                            over_worker_obj = next((w for w in self.workers_data if w['id'] == over_worker_id), None)
+                            over_worker_limit_this_month = self.max_consecutive_weekends
+                            if over_worker_obj and over_worker_obj.get('work_percentage', 100) < 100:
+                                over_worker_limit_this_month = max(1, int(self.max_consecutive_weekends * over_worker_obj.get('work_percentage',100) / 100))
+                            
+                            if over_worker_new_count <= over_worker_limit_this_month:
                                 overloaded_workers = [(w, c, l) for w, c, l in overloaded_workers if w != over_worker_id]
 
-                            for i, (w_id, count_val, slots_val) in enumerate(underloaded_workers): # Renamed count, slots
-                                if w_id == under_worker_id:
-                                    # Check if worker X is now at their max for the month
-                                    worker_X_data = next((w for w in self.workers_data if w['id'] == under_worker_id), None)
-                                    worker_X_max = self.max_consecutive_weekends
-                                    if worker_X_data and worker_X_data.get('work_percentage', 100) < 100:
-                                        worker_X_max = max(1, int(self.max_consecutive_weekends * worker_X_data.get('work_percentage', 100) / 100))
+                            # Check if 'under_worker_id' is still underloaded or became full
+                            under_worker_new_count = current_month_counts[under_worker_id]
+                            under_worker_obj = next((w for w in self.workers_data if w['id'] == under_worker_id), None)
+                            under_worker_limit_this_month = self.max_consecutive_weekends
+                            if under_worker_obj and under_worker_obj.get('work_percentage', 100) < 100:
+                                under_worker_limit_this_month = max(1, int(self.max_consecutive_weekends * under_worker_obj.get('work_percentage',100) / 100))
 
-                                    if weekend_counts_val[w_id] >= worker_X_max:
-                                        underloaded_workers.pop(i)
-                                    break # Found worker X in the list
-
-                            swap_done_for_date = True
-                            break # Found a swap for this weekend_date, move to next overloaded worker
-
-                # If a swap was done for this overloaded worker, break to check the next (potentially new) most overloaded worker
-                if swap_done_for_date:
-                     break # Break from the weekend_date loop for the current over_worker_id
-
-        logging.info(f"Weekend distribution improvement: made {changes_made} changes")
+                            if under_worker_new_count >= under_worker_limit_this_month:
+                                underloaded_workers = [(w, c, s) for w, c, s in underloaded_workers if w != under_worker_id]
+                            # --- End re-evaluation ---
+                            
+                            swap_done_for_this_shift = True
+                            break # Found a swap for this special_day_to_reassign, move to next overloaded worker or next date
+                    
+                    if swap_done_for_this_shift:
+                        # If a swap was made for this overloaded worker's shift,
+                        # it's often good to re-evaluate the most overloaded worker.
+                        # For simplicity here, we break and let the outer loop pick the next most overloaded.
+                        break 
+            
+        logging.info(f"Special day (weekend/holiday/eve) distribution improvement: made {changes_made} changes")
         if changes_made > 0:
-            self._save_current_as_best() # Save if changes were made
+            self._synchronize_tracking_data() 
+            self._save_current_as_best() 
         return changes_made > 0
-
+    
     def _fix_incompatibility_violations(self):
         """
         Check the entire schedule for incompatibility violations and fix them

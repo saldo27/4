@@ -258,7 +258,7 @@ class ConstraintChecker:
                                                         (date + timedelta(days=1)) in self.holidays)
             if is_special_day_for_unavailability_check:
                 if self._would_exceed_weekend_limit(worker_id, date): # This now calls the consistently defined limit
-                logging.debug(f"Worker {worker_id} would exceed weekend limit if assigned on {date}")
+                    logging.debug(f"Worker {worker_id} would exceed weekend limit if assigned on {date}")
                 return True
 
             return False

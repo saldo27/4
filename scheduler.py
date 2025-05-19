@@ -691,7 +691,8 @@ class Scheduler:
         # Ensure self.holidays is a list or set of datetime.date objects
         # Ensure self.date_utils exists and has is_holiday method if using holidays
         is_weekend_day = (date.weekday() >= 4 or # Friday, Saturday, Sunday
-            date in holidays_list or (date + timedelta(days=1)) in holidays_list)tils, 'is_holiday') and self.date_utils.is_holiday(date)
+                            date in holidays_list or
+                            (date + timedelta(days=1)) in holidays_list)
 
         is_tracked_as_weekend = (date.weekday() >= 4 or # Friday, Saturday, Sunday
                                  date in self.holidays or
