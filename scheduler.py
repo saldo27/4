@@ -1239,7 +1239,7 @@ class Scheduler:
                 worker['work_periods'] = f"{start_str} - {end_str}"
                 logging.info(f"Worker {worker['id']}: Empty work period set to full schedule period")
             
-    def generate_schedule(self, max_improvement_loops=40):
+    def generate_schedule(self, max_improvement_loops=70):
         logging.info("Starting schedule generation...")
         start_time = datetime.now()
 
@@ -1368,11 +1368,11 @@ class Scheduler:
                           'schedule': self.schedule, 
                           'worker_assignments': self.worker_assignments,
                           'worker_shift_counts': self.worker_shift_counts,
-                          'worker_weekend_counts': self.worker_weekend_counts, # Changed from worker_weekend_shifts
+                          'worker_weekend_counts': self.worker_weekend_counts, 
                           'worker_posts': self.worker_posts,
-                          'last_assigned_date': self.last_assigned_date,
+                          'last_assignment_date': self.last_assignment_date, 
                           'consecutive_shifts': self.consecutive_shifts,
-                          'score': self.calculate_score() # Use self.calculate_score directly
+                          'score': self.calculate_score() 
                      }
                      if not final_schedule_data.get('schedule'): 
                           raise SchedulerError("Failed to reconstruct final schedule data from current state.")
@@ -1451,7 +1451,7 @@ class Scheduler:
                  logging.info(f"  Worker {worker_id}: {count} shifts")
 
             logging.info("Weekend Shifts per Worker:")
-            for worker_id, count in sorted(self.worker_weekend_shifts.items()):
+            for worker_id, count in sorted(self.worker_weekend_counts.items()):
                  logging.info(f"  Worker {worker_id}: {count} weekend shifts")
 
             logging.info("Post Assignments per Worker:")
