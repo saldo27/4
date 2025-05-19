@@ -43,7 +43,8 @@ class ScheduleBuilder:
         self.worker_weekdays = scheduler.worker_weekdays
         self.worker_weekends = scheduler.worker_weekends
         self.constraint_skips = scheduler.constraint_skips
-        self.last_assigned_date = scheduler.last_assigned_date # Used in calculate_score
+        # Corrected attribute name below
+        self.last_assigned_date = scheduler.last_assignment_date # Used in calculate_score
         self.consecutive_shifts = scheduler.consecutive_shifts # Used in calculate_score
 
         logging.debug(f"[ScheduleBuilder.__init__] self.schedule object ID: {id(self.schedule)}, Initial keys: {list(self.schedule.keys())[:5]}")
