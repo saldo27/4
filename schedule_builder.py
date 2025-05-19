@@ -798,47 +798,86 @@ class ScheduleBuilder:
                 # Higher priority for workers further from their non-mandatory target
                 score += shift_difference * 1000
 
-            # --- MONTHLY TARGET CHECK ---\
+            # --- MONTHLY TARGET CHECK ---
             month_key = f"{date.year}-{date.month:02d}"
-            monthly_targets = worker.get('monthly_targets', {})
-            target_this_month = monthly_targets.get(month_key, 0)
+            # Ensure monthly_targets is a dictionary; worker_config might not have it if not pre-calculated
+            worker_config = next((w for w in self.workers_data if w['id'] == worker_id), None)
+            monthly_targets_config = worker_config.get('monthly_targets', {}) if worker_config else {}
+            
+            target_this_month = monthly_targets_config.get(month_key, 0)
 
             # Calculate current shifts assigned in this month
             shifts_this_month = 0
-            if worker_id in self.scheduler.worker_assignments: # Use scheduler reference
+            # Ensure worker_id is in worker_assignments before iterating
+            if worker_id in self.scheduler.worker_assignments:
                  for assigned_date in self.scheduler.worker_assignments[worker_id]:
                       if assigned_date.year == date.year and assigned_date.month == date.month:
                            shifts_this_month += 1
+            
+            # Define a more flexible monthly max.
+            # Allow at least target + buffer, or a slightly higher cap if target is very low.
+            # BUFFER_FOR_MAX_SHIFTS could be a class constant, e.g., 2 or 3
+            BUFFER_FOR_MONTHLY_MAX = worker_config.get('monthly_max_buffer', 1) # Allow configuring this buffer per worker if desired, else default
+            
+            # Max monthly should be at least the target, plus a buffer.
+            # Consider a minimum absolute max if target is 0.
+            if target_this_month > 0:
+                effective_max_monthly = target_this_month + BUFFER_FOR_MONTHLY_MAX + relaxation_level
+            else: # If monthly target is 0, allow a small number of shifts if relaxed
+                effective_max_monthly = BUFFER_FOR_MONTHLY_MAX + relaxation_level
+            
+            # Ensure max is not excessively low if target is very low.
+            # For instance, always allow at least 2-3 shifts in a month if possible, unless target is strictly 0.
+            # This part might need more tuning based on desired behavior for very low targets.
+            # effective_max_monthly = max(effective_max_monthly, 2 + relaxation_level) # Example: always allow at least 2 + relax
 
-            # Define the acceptable range (+/- 1 from target)
-            min_monthly = max(0, target_this_month - 1)
-            max_monthly = target_this_month + 1
+            logging.debug(f"  [Monthly Check W:{worker_id} M:{month_key}] ShiftsThisMonth:{shifts_this_month}, TargetThisMonth:{target_this_month}, EffectiveMaxMonthly:{effective_max_monthly}, RelaxLvl:{relaxation_level}")
 
-            monthly_diff = target_this_month - shifts_this_month
+            # If adding this shift would make the worker exceed their effective_max_monthly for this month
+            if shifts_this_month + 1 > effective_max_monthly:
+                # At lower relaxation levels, this is a hard stop.
+                if relaxation_level < 1: # Stricter for relaxation 0
+                    logging.debug(f"    Worker {worker_id} rejected for {date.strftime('%Y-%m-%d')}: Would exceed effective monthly max ({shifts_this_month + 1} > {effective_max_monthly}) at relax level {relaxation_level}")
+                    return float('-inf')
+                # At higher relaxation, it's a penalty but not a hard stop, unless it's way over.
+                elif relaxation_level < 2 and (shifts_this_month + 1 > effective_max_monthly + 1) : # Allow one more if relax_level = 1
+                    logging.debug(f"    Worker {worker_id} rejected for {date.strftime('%Y-%m-%d')}: Would significantly exceed effective monthly max ({shifts_this_month + 1} > {effective_max_monthly + 1}) at relax level {relaxation_level}")
+                    return float('-inf')
+                else: # relaxation_level == 2 or higher, or just slightly over at relax_level == 1
+                    score -= (shifts_this_month + 1 - effective_max_monthly) * 2000 # Heavy penalty
+                    logging.debug(f"    Worker {worker_id} penalized for {date.strftime('%Y-%m-%d')}: Exceeds effective monthly max ({shifts_this_month + 1} > {effective_max_monthly}). Score impact: {(shifts_this_month + 1 - effective_max_monthly) * -2000}")
 
-            # Penalize HARD if assignment goes over max_monthly + 1 (allow max+1 only)
-            if shifts_this_month >= max_monthly + 1 and relaxation_level < 2:
-                 logging.debug(f"Worker {worker_id} rejected for {date.strftime('%Y-%m-%d')}: Would exceed monthly max+1 ({shifts_this_month + 1} > {max_monthly})")
-                 return float('-inf')
-            elif shifts_this_month >= max_monthly and relaxation_level < 1:
-                 logging.debug(f"Worker {worker_id} rejected for {date.strftime('%Y-%m-%d')}: Would exceed monthly max ({shifts_this_month + 1} > {max_monthly}) at relax level {relaxation_level}") # Corrected log string
-                 return float('-inf')
+
+            # Scoring based on being below target (positive score impact)
+            if shifts_this_month < target_this_month:
+                 score_bonus_monthly = (target_this_month - shifts_this_month) * 2000 # Strong incentive to meet monthly target
+                 score += score_bonus_monthly
+                 logging.debug(f"    Worker {worker_id} gets monthly bonus for {date.strftime('%Y-%m-%d')}: below target ({shifts_this_month} < {target_this_month}). Bonus: {score_bonus_monthly}")
+            elif shifts_this_month == target_this_month and target_this_month > 0 : # Exactly at target
+                 score += 500 # Small bonus for being at target
+                 logging.debug(f"    Worker {worker_id} gets small monthly bonus for {date.strftime('%Y-%m-%d')}: at target ({shifts_this_month} == {target_this_month}). Bonus: 500")
 
 
-            # Strong bonus if worker is below min_monthly for this month
-            if shifts_this_month < min_monthly:
-                 # Bonus increases the further below min they are
-                 score += (min_monthly - shifts_this_month) * 2500 # High weight for monthly need
-                 logging.debug(f"Worker {worker_id} gets monthly bonus: below min ({shifts_this_month} < {min_monthly})")
-            # Moderate bonus if worker is within the target range but below target
-            elif shifts_this_month < target_this_month:
-                 score += 500 # Bonus for needing shifts this month
-                 logging.debug(f"Worker {worker_id} gets monthly bonus: below target ({shifts_this_month} < {target_this_month})")
-            # Penalty if worker is already at or above max_monthly
-            elif shifts_this_month >= max_monthly:
-                 score -= (shifts_this_month - max_monthly + 1) * 1500 # Penalty increases the further above max they go
-                 logging.debug(f"Worker {worker_id} gets monthly penalty: at/above max ({shifts_this_month} >= {max_monthly})")
-         
+            # --- Overall Target Shifts Check (Non-Mandatory Part) ---
+            # This part seems okay but ensure 'target_shifts' in worker_config is the overall non-mandatory target
+            current_total_shifts = len(self.worker_assignments.get(worker_id, set())) # Get current total assignments
+            overall_target_shifts = worker_config.get('target_shifts', 0) # This should be the overall target for the period
+
+            # If adding this shift makes the worker exceed their overall target
+            if current_total_shifts + 1 > overall_target_shifts:
+                if overall_target_shifts > 0 : # Only apply if target is not zero
+                    if relaxation_level < 1: # Strict for relaxation 0
+                        logging.debug(f"    Worker {worker_id} rejected for {date.strftime('%Y-%m-%d')}: Would exceed overall target ({current_total_shifts + 1} > {overall_target_shifts}) at relax level {relaxation_level}")
+                        return float('-inf')
+                    else: # Penalty for relaxation 1+
+                        penalty_overall = (current_total_shifts + 1 - overall_target_shifts) * 1500
+                        score -= penalty_overall
+                        logging.debug(f"    Worker {worker_id} penalized for {date.strftime('%Y-%m-%d')}: Exceeds overall target ({current_total_shifts + 1} > {overall_target_shifts}). Score impact: {-penalty_overall}")
+            else: # If below or at overall target
+                score_bonus_overall = (overall_target_shifts - (current_total_shifts + 1)) * 500 # Bonus for being under overall target
+                score += score_bonus_overall
+                logging.debug(f"    Worker {worker_id} gets overall target bonus for {date.strftime('%Y-%m-%d')}: ({current_total_shifts + 1} vs {overall_target_shifts}). Bonus: {score_bonus_overall}")
+
 
             # --- Gap Constraints ---\
             assignments = sorted(list(self.worker_assignments[worker_id]))
