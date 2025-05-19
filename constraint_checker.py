@@ -95,98 +95,131 @@ class ConstraintChecker:
             return False # Fail safe - assume incompatible on error
 
 
-    def _check_gap_constraint(self, worker_id, date, min_gap):
-        """Check minimum gap between assignments"""
+    def _check_gap_constraint(self, worker_id, date): # Removed min_gap parameter
+        """Check minimum gap between assignments, Friday-Monday, and 7/14 day patterns."""
         worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
-        work_percentage = worker.get('work_percentage', 100) if worker else 100
+        if not worker: return False # Should not happen
+        work_percentage = worker.get('work_percentage', 100)
 
-        # Use consistent gap rules
-        actual_min_gap = 3 if work_percentage < 100 else 2
-
-        assignments = sorted(self.worker_assignments.get(worker_id, []))
-        if assignments:
-            for prev_date in assignments:
-                days_between = abs((date - prev_date).days)
-        
-                # Basic gap check - Fixed to only check non-zero gaps
-                if 0 < days_between < actual_min_gap:
-                    return False
-            
-                # Special rule for full-time workers: Prevent Friday + Monday assignments
-                if work_percentage >= 10:
-                    if ((prev_date.weekday() == 4 and date.weekday() == 0) or 
-                        (date.weekday() == 4 and prev_date.weekday() == 0)):
-                        if days_between == 3:  # The gap between Friday and Monday
-                            return False
-        
-                # Prevent same day of week in consecutive weeks
-                if days_between in [7, 14]:
-                    return False
-            
-        return True
+        # Determine base minimum days required *between* shifts
+        # if gap_between_shifts = 1, then 2 days must be between assignments.
+        # if gap_between_shifts = 3, then 4 days must be between assignments.
+        # So, days_between must be >= self.scheduler.gap_between_shifts + 1
+        min_required_days_between = self.scheduler.gap_between_shifts + 1
     
-    def _would_exceed_weekend_limit(self, worker_id, date, relaxation_level=0):
-        """
-        Check if assigning this date would exceed the weekend limit
-        Modified to allow greater flexibility at higher relaxation levels
-        """
-        try:
-            # If it's not a weekend day or holiday, no need to check
-            if not (date.weekday() >= 4 or date in self.holidays):
+        # Part-time workers might need a larger gap
+        if work_percentage < 70: # Using a common threshold from ScheduleBuilder
+            min_required_days_between = max(min_required_days_between, self.scheduler.gap_between_shifts + 2) # e.g. at least +1 more day
+
+        assignments = sorted(list(self.scheduler.worker_assignments.get(worker_id, []))) # Use scheduler's live assignments
+
+        for prev_date in assignments:
+            if prev_date == date: continue # Should not happen if checking before assignment
+            days_between = abs((date - prev_date).days)
+
+            # Basic gap check
+            if days_between < min_required_days_between:
+                logging.debug(f"Constraint Check: Worker {worker_id} on {date.strftime('%Y-%m-%d')} fails basic gap with {prev_date.strftime('%Y-%m-%d')} ({days_between} < {min_required_days_between})")
                 return False
     
-            # Get all weekend assignments INCLUDING the new date
-            weekend_assignments = [
-                d for d in self.worker_assignments.get(worker_id, [])
-                if (d.weekday() >= 4 or d in self.holidays)
-            ]
+            # Friday-Monday rule: typically only if base gap is small (e.g., allows for 3-day difference)
+            # This rule means a worker doing Fri cannot do Mon, creating a 3-day diff.
+            # If min_required_days_between is already > 3, this rule is implicitly covered.
+            if self.scheduler.gap_between_shifts <= 1: # Only apply if basic gap could allow a 3-day span
+                if days_between == 3:
+                    if ((prev_date.weekday() == 4 and date.weekday() == 0) or \
+                        (date.weekday() == 4 and prev_date.weekday() == 0)):
+                        logging.debug(f"Constraint Check: Worker {worker_id} on {date.strftime('%Y-%m-%d')} fails Fri-Mon rule with {prev_date.strftime('%Y-%m-%d')}")
+                        return False
         
-            if date not in weekend_assignments:
-                weekend_assignments.append(date)
+            # Prevent same day of week in consecutive weeks (7 or 14 day pattern)
+            if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
+                logging.debug(f"Constraint Check: Worker {worker_id} on {date.strftime('%Y-%m-%d')} fails 7/14 day pattern with {prev_date.strftime('%Y-%m-%d')}")
+                return False
         
-            weekend_assignments.sort()  # Sort by date
-        
-            # CRITICAL: Still maintain the overall limit, but with more flexibility
-            # at higher relaxation levels
-            max_window_size = 21  # 3 weeks is the default
-            max_weekend_count = self.max_consecutive_weekends  # Use the configured value
-        
-            # At relaxation level 1 or 2, allow adjacent weekends more easily
-            if relaxation_level >= 1:
-                # Adjust to looking at a floating window rather than centered window
-                for i in range(len(weekend_assignments)):
-                    # Check a window starting at this weekend assignment
-                    window_start = weekend_assignments[i]
-                    window_end = window_start + timedelta(days=max_window_size)
-                
-                    # Count weekend days in this window
-                    window_weekend_count = sum(
-                        1 for d in weekend_assignments
-                        if window_start <= d <= window_end
-                    )
-                
-                    if window_weekend_count > max_weekend_count:
-                        return True
-            else:
-                # Traditional centered window check for strict enforcement
-                for check_date in weekend_assignments:
-                    window_start = check_date - timedelta(days=10)
-                    window_end = check_date + timedelta(days=10)
-                
-                    # Count weekend days in this window
-                    window_weekend_count = sum(
-                        1 for d in weekend_assignments
-                        if window_start <= d <= window_end
-                    )    
-                
-                    if window_weekend_count > max_weekend_count:
-                        return True
+        return True
     
-            return False
+    def _would_exceed_weekend_limit(self, worker_id, date): # No relaxation_level
+        """
+        Check if assigning this date would exceed the weekend limit.
+        This constraint is NOT subject to relaxation.
+        Uses logic similar to ScheduleBuilder._would_exceed_weekend_limit_simulated
+        """ 
+        try:
+            # If it's not a weekend day or holiday, no need to check
+            is_target_weekend = date.weekday() >= 4 or date in self.scheduler.holidays
+            if not is_target_weekend:
+                return False
+
+            worker_data = next((w for w in self.workers_data if w['id'] == worker_id), None)
+            if not worker_data: return True # Should not happen
+
+            work_percentage = worker_data.get('work_percentage', 100)
         
+            # Use scheduler's config for max_consecutive_weekends
+            max_allowed_consecutive = self.scheduler.max_consecutive_weekends 
+            if work_percentage < 70: # Or your specific threshold for part-time
+                max_allowed_consecutive = max(1, int(self.scheduler.max_consecutive_weekends * work_percentage / 100))
+
+            # Get all weekend assignments INCLUDING the new date from scheduler's live data
+            current_worker_assignments = self.scheduler.worker_assignments.get(worker_id, set())
+            weekend_dates = []
+            for d_val in current_worker_assignments:
+                if d_val.weekday() >= 4 or d_val in self.scheduler.holidays:
+                    weekend_dates.append(d_val)
+        
+            if date not in weekend_dates: # Add the date being checked
+                weekend_dates.append(date)
+        
+            weekend_dates.sort()
+
+            if not weekend_dates:
+                return False
+
+            # Check for consecutive weekends (logic from ScheduleBuilder's simulated version)
+            # This identifies groups of weekends that are on consecutive calendar weeks.
+            consecutive_groups = []
+            current_group = []
+        
+            for i, d_val in enumerate(weekend_dates):
+                if not current_group:
+                    current_group = [d_val]
+                else:
+                    prev_weekend_day_in_group = current_group[-1]
+                    # A common definition for consecutive weekends: next calendar weekend.
+                    # This usually means 5-9 days apart (e.g. Sat to next Fri, or Fri to next Sun)
+                    # The original code in ScheduleBuilder used 5-10 days. Let's be consistent.
+                    if 5 <= (d_val - prev_weekend_day_in_group).days <= 10: 
+                        current_group.append(d_val)
+                    else:
+                        if current_group: # Save previous group
+                            consecutive_groups.append(current_group)
+                        current_group = [d_val] # Start new group
+        
+            if current_group: # Add the last group
+                consecutive_groups.append(current_group)
+
+            # Find the longest sequence of such consecutive weekends
+            max_found_consecutive = 0
+            if not consecutive_groups: # No weekends assigned at all
+                 max_found_consecutive = 0
+            elif all(len(g) == 1 for g in consecutive_groups): # Only isolated weekends
+                max_found_consecutive = 1 if any(g for g in consecutive_groups) else 0
+            else: # At least one group has more than one weekend
+                max_found_consecutive = max(len(group) for group in consecutive_groups if group) if any(g for g in consecutive_groups) else 0
+        
+            if max_found_consecutive == 0 and weekend_dates: # If there are weekends, min consecutive is 1
+                max_found_consecutive = 1
+
+            if max_found_consecutive > max_allowed_consecutive:
+                logging.debug(f"Constraint Check: Worker {worker_id} on {date.strftime('%Y-%m-%d')} would have {max_found_consecutive} consecutive weekends (max: {max_allowed_consecutive}).")
+                return True
+
+            return False
+    
         except Exception as e:
-            logging.error(f"Error checking weekend limit: {str(e)}")
-            return True  # Fail safe
+            logging.error(f"Error checking weekend limit for {worker_id} on {date}: {str(e)}", exc_info=True)
+            return True  # Fail safe: assume limit exceeded on error
             
     def _is_worker_unavailable(self, worker_id, date):
         """
