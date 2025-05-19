@@ -816,23 +816,28 @@ class ScheduleBuilder:
             
             # Define a more flexible monthly max.
             # Allow at least target + buffer, or a slightly higher cap if target is very low.
-            # BUFFER_FOR_MAX_SHIFTS could be a class constant, e.g., 2 or 3
-            BUFFER_FOR_MONTHLY_MAX = worker_config.get('monthly_max_buffer', 1) # Allow configuring this buffer per worker if desired, else default
+            # BUFFER_FOR_MONTHLY_MAX should be defined in __init__, e.g., self.BUFFER_FOR_MONTHLY_MAX = 1
+            # Defaulting here if not present, but it's better to set it in __init__
+            buffer_monthly_max = getattr(self, 'BUFFER_FOR_MONTHLY_MAX', 1) 
             
-            # Max monthly should be at least the target, plus a buffer.
-            # Consider a minimum absolute max if target is 0.
             if target_this_month > 0:
-                effective_max_monthly = target_this_month + BUFFER_FOR_MONTHLY_MAX + relaxation_level
-            else: # If monthly target is 0, allow a small number of shifts if relaxed
-                effective_max_monthly = BUFFER_FOR_MONTHLY_MAX + relaxation_level
-            
-            # Ensure max is not excessively low if target is very low.
-            # For instance, always allow at least 2-3 shifts in a month if possible, unless target is strictly 0.
-            # This part might need more tuning based on desired behavior for very low targets.
-            # effective_max_monthly = max(effective_max_monthly, 2 + relaxation_level) # Example: always allow at least 2 + relax
+                effective_max_monthly = target_this_month + buffer_monthly_max + relaxation_level
+            else: # If monthly target is 0
+                # Allow at least a small number, especially if overall target is non-zero
+                # or if the schedule is very empty and we need to fill slots.
+                # This allows workers with a 0 monthly target (due to proration perhaps) to still pick up a shift.
+                overall_target_shifts = worker_config.get('target_shifts', 0)
+                if overall_target_shifts > 0: # If they have an overall target, allow at least buffer + relax
+                    effective_max_monthly = buffer_monthly_max + relaxation_level 
+                else: # Overall target is also 0, be very restrictive
+                    effective_max_monthly = relaxation_level # Only allow if relaxed
+
+                # Potentially, always allow at least 1 if relax_level = 0 and overall_target > 0
+                if overall_target_shifts > 0 and effective_max_monthly == 0 and relaxation_level == 0:
+                    effective_max_monthly = 1
+
 
             logging.debug(f"  [Monthly Check W:{worker_id} M:{month_key}] ShiftsThisMonth:{shifts_this_month}, TargetThisMonth:{target_this_month}, EffectiveMaxMonthly:{effective_max_monthly}, RelaxLvl:{relaxation_level}")
-
             # If adding this shift would make the worker exceed their effective_max_monthly for this month
             if shifts_this_month + 1 > effective_max_monthly:
                 # At lower relaxation levels, this is a hard stop.
