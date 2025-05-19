@@ -690,13 +690,12 @@ class Scheduler:
         # Check if the date is a weekend (Sat/Sun) or a defined holiday
         # Ensure self.holidays is a list or set of datetime.date objects
         # Ensure self.date_utils exists and has is_holiday method if using holidays
-        is_weekend_day = date.weekday() >= 4 # Saturday (5) or Sunday (6)
-        is_holiday_day = hasattr(self, 'date_utils') and hasattr(self.date_utils, 'is_holiday') and self.date_utils.is_holiday(date)
-        # Alternatively, if date_utils not available/reliable:
-        # is_holiday_day = date in self.holidays
+        is_weekend_day = (date.weekday() >= 4 or # Friday, Saturday, Sunday
+            date in holidays_list or (date + timedelta(days=1)) in holidays_list)tils, 'is_holiday') and self.date_utils.is_holiday(date)
 
-        is_tracked_as_weekend = is_weekend_day or is_holiday_day
-
+        is_tracked_as_weekend = (date.weekday() >= 4 or # Friday, Saturday, Sunday
+                                 date in self.holidays or
+                                 (date + timedelta(days=1)) in self.holidays)
         if is_tracked_as_weekend:
             if worker_id in self.worker_weekends:
                 if removing:
@@ -1110,10 +1109,10 @@ class Scheduler:
                             return False
 
                     # Enforce max_consecutive_weekends
-                    is_weekend = date.weekday() >= 4 or (
-                        hasattr(self.date_utils, 'is_holiday') and self.date_utils.is_holiday(date)
-                    )
-                    if is_weekend:
+                    is_special_day_for_allowed_check = (date.weekday() >= 4 or 
+                                                        date in self.holidays or
+                                                        (date + timedelta(days=1)) in self.holidays)
+                    if is_special_day_for_allowed_check:
                         current_weekends = len(self.worker_weekends.get(worker_id, []))
                         if current_weekends >= self.max_consecutive_weekends:
                             logging.debug(
