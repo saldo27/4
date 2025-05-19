@@ -1383,14 +1383,13 @@ class Scheduler:
 
             self.worker_assignments = final_schedule_data['worker_assignments']
             self.worker_shift_counts = final_schedule_data['worker_shift_counts']
-            self.worker_weekend_counts = final_schedule_data.get('worker_weekend_shifts', final_schedule_data.get('worker_weekend_counts', {})) # Handle both possible keys
+            self.worker_weekend_counts = final_schedule_data.get('worker_weekend_shifts', final_schedule_data.get('worker_weekend_counts', {})) 
             self.worker_posts = final_schedule_data['worker_posts']
-            self.last_assigned_date = final_schedule_data['last_assigned_date']
+            self.last_assignment_date = final_schedule_data['last_assignment_date'] 
             self.consecutive_shifts = final_schedule_data['consecutive_shifts']
             final_score = final_schedule_data.get('score', float('-inf')) 
 
             logging.info(f"Final schedule selected with score: {final_score:.2f}")
-
             empty_shifts_final = []
             total_slots_final = 0
             total_assignments_final = 0
