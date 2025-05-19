@@ -38,12 +38,12 @@ class ScheduleBuilder:
         self.date_utils = scheduler.date_utils
         self.gap_between_shifts = scheduler.gap_between_shifts 
         self.max_shifts_per_worker = scheduler.max_shifts_per_worker
+        self.max_consecutive_weekends = scheduler.max_consecutive_weekends 
         self.data_manager = scheduler.data_manager
         self.worker_posts = scheduler.worker_posts
         self.worker_weekdays = scheduler.worker_weekdays
         self.worker_weekends = scheduler.worker_weekends
         self.constraint_skips = scheduler.constraint_skips
-        # Corrected attribute name below
         self.last_assigned_date = scheduler.last_assignment_date # Used in calculate_score
         self.consecutive_shifts = scheduler.consecutive_shifts # Used in calculate_score
 
