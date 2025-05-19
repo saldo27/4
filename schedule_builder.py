@@ -1945,61 +1945,118 @@ class ScheduleBuilder:
 
     def _optimize_schedule(self, iterations=3):
         """Main schedule optimization function"""
-        best_score = self._evaluate_schedule()
+        # Ensure initial state is the best known if nothing better is found
+        if self.best_schedule_data is None:
+             self._save_current_as_best(initial=True)
+        
+        best_score = self._evaluate_schedule() # Evaluate current schedule score
+        if self.best_schedule_data and self.best_schedule_data['score'] > best_score:
+            best_score = self.best_schedule_data['score']
+            # If a better schedule was loaded or previously saved, restore it before optimizing
+            self._restore_best_schedule() 
+            # best_score is now correctly reflecting the restored best schedule
+        else:
+            # If current is better or no best_schedule_data, save current as best to start
+             self._save_current_as_best(initial=True)
+             best_score = self.best_schedule_data['score']
+
+
         iterations_without_improvement = 0
-        max_iterations_without_improvement = iterations
+        # iterations parameter here refers to max_iterations_without_improvement for the main loop
+        max_main_loop_iterations_without_improvement = iterations 
 
-        logging.info(f"Starting schedule optimization. Initial score: {best_score:.2f}")
+        logging.info(f"Starting schedule optimization. Initial best score: {best_score:.2f}")
 
-        while iterations_without_improvement < max_iterations_without_improvement:
-            improved = False
-    
-            # 1. First perform all basic scheduling optimizations
+        # Main optimization loop
+        for i in range(self.config.get('max_optimization_loops', 10)): # Max overall loops for optimization
+            logging.info(f"--- Main Optimization Loop Iteration: {i + 1} ---")
+            made_change_in_main_iteration = False
+            
+            # Synchronize data at the beginning of each major optimization iteration
+            self._synchronize_tracking_data()
+
+            # 1. Try to fill empty shifts (includes direct fill and swaps for empty slots)
             if self._try_fill_empty_shifts():
-                logging.info("Improved schedule by filling empty shifts")
-                improved = True
-        
-            # 3. Try weekend/holiday balancing 
-            if self._balance_weekend_shifts():
-                logging.info("Improved schedule through weekend shift balancing")
-                improved = True
-        
-            # 4. Try shift target balancing
-            if self._balance_workloads():
-                logging.info("Improved schedule through shift target balancing")
-                improved = True
+                logging.info("Improved schedule by filling empty shifts.")
+                made_change_in_main_iteration = True
+                self._synchronize_tracking_data() # Resync as swaps might have occurred
 
-            # Check if we've improved with the regular optimization steps
+            # 2. Try to improve weekend distribution (more complex weekend/weekday swaps)
+            # Using _balance_weekend_shifts as it seems more comprehensive than _improve_weekend_distribution
+            if self._balance_weekend_shifts():
+                logging.info("Improved schedule through comprehensive weekend shift balancing.")
+                made_change_in_main_iteration = True
+                self._synchronize_tracking_data() # Resync
+
+            # 3. Try to balance overall workloads
+            if self._balance_workloads():
+                logging.info("Improved schedule through workload balancing.")
+                made_change_in_main_iteration = True
+                self._synchronize_tracking_data() # Resync
+
+            # 4. Iteratively adjust last post distribution (using the enhanced method)
+            # The enhanced _adjust_last_post_distribution has its own internal iteration.
+            # Pass parameters for tolerance and its internal max_iterations.
+            # e.g., self.config.get('last_post_balance_tolerance', 0.5)
+            # e.g., self.config.get('last_post_max_iterations', 5)
+            logging.info("Attempting comprehensive last post distribution adjustment...")
+            if self._adjust_last_post_distribution(
+                balance_tolerance=self.config.get('last_post_balance_tolerance', 0.5), 
+                max_iterations=self.config.get('last_post_max_iterations', 5) 
+            ):
+                logging.info("Schedule potentially improved through iterative last post adjustments.")
+                made_change_in_main_iteration = True
+                # _adjust_last_post_distribution should call _synchronize_tracking_data and _save_current_as_best internally if changes are made.
+            
+            # 5. Final verification of incompatibilities and attempt to fix them.
+            # This is good to run after various swaps.
+            if self._verify_no_incompatibilities(): # This method also tries to fix them
+                 logging.info("Fixed incompatibility violations during optimization.")
+                 made_change_in_main_iteration = True
+                 self._synchronize_tracking_data()
+
+
+            # Evaluate the schedule after this full pass of optimizations
             current_score = self._evaluate_schedule()
+            logging.info(f"Score after main optimization iteration {i + 1}: {current_score:.2f}. Previous best: {best_score:.2f}")
+
             if current_score > best_score:
-                logging.info(f"Schedule improved. New score: {current_score:.2f} (was {best_score:.2f})")
+                logging.info(f"Overall schedule improved. New best score: {current_score:.2f} (was {best_score:.2f})")
                 best_score = current_score
-                iterations_without_improvement = 0
+                self._save_current_as_best() # Save the new best state
+                iterations_without_improvement = 0 # Reset counter
             else:
                 iterations_without_improvement += 1
-                logging.info(f"No improvement in iteration. Score: {current_score:.2f}. "\
-                            f"{iterations_without_improvement}/{max_iterations_without_improvement}")
+                logging.info(f"No overall improvement in main iteration {i+1}. Score: {current_score:.2f}. Iterations without improvement: {iterations_without_improvement}/{max_main_loop_iterations_without_improvement}")
+                # If no improvement, restore the previously known best to avoid keeping a worse state
+                if self.best_schedule_data and self.schedule != self.best_schedule_data['schedule']:
+                    logging.info(f"Restoring to best known score: {self.best_schedule_data['score']:.2f}")
+                    self._restore_best_schedule()
+
+
+            if not made_change_in_main_iteration and iterations_without_improvement >= 1 : # If no change was made at all in this iteration, and we already had no score improvement
+                logging.info(f"No changes made in main optimization iteration {i+1}, and no score improvement. Considering early exit from main loop.")
+                # break # Optional: break if a full pass makes absolutely no changes
+            
+            if iterations_without_improvement >= max_main_loop_iterations_without_improvement:
+                logging.info(f"Reached {max_main_loop_iterations_without_improvement} main iterations without score improvement. Stopping main optimization loop.")
+                break
         
-            # Break if we've reached maximum iterations without improvement
-            if iterations_without_improvement >= max_iterations_without_improvement:
-                break
-    
-        # 5. AFTER all other swaps and optimizations are done,
-        # NOW perform the last post adjustments on SAME DAY only
-        self._synchronize_tracking_data()
-        logging.info("Starting iterative last post distribution adjustment...")
-        last_post_adjustments_made_in_cycle = 0
-        for i in range(some_max_iterations): # e.g., 5 iterations
-            if self._adjust_last_post_distribution():
-                any_change_made = True # if you track overall changes
-                last_post_adjustments_made_in_cycle +=1
-                self._synchronize_tracking_data() # Resync after a change
-            else:
-                logging.debug(f"No more last post adjustments possible in iteration {i+1}.")
-                break
-        if last_post_adjustments_made_in_cycle > 0:
-            logging.info(f"Improved schedule through {last_post_adjustments_made_in_cycle} last post adjustments.")
-            # Potentially re-evaluate score
+        # One final check and save if the loop completed or broke.
+        # Ensure the final state in self.schedule is indeed the best one found.
+        if self.best_schedule_data and self.schedule != self.best_schedule_data['schedule']:
+            final_current_score = self._evaluate_schedule()
+            if final_current_score < self.best_schedule_data['score']:
+                 logging.info(f"Final check: Restoring to best saved score {self.best_schedule_data['score']:.2f} as current ({final_current_score:.2f}) is worse.")
+                 self._restore_best_schedule()
+            elif final_current_score > self.best_schedule_data['score']:
+                 logging.info(f"Final check: Current schedule score {final_current_score:.2f} is better than saved {self.best_schedule_data['score']:.2f}. Saving current.")
+                 self._save_current_as_best()
+                 best_score = final_current_score
+
+
+        logging.info(f"Optimization process complete. Final best score: {best_score:.2f}")
+        return best_score
 
     def _can_worker_swap(self, worker1_id, date1, post1, worker2_id, date2, post2):
         """
@@ -2632,79 +2689,149 @@ class ScheduleBuilder:
             # self.scheduler.worker_shift_counts = self.worker_shift_counts # This line is redundant
             # Add other tracking data sync if needed (weekends, etc.)
             
-    def _adjust_last_post_distribution(self, balance_tolerance=0.5, date=None):
+    def _adjust_last_post_distribution(self, balance_tolerance=0.5, max_iterations=10): # Added max_iterations
         """
-        Adjust the distribution of last-post slots (the highest-index shift each day)
-        among workers to ensure a fair spread.
+        Adjust the distribution of last-post slots (the highest-index actually filled shift each day)
+        among workers to ensure a fair spread, iteratively.
 
         Args:
-            balance_tolerance (float): how many slots over the average triggers a swap
-            date (datetime.date, optional): if provided, only rebalance the last-post slot on this date
+            balance_tolerance (float): How many slots over the average triggers a swap.
+            max_iterations (int): Maximum number of full passes to attempt balancing.
 
         Returns:
-            bool: True if a swap was made, False otherwise
+            bool: True if any swap was made across all iterations, False otherwise.
         """
-        # 1) Ensure our tracking data is up-to-date
-        self._synchronize_tracking_data()
+        overall_swaps_made = False
+        logging.info(f"Starting iterative last post distribution adjustment (max_iterations={max_iterations}, tolerance={balance_tolerance}).")
 
-        # 2) Count actual last-post assignments for each worker
-        last_post_counts = {w['id']: 0 for w in self.workers_data}
-        dates_with_last = []
+        for iteration in range(max_iterations):
+            made_swap_in_this_iteration = False
+            self._synchronize_tracking_data() # Crucial for up-to-date worker_assignments and other stats
 
-        for d_val, shifts in self.schedule.items(): # Renamed d
-            if not shifts:
-                continue
-            dates_with_last.append(d_val)
-            last_idx = len(shifts) - 1
-            wid = shifts[last_idx]
-            if wid is not None:
-                last_post_counts[wid] += 1
+            # 1. Count actual last-post assignments for each worker
+            last_post_counts = {w['id']: 0 for w in self.workers_data}
+            total_last_slots_in_schedule = 0
+            # Store (date, index_of_last_assigned_post, worker_in_that_post)
+            dates_and_their_last_posts = []
 
-        total_last_slots = len(dates_with_last)
-        # nothing to balance if no days have any shifts
-        if total_last_slots == 0:
-            return False
+            for d_val, shifts_on_day in self.schedule.items():
+                if not shifts_on_day or not any(s is not None for s in shifts_on_day):
+                    continue
 
-        # Filter the set of workers who actually have any last-post assignments
-        active_workers = {wid: cnt for wid, cnt in last_post_counts.items() if cnt > 0}
-        if not active_workers:
-            return False
+                # Find the actual last *assigned* post index for the day
+                actual_last_assigned_idx = -1
+                for i in range(len(shifts_on_day) - 1, -1, -1):
+                    if shifts_on_day[i] is not None:
+                        actual_last_assigned_idx = i
+                        break
+                
+                if actual_last_assigned_idx != -1:
+                    total_last_slots_in_schedule += 1
+                    worker_in_last_actual_post = shifts_on_day[actual_last_assigned_idx]
+                    # This worker_in_last_actual_post should not be None here
+                    last_post_counts[worker_in_last_actual_post] = last_post_counts.get(worker_in_last_actual_post, 0) + 1
+                    dates_and_their_last_posts.append((d_val, actual_last_assigned_idx, worker_in_last_actual_post))
 
-        # 3) Compute the average last-post count across active workers
-        avg_last = total_last_slots / len(self.workers_data) if self.workers_data else 0 # Divide by all workers
+            if total_last_slots_in_schedule == 0:
+                logging.debug(f"[AdjustLastPost Iter {iteration+1}] No last posts assigned in schedule. Nothing to balance.")
+                break 
 
-        # 4) Determine which dates to examine
-        dates_to_check = [date] if date is not None else sorted(self.schedule.keys())
+            num_eligible_workers = len(self.workers_data)
+            avg_last = total_last_slots_in_schedule / num_eligible_workers if num_eligible_workers > 0 else 0
+            logging.debug(f"[AdjustLastPost Iter {iteration+1}] Last Post Counts: {last_post_counts}, TotalActualLastSlots: {total_last_slots_in_schedule}, AvgLast/Worker: {avg_last:.2f}")
 
-        for d_val in dates_to_check: # Renamed d
-            shifts = self.schedule.get(d_val)
-            if not shifts:
-                continue
+            # Shuffle dates to avoid bias if multiple swaps are possible
+            random.shuffle(dates_and_their_last_posts)
 
-            last_idx = len(shifts) - 1
-            current_wid = shifts[last_idx]
-            if current_wid is None:
-                continue
+            for d_val, last_idx, current_wid_in_last_post in dates_and_their_last_posts:
+                # current_wid_in_last_post is the worker in the actual last assigned post for d_val
 
-            # If this worker exceeds the average by more than the tolerance, attempt a swap
-            if last_post_counts.get(current_wid, 0) - avg_last > balance_tolerance:
-                # Find the worker with the minimum last-post count
-                all_worker_last_counts = {w['id']: last_post_counts.get(w['id'], 0) for w in self.workers_data}
-                if not all_worker_last_counts: continue # No candidate to swap with
+                current_worker_last_post_count = last_post_counts.get(current_wid_in_last_post, 0)
+                if current_worker_last_post_count - avg_last > balance_tolerance:
+                    logging.debug(f"  [AdjustLastPost Iter {iteration+1}] Worker {current_wid_in_last_post} (LPs: {current_worker_last_post_count}) is overloaded with last posts on {d_val.strftime('%Y-%m-%d')} (avg LPs: {avg_last:.2f}). Trying to swap.")
 
-                # Look for that candidate on a non-last-post slot today
-                for idx in range(len(shifts) - 1):
-                    if shifts[idx] == candidate_wid:
-                        # Perform the swap
-                        shifts[last_idx], shifts[idx] = shifts[idx], shifts[last_idx]
-                        logging.info(\
-                            f"Swapped last post on {d_val.isoformat()}: "\
-                            f"{current_wid} (pos {last_idx}) ↔ {candidate_wid} (pos {idx})"\
-                        )
-                        return True
+                    potential_swap_ins = [] # Stores (worker_id, their_original_post_idx, their_overall_last_post_count)
+                    shifts_on_this_day = self.schedule[d_val] # Get current shifts for the day
 
-        # No swaps made
-        return False
+                    for earlier_post_idx in range(last_idx): # Iterate posts *before* the current last_idx
+                        worker_in_earlier_post = shifts_on_this_day[earlier_post_idx]
+                        if worker_in_earlier_post is not None and worker_in_earlier_post != current_wid_in_last_post:
+                            candidate_overall_lp_count = last_post_counts.get(worker_in_earlier_post, 0)
+                            # Consider swapping if the candidate has fewer LPs than the current last post holder
+                            if candidate_overall_lp_count < current_worker_last_post_count:
+                                potential_swap_ins.append((worker_in_earlier_post, earlier_post_idx, candidate_overall_lp_count))
+                    
+                    if not potential_swap_ins:
+                        logging.debug(f"    No suitable intra-day swap candidates (working earlier, fewer LPs) found for {current_wid_in_last_post} on {d_val.strftime('%Y-%m-%d')}.")
+                        continue
+
+                    potential_swap_ins.sort(key=lambda x: x[2]) # Prioritize candidates with the fewest LPs
+
+                    for candidate_to_swap_in_id, candidate_original_post_idx, _ in potential_swap_ins:
+                        # Simulate the intra-day swap:
+                        # current_wid_in_last_post (overloaded) moves to candidate_original_post_idx
+                        # candidate_to_swap_in_id (less loaded) moves to last_idx
+                        
+                        temp_shifts_on_day_after_swap = list(shifts_on_this_day)
+                        temp_shifts_on_day_after_swap[last_idx] = candidate_to_swap_in_id
+                        temp_shifts_on_day_after_swap[candidate_original_post_idx] = current_wid_in_last_post
+                        
+                        # Check for new incompatibilities created by this intra-day swap
+                        valid_swap_incompatibility_check = True
+                        # Check candidate in new (last) post vs others
+                        others_at_last_post_sim = [w for i, w in enumerate(temp_shifts_on_day_after_swap) if i != last_idx and w is not None]
+                        if not self._check_incompatibility_with_list(candidate_to_swap_in_id, others_at_last_post_sim):
+                            valid_swap_incompatibility_check = False
+                        
+                        if valid_swap_incompatibility_check:
+                            # Check original last post worker in new (earlier) post vs others
+                            others_at_earlier_post_sim = [w for i, w in enumerate(temp_shifts_on_day_after_swap) if i != candidate_original_post_idx and w is not None]
+                            if not self._check_incompatibility_with_list(current_wid_in_last_post, others_at_earlier_post_sim):
+                                valid_swap_incompatibility_check = False
+                        
+                        # The two workers being swapped must not be incompatible with each other
+                        if valid_swap_incompatibility_check and self._are_workers_incompatible(current_wid_in_last_post, candidate_to_swap_in_id):
+                             valid_swap_incompatibility_check = False
+
+                        if valid_swap_incompatibility_check:
+                            # Perform the actual swap in self.schedule
+                            self.schedule[d_val][last_idx] = candidate_to_swap_in_id
+                            self.schedule[d_val][candidate_original_post_idx] = current_wid_in_last_post
+                            
+                            logging.info(f"  [AdjustLastPost Iter {iteration+1}] Swapped last post on {d_val.strftime('%Y-%m-%d')}: Worker {current_wid_in_last_post} (was P{last_idx}, LPs {current_worker_last_post_count}) with {candidate_to_swap_in_id} (was P{candidate_original_post_idx}, LPs {last_post_counts.get(candidate_to_swap_in_id,0)})")
+
+                            # Update local last_post_counts for subsequent checks in this iteration
+                            last_post_counts[current_wid_in_last_post] -= 1
+                            last_post_counts[candidate_to_swap_in_id] = last_post_counts.get(candidate_to_swap_in_id, 0) + 1
+                            
+                            # Worker assignments (dates) don't change, only their posts on this day.
+                            # Full _update_tracking_data for posts will be handled by _synchronize_tracking_data at the start of the next iteration.
+                            
+                            made_swap_in_this_iteration = True
+                            overall_swaps_made = True
+                            break # Found a valid swap for this d_val, move to the next day in dates_and_their_last_posts
+                    
+                    if made_swap_in_this_iteration and d_val != dates_and_their_last_posts[-1][0] if dates_and_their_last_posts else True: 
+                        # If a swap was made for this day, it might be beneficial to restart the daily check
+                        # for this iteration, as counts and averages have changed.
+                        # However, for simplicity of this iterative version, we'll let the next outer iteration
+                        # pick up all changes with recalculated averages.
+                        # So, we just break from iterating candidates for *this specific day* and move to the next day.
+                        pass 
+
+
+            if not made_swap_in_this_iteration:
+                logging.info(f"[AdjustLastPost Iter {iteration+1}/{max_iterations}] No beneficial last post swaps found in this full pass.")
+                break # Break the outer loop if no swaps were made in a full pass over all days
+
+        if overall_swaps_made:
+            self._synchronize_tracking_data() # Final sync to ensure worker_posts etc. are correct
+            self._save_current_as_best() 
+            logging.info(f"Finished last post adjustments. Total iterations run: {iteration + 1}. Overall swaps made: {overall_swaps_made}.")
+        else:
+            logging.info(f"No last post adjustments made after {iteration + 1} iteration(s).")
+            
+        return overall_swaps_made
 
     # 7. Backup and Restore Methods
 
