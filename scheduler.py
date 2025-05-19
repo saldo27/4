@@ -75,27 +75,26 @@ class Scheduler:
             self.gap_between_shifts = config.get('gap_between_shifts', 3)
             self.max_consecutive_weekends = config.get('max_consecutive_weekends', 3)
 
-            # Sort the variable shifts by start date for efficient lookup
-            #self.variable_shifts.sort(key=lambda x: x['start_date'])
-
             # Initialize tracking dictionaries
-            self.schedule = {} # MOVED HERE, BEFORE _initialize_schedule_with_variable_shifts()
+            self.schedule = {} 
             self.worker_assignments = {w['id']: set() for w in self.workers_data}
             self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
             self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
             self.worker_weekends = {w['id']: [] for w in self.workers_data}
 
             # Initialize the schedule structure with the appropriate number of shifts for each date
-            self._initialize_schedule_with_variable_shifts() # MOVED HERE, AFTER self.schedule = {}
+            self._initialize_schedule_with_variable_shifts() 
 
             # Initialize tracking data structures
             self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
-            self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data}
+            self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data} # Renamed from self.worker_weekend_shifts for consistency with ScheduleBuilder
             self.worker_post_counts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
             self.worker_weekday_counts = {w['id']: {d: 0 for d in range(7)} for w in self.workers_data}
             self.worker_holiday_counts = {w['id']: 0 for w in self.workers_data}
             # Store last assignment date for gap checks
-            self.last_assignment_date = {w['id']: None for w in self.workers_data}
+            self.last_assignment_date = {w['id']: None for w in self.workers_data} # Corrected attribute name
+            # Initialize consecutive_shifts
+            self.consecutive_shifts = {w['id']: 0 for w in self.workers_data} # <<< --- ADD THIS LINE
                       
             # Initialize worker targets
             for worker in self.workers_data:
@@ -103,15 +102,16 @@ class Scheduler:
                     worker['target_shifts'] = 0
 
             # Set current time and user
-            self.date_utils = DateTimeUtils()
+            # self.date_utils = DateTimeUtils() # Already initialized above
             self.current_datetime = self.date_utils.get_spain_time()
             self.current_user = 'saldo27'
         
             # Add max_shifts_per_worker calculation
             total_days = (self.end_date - self.start_date).days + 1
-            total_shifts = total_days * self.num_shifts
+            total_shifts_possible = total_days * self.num_shifts # Renamed for clarity
             num_workers = len(self.workers_data)
-            self.max_shifts_per_worker = (total_shifts // num_workers) + 2  # Add some flexibility
+            # Ensure num_workers is not zero to prevent DivisionByZeroError
+            self.max_shifts_per_worker = (total_shifts_possible // num_workers) + 2 if num_workers > 0 else total_shifts_possible 
 
             # Track constraint skips
             self.constraint_skips = {
@@ -126,7 +126,7 @@ class Scheduler:
             self.stats = StatisticsCalculator(self)
             self.constraint_checker = ConstraintChecker(self)  
             self.data_manager = DataManager(self)
-            self.schedule_builder = ScheduleBuilder(self)
+            # self.schedule_builder will be initialized later in generate_schedule
             self.eligibility_tracker = WorkerEligibilityTracker(
                 self.workers_data,
                 self.holidays,
@@ -134,26 +134,20 @@ class Scheduler:
                 self.max_consecutive_weekends
             )
 
-            # Process variable shifts
-            #self.variable_shifts = config.get('variable_shifts', [])
-    
             # Sort the variable shifts by start date for efficient lookup
             self.variable_shifts.sort(key=lambda x: x['start_date'])
     
-            # Initialize the schedule structure with the appropriate number of shifts for each date
-            #self._initialize_schedule_with_variable_shifts()
-
             # Calculate targets before proceeding
             self._calculate_target_shifts()
 
             self._log_initialization()
 
-            # Ensure ScheduleBuilder receives the updated self.workers_data
-            self.builder = ScheduleBuilder(self)
-    
+            # The ScheduleBuilder is now initialized within the generate_schedule method
+            # after the scheduler's own state for the run is fully prepared.
+            # self.schedule_builder = ScheduleBuilder(self) # This line is moved to generate_schedule
 
         except Exception as e:
-            logging.error(f"Initialization error: {str(e)}")
+            logging.error(f"Initialization error: {str(e)}", exc_info=True) # Added exc_info=True
             raise SchedulerError(f"Failed to initialize scheduler: {str(e)}")
         
     def _validate_config(self, config):
