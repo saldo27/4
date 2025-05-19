@@ -2548,10 +2548,10 @@ class ScheduleBuilder:
 
     def _synchronize_tracking_data(self):
         # Placeholder for your method in ScheduleBuilder if it exists, or call scheduler\'s
-        if hasattr(self.scheduler, \'_synchronize_tracking_data\'):
+        if hasattr(self.scheduler, '_synchronize_tracking_data'):
             self.scheduler._synchronize_tracking_data()
         else:
-            logging.warning("Scheduler\'s _synchronize_tracking_data not found by builder.")
+            logging.warning("Scheduler\'_synchronize_tracking_data not found by builder.")
             # Fallback or simplified sync if necessary:
             new_worker_assignments = {w['id']: set() for w in self.workers_data}
             new_worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
@@ -2653,8 +2653,8 @@ class ScheduleBuilder:
         return self.scheduler._restore_best_schedule()
 
     def _save_current_as_best(self, initial=False):
-        # Placeholder for your method in ScheduleBuilder or call scheduler\'s
-        if hasattr(self.scheduler, \'_save_current_as_best\') and not initial : # initial is handled by scheduler itself
+        # Placeholder for your method in ScheduleBuilder or call scheduler's
+        if hasattr(self.scheduler, '_save_current_as_best') and not initial : # Corrected attribute name and removed erroneous backslash
              # This might be complex if the scheduler\'s method relies on its own context deeply
              # For now, let\'s assume it\'s mostly about copying data.
              # The builder should update its own best_schedule_data
