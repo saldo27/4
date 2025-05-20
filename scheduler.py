@@ -1049,9 +1049,9 @@ class Scheduler:
                             return False
             
                     # Reject 7- or 14-day same-weekday patterns
-                        if self._is_weekly_pattern(days_difference):
-                            logging.debug(f"Worker {worker_id} cannot be assigned on {date} as it creates a weekly pattern")
-                            return False
+                    if self._is_weekly_pattern(days_difference) and date.weekday() == assigned_date.weekday(): # ADDED WEEKDAY CHECK
+                        logging.debug(f"Worker {worker_id} cannot be assigned on {date} as it creates a 7/14 day pattern with {assigned_date}")
+                        return False
 
                     # Enforce max_consecutive_weekends
                     is_special_day_for_allowed_check = (date.weekday() >= 4 or 
