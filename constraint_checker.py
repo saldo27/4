@@ -6,7 +6,6 @@ from exceptions import SchedulerError
 if TYPE_CHECKING:
     from scheduler import Scheduler
 
-
 class ConstraintChecker:
     """Handles all constraint checking logic for the scheduler"""
     
@@ -290,14 +289,10 @@ class ConstraintChecker:
                 logging.debug(f"- Failed: Worker unavailable")
                 return False
 
-            # 4. CRITICAL: Check minimum gap - NEVER RELAX THIS
-            assignments = sorted(list(self.worker_assignments.get(worker_id, [])))
-            if assignments:
-                for prev_date in assignments:
-                    days_between = abs((date - prev_date).days)
-                    if 0 < days_between < self.gap_between_shifts + 1:  # Fixed to only check non-zero gaps within range
-                        logging.debug(f"- Failed: Insufficient gap ({days_between} days)")
-                        return False
+            # 4. Check gap constraints (including 7/14 day pattern)
+            if not self._check_gap_constraint(worker_id, date): # This method includes the 7/14 day check
+                logging.debug(f"- Failed: Gap or 7/14 day pattern constraint for worker {worker_id} on {date}")
+                return False
 
             # 6. CRITICAL: Check weekend limit - NEVER RELAX THIS
             if self._would_exceed_weekend_limit(worker_id, date):
@@ -327,15 +322,10 @@ class ConstraintChecker:
                 return False, "unavailable"
 
             # Gap constraints
-            if not skip_constraints:
-                min_gap = 3 if try_part_time and work_percentage < 100 else self.gap_between_shifts + 1
-            
-                assignments = sorted(list(self.worker_assignments.get(worker_id, [])))
-                if assignments:
-                    for prev_date in assignments:
-                        days_between = abs((date - prev_date).days)
-                        if 0 < days_between < min_gap:  # Fixed to only check non-zero gaps within range
-                            return False, f"gap constraint ({min_gap} days)"
+            if not skip_constraints: # Assuming skip_constraints applies to this too
+                if not self._check_gap_constraint(worker_id, date): # Use the comprehensive check
+                    # _check_gap_constraint already logs, or you can get a reason from it if refactored
+                    return False, "gap or 7/14 day pattern constraint"
 
             # Incompatibility constraints
             if not skip_constraints and not self._check_incompatibility(worker_id, date):
