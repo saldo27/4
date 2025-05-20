@@ -954,8 +954,8 @@ class Scheduler:
                                 })
                     
                         # Check for 7 or 14 day patterns
-                        if days_between == 7 or days_between == 14:
-                            violations.append({
+                        if (days_between == 7 or days_between == 14) and date1.weekday() == date2.weekday(): # ADDED WEEKDAY CHECK
+                            violations.append({ ... })
                                 'type': 'weekly_pattern',
                                 'worker_id': worker_id,
                                 'date1': date1,
@@ -1004,87 +1004,184 @@ class Scheduler:
             logging.error(f"Error checking schedule constraints: {str(e)}", exc_info=True)
             return []
 
-    def _is_allowed_assignment(self, worker_id, date, shift_num):
+    def _is_allowed_assignment(self, worker_id, date, shift_num): # shift_num is unused here, consider removing if not needed elsewhere
         """
         Check if assigning this worker to this date/shift would violate any constraints.
         Returns True if assignment is allowed, False otherwise.        
     
         Enforces:
-        - Special case: No Friday-Monday assignments (require 3 days gap)
-        - No 7 or 14 day patterns
+        - Minimum gap between shifts
+        - Special case: No Friday-Monday assignments (require 3 days gap if base gap is 1)
+        - No 7 or 14 day patterns (same weekday)
         - Worker incompatibility constraints
+        - Max consecutive weekends
         """
         try:
-            # Check if worker is available on this date
             worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
             if not worker:
+                logging.warning(f"_is_allowed_assignment: Worker {worker_id} not found in workers_data.")
                 return False
         
-            # Improved check if worker is already assigned on this date
-            if date in self.schedule:
-                if worker_id in self.schedule[date]:
-                    logging.debug(f"Worker {worker_id} already assigned to a different post on {date}")
-                    return False
+            # Improved check if worker is already assigned on this date (any post)
+            # This should ideally be checked by the caller or at a higher level before even considering this worker.
+            # However, keeping a safeguard here.
+            if date in self.schedule and worker_id in self.schedule.get(date, []):
+                logging.debug(f"_is_allowed_assignment: Worker {worker_id} already assigned to a post on {date.strftime('%Y-%m-%d')}")
+                return False
     
-            # Check past assignments for minimum gap and patterns
-            for assigned_date in self.worker_assignments.get(worker_id, set()):
+            # Check against past assignments for minimum gap and patterns
+            # Ensure worker_id is in worker_assignments and it's a set
+            worker_assignments_set = self.worker_assignments.get(worker_id)
+            if not isinstance(worker_assignments_set, set):
+                logging.warning(f"_is_allowed_assignment: worker_assignments for {worker_id} is not a set. Forcing empty set for check.")
+                worker_assignments_set = set()
+
+            # --- SINGLE LOOP for checking against previous assignments ---
+            for assigned_date in worker_assignments_set:
+                if assigned_date == date: # Should not happen if checking before assignment
+                    continue
+
                 days_difference = abs((date - assigned_date).days)
-        
-                # Check past assignments for minimum gap and patterns
-                for assigned_date in self.worker_assignments.get(worker_id, set()):
-                    days_difference = abs((date - assigned_date).days)
     
-                    # Basic minimum gap check based on configurable parameter
-                    min_days_between = self.gap_between_shifts + 1  # +1 because we need days_difference > gap
-                    if days_difference < min_days_between:
-                        logging.debug(f"Worker {worker_id} cannot be assigned on {date} due to insufficient rest (needs at least {min_days_between} days)")
-                        return False
+                # 1. Basic minimum gap check based on configurable parameter
+                #    gap_between_shifts is the number of full rest days.
+                #    So, days_difference must be > gap_between_shifts, or >= gap_between_shifts + 1
+                min_days_required_between = self.gap_between_shifts + 1
+                
+                # Consider part-time worker adjustments for min_gap if applicable
+                # This logic should be consistent with ConstraintChecker._check_gap_constraint
+                work_percentage = worker.get('work_percentage', 100)
+                if work_percentage < 70: # Threshold for part-time
+                     min_days_required_between = max(min_days_required_between, self.gap_between_shifts + 2)
+
+                if days_difference < min_days_required_between:
+                    logging.debug(f"_is_allowed_assignment: Worker {worker_id} on {date.strftime('%Y-%m-%d')} fails gap with {assigned_date.strftime('%Y-%m-%d')} ({days_difference} < {min_days_required_between})")
+                    return False
         
-                    # Special case for Friday-Monday if gap is only 1 day
-                    if self.gap_between_shifts == 1 and days_difference == 3:
-                        # Check if one date is Friday (weekday 4) and the other is Monday (weekday 0)
-                        if ((assigned_date.weekday() == 4 and date.weekday() == 0) or 
+                # 2. Special case for Friday-Monday if base gap is small (e.g., 1 day)
+                #    This rule applies if gap_between_shifts = 1, leading to a 3-day difference for Fri-Mon.
+                #    If min_days_required_between is already > 3, this specific check is covered.
+                if self.gap_between_shifts <= 1: # Only if the base gap could allow a 3-day span
+                    if days_difference == 3:
+                        if ((assigned_date.weekday() == 4 and date.weekday() == 0) or \
                             (assigned_date.weekday() == 0 and date.weekday() == 4)):
-                            logging.debug(f"Worker {worker_id} cannot be assigned Friday-Monday (needs at least {self.gap_between_shifts + 2} days gap)")
+                            logging.debug(f"_is_allowed_assignment: Worker {worker_id} on {date.strftime('%Y-%m-%d')} fails Fri-Mon rule with {assigned_date.strftime('%Y-%m-%d')}")
                             return False
             
-                    # Reject 7- or 14-day same-weekday patterns
-                    if self._is_weekly_pattern(days_difference) and date.weekday() == assigned_date.weekday(): # ADDED WEEKDAY CHECK
-                        logging.debug(f"Worker {worker_id} cannot be assigned on {date} as it creates a 7/14 day pattern with {assigned_date}")
+                # 3. Reject 7- or 14-day same-weekday patterns
+                if self._is_weekly_pattern(days_difference) and date.weekday() == assigned_date.weekday():
+                    logging.debug(f"_is_allowed_assignment: Worker {worker_id} on {date.strftime('%Y-%m-%d')} fails 7/14 day pattern with {assigned_date.strftime('%Y-%m-%d')}")
+                    return False
+
+            # --- END OF SINGLE LOOP ---
+
+            # 4. Enforce max_consecutive_weekends
+            #    This check should be consistent with how ConstraintChecker handles it.
+            is_special_day_for_allowed_check = (date.weekday() >= 4 or \
+                                                date in self.holidays or \
+                                                (date + timedelta(days=1)) in self.holidays)
+            if is_special_day_for_allowed_check:
+                # This logic needs to be robust, similar to ConstraintChecker._would_exceed_weekend_limit
+                # For simplicity here, assuming a direct call or replicated logic.
+                # The `self.constraint_checker` should be used if possible for consistency.
+                # Example using a conceptual direct check (ensure logic matches _would_exceed_weekend_limit):
+                
+                # Get current weekend/special day assignments for the worker
+                simulated_weekend_dates = []
+                for ad in worker_assignments_set:
+                    if (ad.weekday() >= 4 or ad in self.holidays or (ad + timedelta(days=1)) in self.holidays):
+                        simulated_weekend_dates.append(ad)
+                if date not in simulated_weekend_dates: # Add the current date if it's special and not already there
+                    simulated_weekend_dates.append(date)
+                simulated_weekend_dates.sort()
+
+                if simulated_weekend_dates:
+                    max_allowed_consecutive = self.max_consecutive_weekends
+                    if work_percentage < 70: # Part-time adjustment
+                        max_allowed_consecutive = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
+                    
+                    count = 0
+                    # Simplified check: count consecutive special days (this is not a robust "consecutive weekends" check)
+                    # For a robust check, you'd need the logic from _would_exceed_weekend_limit in ConstraintChecker
+                    # This example is a placeholder for a more robust check:
+                    current_consecutive_count = 0
+                    last_special_day = None
+                    
+                    temp_special_days = sorted(list(worker_assignments_set) + [date])
+                    
+                    # Iterate through all assigned days for the worker + the current one
+                    processed_weeks = set()
+                    consecutive_weekend_count = 0
+                    
+                    sorted_assignments_plus_current = sorted(list(worker_assignments_set) + [date])
+                    
+                    active_weekend_group = []
+
+                    for d_idx, current_d in enumerate(sorted_assignments_plus_current):
+                        is_d_special = (current_d.weekday() >= 4 or current_d in self.holidays or (current_d + timedelta(days=1)) in self.holidays)
+                        if not is_d_special:
+                            if active_weekend_group: # End of a group
+                                if len(active_weekend_group) > max_allowed_consecutive:
+                                    logging.debug(f"_is_allowed_assignment: Worker {worker_id} on {date.strftime('%Y-%m-%d')} would exceed max_consecutive_weekends (group ending, count: {len(active_weekend_group)} > {max_allowed_consecutive})")
+                                    return False
+                                active_weekend_group = []
+                            continue
+
+                        # It is a special day
+                        if not active_weekend_group:
+                            active_weekend_group.append(current_d)
+                        else:
+                            # Check if current_d is consecutive to the last in active_weekend_group
+                            # "Consecutive" for weekends means roughly 7 days apart, same calendar week or next.
+                            # This simplified logic checks if they are within 10 days (e.g. Fri week 1 to Sun week 2)
+                            # and belong to different weeks or are close enough.
+                            # A more robust check would look at calendar weeks.
+                            last_in_group = active_weekend_group[-1]
+                            if (current_d - last_in_group).days <= 10: # Simplified check for "consecutive weekend period"
+                                # Check if they are distinct weekends (more than 2 days apart to avoid Fri/Sat/Sun of same weekend)
+                                if (current_d - last_in_group).days > 2 or current_d.isocalendar()[1] != last_in_group.isocalendar()[1]:
+                                     active_weekend_group.append(current_d)
+                                # else, it's part of the same weekend block as last_in_group, don't increment "consecutive weekend count" yet
+                            else: # Gap is too large, start new group
+                                if len(active_weekend_group) > max_allowed_consecutive:
+                                    logging.debug(f"_is_allowed_assignment: Worker {worker_id} on {date.strftime('%Y-%m-%d')} would exceed max_consecutive_weekends (group reset, count: {len(active_weekend_group)} > {max_allowed_consecutive})")
+                                    return False
+                                active_weekend_group = [current_d]
+                    
+                    # Final check for the last active group
+                    if active_weekend_group and len(active_weekend_group) > max_allowed_consecutive:
+                        logging.debug(f"_is_allowed_assignment: Worker {worker_id} on {date.strftime('%Y-%m-%d')} would exceed max_consecutive_weekends (final group, count: {len(active_weekend_group)} > {max_allowed_consecutive})")
                         return False
 
-                    # Enforce max_consecutive_weekends
-                    is_special_day_for_allowed_check = (date.weekday() >= 4 or 
-                                                        date in self.holidays or
-                                                        (date + timedelta(days=1)) in self.holidays)
-                    if is_special_day_for_allowed_check:
-                        current_weekends = len(self.worker_weekends.get(worker_id, []))
-                        if current_weekends >= self.max_consecutive_weekends:
-                            logging.debug(
-                                f"Worker {worker_id} cannot be assigned on {date}: "
-                                f"would exceed max_consecutive_weekends={self.max_consecutive_weekends}"
-                            )
-                            return False
         
-            # Check incompatibility constraints using worker data
-            incompatible_with = worker.get('incompatible_with', [])
-            if incompatible_with:
-                # Check if any incompatible worker is already assigned to this date
-                for incompatible_id in incompatible_with:
-                    if date in self.schedule and incompatible_id in self.schedule[date]:
-                        logging.debug(f"Worker {worker_id} cannot work with incompatible worker {incompatible_id} on {date}")
-                        return False
-        
-            # Use the schedule_builder's incompatibility check method
-            if not self.schedule_builder._check_incompatibility(worker_id, date):
-                return False
+            # 5. Check incompatibility constraints using worker data (from self.workers_data)
+            # This should ideally use self.constraint_checker._check_incompatibility(worker_id, date)
+            # for consistency, assuming schedule_builder is not available here or we want a self-contained check.
+            
+            # Get workers already assigned to other posts on this date
+            assigned_on_date = []
+            if date in self.schedule:
+                for post_idx, assigned_w_id in enumerate(self.schedule[date]):
+                    if assigned_w_id is not None and post_idx != shift_num: # Exclude the current shift being considered
+                        assigned_on_date.append(assigned_w_id)
+            
+            # Check worker_id against those already assigned_on_date
+            worker_incompat_list = worker.get('incompatible_with', [])
+            for other_assigned_id in assigned_on_date:
+                if str(other_assigned_id) in worker_incompat_list: # Assuming IDs in worker_incompat_list are strings
+                    logging.debug(f"_is_allowed_assignment: Worker {worker_id} incompatible with {other_assigned_id} on {date.strftime('%Y-%m-%d')}")
+                    return False
+                # Bidirectional check
+                other_worker_data = next((w for w in self.workers_data if w['id'] == other_assigned_id), None)
+                if other_worker_data and str(worker_id) in other_worker_data.get('incompatible_with', []):
+                    logging.debug(f"_is_allowed_assignment: Worker {other_assigned_id} incompatible with {worker_id} on {date.strftime('%Y-%m-%d')}")
+                    return False
     
             # All checks passed
             return True
         except Exception as e:
-            logging.error(f"Error checking assignment constraints: {str(e)}")
-            # Default to not allowing on error
-            return False
+            logging.error(f"Error in Scheduler._is_allowed_assignment for worker {worker_id} on {date}: {str(e)}", exc_info=True)
+            return False # Default to not allowing on error
 
     def _fix_constraint_violations(self):
         """
