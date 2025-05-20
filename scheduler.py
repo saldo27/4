@@ -955,7 +955,7 @@ class Scheduler:
                     
                         # Check for 7 or 14 day patterns
                         if (days_between == 7 or days_between == 14) and date1.weekday() == date2.weekday(): # ADDED WEEKDAY CHECK
-                            violations.append({ ... })
+                            violations.append({ 
                                 'type': 'weekly_pattern',
                                 'worker_id': worker_id,
                                 'date1': date1,
