@@ -48,17 +48,31 @@ except Exception as e:
     print(f"Error setting up FileHandler for {log_file_path}: {e}")
 
 # Create Console Handler
-console_handler = logging.StreamHandler(sys.stdout) # Explicitly use sys.stdout
-console_handler.setLevel(logging.DEBUG) # Or a higher level like logging.INFO for less console noise if desired
-console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s') # Simpler format for console
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.DEBUG) # Or INFO
+# Try a very basic formatter for the console first to minimize error sources
+console_formatter = logging.Formatter('%(levelname)s: %(message)s')
 console_handler.setFormatter(console_formatter)
+
+# This is an important addition for Windows console issues:
+# Try to force UTF-8 or handle errors gracefully for the console.
+# This might not always work depending on Kivy's console redirection.
+if hasattr(console_handler.stream, 'reconfigure'):
+    try:
+        console_handler.stream.reconfigure(encoding='utf-8', errors='replace')
+        print("Console stream reconfigured to UTF-8 with error replacement.")
+    except Exception as e:
+        print(f"Could not reconfigure console stream encoding: {e}")
+elif hasattr(console_handler.stream, 'encoding') and console_handler.stream.encoding:
+    print(f"Console stream encoding: {console_handler.stream.encoding}")
+    # If not UTF-8, this might be the source of issues if messages have special chars.
+
 logger.addHandler(console_handler)
 print("ConsoleHandler added.")
 
 # Test log message
-logging.debug("Logging system configured. This is a test debug message.")
-logging.info("Logging system configured. This is a test info message.")
-
+logging.debug("Logging system configured. This is a DEBUG test message for console and file.")
+logging.info("Logging system configured. This is an INFO test message for console and file.")
 # class SchedulerError(Exception): # This is already defined or should be if not
 #     """Custom exception for Scheduler errors"""
 #     pass
