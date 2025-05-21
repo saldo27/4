@@ -360,36 +360,50 @@ class ConstraintChecker:
                 return False
         return True
 
-    def _check_weekday_balance(self, worker_id, date):
+    def _check_weekday_balance(self, worker_id, date_to_assign, current_assignments_for_worker):
         """
-        Check if assigning this date would maintain weekday balance
-        
+        Check if assigning date_to_assign to worker_id would maintain weekday balance (+/- 1).
+        Uses a hypothetical count.
+
+        Args:
+            worker_id: The ID of the worker.
+            date_to_assign: The datetime.date object of the shift being considered.
+            current_assignments_for_worker: A set of datetime.date objects representing
+                                             the worker's current assignments.
         Returns:
-            bool: True if assignment maintains balance, False otherwise
+            bool: True if assignment maintains balance, False otherwise.
         """
         try:
-            # Get current weekday counts including the new date
-            weekday = date.weekday()
-            weekday_counts = self.scheduler.worker_weekdays.get(worker_id, {}).copy()
-            if not weekday_counts:
-                weekday_counts = {i: 0 for i in range(7)}  # Initialize if needed
-                
-            weekday_counts[weekday] = weekday_counts.get(weekday, 0) + 1
+            # 1. Calculate hypothetical weekday counts
+            hypothetical_weekday_counts = {day: 0 for day in range(7)}
 
-            # Calculate maximum difference
-            max_count = max(weekday_counts.values())
-            min_count = min(weekday_counts.values())
-        
-            # Strictly enforce maximum 1 shift difference between weekdays
-            if max_count - min_count > 1:
-                logging.debug(f"Weekday balance violated for worker {worker_id}: {weekday_counts}")
+            # Count existing assignments
+            for assigned_date in current_assignments_for_worker:
+                hypothetical_weekday_counts[assigned_date.weekday()] += 1
+            
+            # Add the new assignment
+            hypothetical_weekday_counts[date_to_assign.weekday()] += 1
+
+            # 2. Calculate spread
+            min_count = min(hypothetical_weekday_counts.values())
+            max_count = max(hypothetical_weekday_counts.values())
+            spread = max_count - min_count
+
+            # 3. Check balance: spread > 1 means the difference is 2 or more, violating +/-1
+            # Example: counts {Mon:1, Tue:1, Wed:3} -> min=1, max=3, spread=2. (Violates +/-1)
+            # Example: counts {Mon:1, Tue:2, Wed:2} -> min=1, max=2, spread=1. (OK for +/-1)
+            if spread > 1: # This means the difference is 2 or more.
+                logging.debug(f"Constraint Check (Weekday Balance): Worker {worker_id} for date {date_to_assign.strftime('%Y-%m-%d')}. "
+                              f"Hypothetical counts: {hypothetical_weekday_counts}, Spread: {spread}. VIOLATES +/-1 rule.")
                 return False
 
+            logging.debug(f"Constraint Check (Weekday Balance): Worker {worker_id} for date {date_to_assign.strftime('%Y-%m-%d')}. "
+                          f"Hypothetical counts: {hypothetical_weekday_counts}, Spread: {spread}. OK for +/-1 rule.")
             return True
 
         except Exception as e:
-            logging.error(f"Error checking weekday balance for worker {worker_id}: {str(e)}")
-            return True
+            logging.error(f"Error in ConstraintChecker._check_weekday_balance for worker {worker_id}, date {date_to_assign}: {str(e)}", exc_info=True)
+            return False # Safer to return False on error
  
     def _get_post_counts(self, worker_id):
         """
