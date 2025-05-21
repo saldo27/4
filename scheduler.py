@@ -1331,9 +1331,14 @@ class Scheduler:
              logging.exception("Error during schedule improvement loop.")
              raise SchedulerError(f"Failed during improvement loop {improvement_loop_count}: {str(e)}")
                          
-        self.schedule_builder._adjust_last_post_distribution(balance_tolerance=0.5)
-        logging.info("Post-generation: Final last-post distribution adjustment complete.")
-        logging.debug(f"DEBUG 11 (After final _adjust_last_post_distribution): self.schedule keys: {list(self.schedule.keys())}, Schedule content sample: {dict(list(self.schedule.items())[:2])}")
+            logging.info("Attempting final adjustment of last post distribution for non-variable shift days...")
+            if self.schedule_builder._adjust_last_post_distribution(
+                balance_tolerance=1.0, # For +/-1 overall balance
+                max_iterations=self.config.get('last_post_adjustment_max_iterations', 5) # Make configurable
+            ):
+                logging.info("Last post distribution adjusted.")
+                # Potentially re-evaluate score or save if this step is considered significant enough
+                # self.schedule_builder._save_current_as_best() # If this method makes direct changes and should be saved
 
         # --- 4. Finalization ---
         try:
