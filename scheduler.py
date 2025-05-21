@@ -13,24 +13,55 @@ from statistics import StatisticsCalculator
 from exceptions import SchedulerError
 from worker_eligibility import WorkerEligibilityTracker
 
-# Configure logging
+# Configure logging explicitly
 log_dir = "logs"
 if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-    
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(log_dir, "scheduler.log")),
-        logging.StreamHandler()  # Also log to console
-    ]
-)
+    try:
+        os.makedirs(log_dir)
+        print(f"Log directory '{log_dir}' created successfully.")
+    except OSError as e:
+        print(f"Error creating log directory '{log_dir}': {e}. Logs might not be saved to file.")
+        # Fallback to current directory if 'logs' can't be made
+        log_dir = "." 
 
-# Class definition
-class SchedulerError(Exception):
-    """Custom exception for Scheduler errors"""
-    pass
+log_file_path = os.path.join(log_dir, "scheduler.log")
+print(f"Attempting to log to: {os.path.abspath(log_file_path)}") # Print absolute path for verification
+
+# Get the root logger
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG) # Set the root logger level
+
+# Remove any existing handlers to avoid duplicates or conflicts
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+    handler.close() # Close the handler before removing
+
+# Create File Handler
+try:
+    file_handler = logging.FileHandler(log_file_path, mode='w') # 'w' for overwrite each run
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+    print(f"FileHandler added for {log_file_path}")
+except Exception as e:
+    print(f"Error setting up FileHandler for {log_file_path}: {e}")
+
+# Create Console Handler
+console_handler = logging.StreamHandler(sys.stdout) # Explicitly use sys.stdout
+console_handler.setLevel(logging.DEBUG) # Or a higher level like logging.INFO for less console noise if desired
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s') # Simpler format for console
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+print("ConsoleHandler added.")
+
+# Test log message
+logging.debug("Logging system configured. This is a test debug message.")
+logging.info("Logging system configured. This is a test info message.")
+
+# class SchedulerError(Exception): # This is already defined or should be if not
+#     """Custom exception for Scheduler errors"""
+#     pass
 
 class Scheduler:
     """Main Scheduler class that coordinates all scheduling operations"""
@@ -1331,14 +1362,14 @@ class Scheduler:
              logging.exception("Error during schedule improvement loop.")
              raise SchedulerError(f"Failed during improvement loop {improvement_loop_count}: {str(e)}")
                          
-            logging.info("Attempting final adjustment of last post distribution for non-variable shift days...")
-            if self.schedule_builder._adjust_last_post_distribution(
-                balance_tolerance=1.0, # For +/-1 overall balance
-                max_iterations=self.config.get('last_post_adjustment_max_iterations', 5) # Make configurable
-            ):
-                logging.info("Last post distribution adjusted.")
-                # Potentially re-evaluate score or save if this step is considered significant enough
-                # self.schedule_builder._save_current_as_best() # If this method makes direct changes and should be saved
+        logging.info("Attempting final adjustment of last post distribution for non-variable shift days...")
+        if self.schedule_builder._adjust_last_post_distribution(
+            balance_tolerance=1.0, # For +/-1 overall balance
+            max_iterations=self.config.get('last_post_adjustment_max_iterations', 5) # Make configurable
+        ):
+            logging.info("Last post distribution adjusted.")
+            # Potentially re-evaluate score or save if this step is considered significant enough
+            # self.schedule_builder._save_current_as_best() # If this method makes direct changes and should be saved
 
         # --- 4. Finalization ---
         try:
