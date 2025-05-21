@@ -305,44 +305,49 @@ class ConstraintChecker:
             logging.error(f"Error in _can_assign_worker for worker {worker_id}: {str(e)}", exc_info=True)
             return False
               
-    def _check_constraints(self, worker_id, date, skip_constraints=False, try_part_time=False):
+    def _check_constraints(self, worker_id, date, skip_constraints=False, try_part_time=False): # try_part_time seems unused
         """
-        Unified constraint checking
+        Unified constraint checking.
         Returns: (bool, str) - (passed, reason_if_failed)
         """
         try:
-            worker = next(w for w in self.workers_data if w['id'] == worker_id)
-            work_percentage = float(worker.get('work_percentage', 100))
+            worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+            if not worker:
+                return False, "worker_not_found"
+            # work_percentage = float(worker.get('work_percentage', 100)) # Not used directly in this version
 
             # Basic availability checks (never skipped)
-            if date in self.worker_assignments.get(worker_id, []):
-                return False, "already assigned"
+            # self.scheduler.worker_assignments refers to the main worker assignment tracking
+            if date in self.scheduler.worker_assignments.get(worker_id, []): # Check against current assignments
+                return False, "already_assigned_this_day" 
 
-            if self._is_worker_unavailable(worker_id, date):
-                return False, "unavailable"
+            if self._is_worker_unavailable(worker_id, date): # This checks days_off, work_periods
+                # _is_worker_unavailable already logs
+                return False, "unavailable_generic" 
 
-            # Gap constraints
-            if not skip_constraints: # Assuming skip_constraints applies to this too
-                if not self._check_gap_constraint(worker_id, date): # Use the comprehensive check
-                    # _check_gap_constraint already logs, or you can get a reason from it if refactored
-                    return False, "gap or 7/14 day pattern constraint"
+            if not skip_constraints:
+                # Incompatibility constraints (with workers already in self.scheduler.schedule for that date)
+                # Assuming self.scheduler.constraint_checker is this instance or has the method
+                if not self._check_incompatibility(worker_id, date): # Check against self.scheduler.schedule
+                    # _check_incompatibility logs
+                    return False, "incompatibility"
 
-            # Incompatibility constraints
-            if not skip_constraints and not self._check_incompatibility(worker_id, date):
-                return False, "incompatibility"
-
-            # Weekend constraints
-            is_special_day_for_constraints_check = (date.weekday() >= 4 or
-                                                    date in self.holidays or
-                                                    (date + timedelta(days=1)) in self.holidays)
-            if is_special_day_for_constraints_check:  
+                # Gap constraints (including 7/14 day pattern, Fri-Mon)
+                # This uses self.scheduler.worker_assignments for its checks
+                if not self._check_gap_constraint(worker_id, date):
+                    # _check_gap_constraint logs
+                    return False, "gap_or_pattern_constraint"
+            
+                # Weekend constraints (Max consecutive weekends/special days)
+                # This uses self.scheduler.worker_assignments
                 if self._would_exceed_weekend_limit(worker_id, date):
-                    return False, "too many weekend shifts in period"
+                    # _would_exceed_weekend_limit logs
+                    return False, "weekend_limit_exceeded"
 
-            return True, "" 
+            return True, "passed_all_checks"
         except Exception as e:
-            logging.error(f"Error checking constraints for worker {worker_id}: {str(e)}")
-            return False, f"error: {str(e)}"
+            logging.error(f"Error checking constraints for worker {worker_id} on {date}: {str(e)}", exc_info=True)
+            return False, f"error_in_check_constraints: {str(e)}"
 
     def _check_day_compatibility(self, worker_id, date):
         """Check if worker is compatible with all workers already assigned to this date"""
