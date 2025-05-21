@@ -936,23 +936,46 @@ class ScheduleBuilder:
                         logging.debug(f"Score check fail (Hard Constraint): Worker {worker['id']} on {date.strftime('%Y-%m-%d')} fails 7/14 day pattern with {prev_date.strftime('%Y-%m-%d')}")
                         return float('-inf')
         
-            # --- Weekend Limits ---\
-            if self._would_exceed_weekend_limit(worker_id, date):
-                logging.debug(f"Score check fail: Worker {worker_id} would exceed weekend limit on {date.strftime('%Y-%m-%d')}")
-                return float('-inf')
+                    # --- Weekend Limits ---\
+                    if self._would_exceed_weekend_limit(worker_id, date):
+                        logging.debug(f"Score check fail: Worker {worker_id} would exceed weekend limit on {date.strftime('%Y-%m-%d')}")
+                        return float('-inf')
         
-            # --- Weekday Balance Check ---\
-            weekday = date.weekday()
-            weekday_counts = self.worker_weekdays[worker_id].copy()
-            weekday_counts[weekday] += 1  # Simulate adding this assignment
+                    # --- Weekday Balance Check (Strict +/- 1, meaning max spread is 1) ---
+                    # This check uses self.scheduler.worker_weekdays which should be the source of truth
+                    # as updated by self.scheduler._update_tracking_data
+           
+                    worker_id_str = str(worker['id']) # Ensure string ID
+            
+                    # self.worker_weekdays in ScheduleBuilder refers directly to scheduler.worker_weekdays
+                    if worker_id_str not in self.worker_weekdays: # Check if key exists in the referenced dict
+                        logging.warning(f"Worker {worker_id_str} not found in self.worker_weekdays during score calculation. Initializing.")
+                        # Initialize it directly on the shared object if necessary, though robust init in Scheduler is better
+                        self.worker_weekdays[worker_id_str] = {day_idx: 0 for day_idx in range(7)}
+
+                    current_weekday_counts_from_scheduler = self.worker_weekdays[worker_id_str]
+            
+                    # Simulate adding the current assignment using a copy
+                    hypothetical_weekday_counts = current_weekday_counts_from_scheduler.copy()
+                    target_weekday = date.weekday()
+                    hypothetical_weekday_counts[target_weekday] = hypothetical_weekday_counts.get(target_weekday, 0) + 1
+
+                    min_hypothetical_count = min(hypothetical_weekday_counts.values())
+                    max_hypothetical_count = max(hypothetical_weekday_counts.values())
+            
+                    spread = max_hypothetical_count - min_hypothetical_count
         
-            max_weekday = max(weekday_counts.values())
-            min_weekday = min(weekday_counts.values())
-        
-            # If this assignment would create more than 1 day difference, reject it
-            if (max_weekday - min_weekday) > 1 and relaxation_level < 1:
-                return float('-inf')
-        
+                    if spread > 1: # If spread is 2 or more, it violates the +/-1 balance.
+                        if relaxation_level < 1: # Strict for relaxation_level 0
+                            logging.debug(f"Score check fail (Hard Weekday Imbalance): Worker {worker_id_str} for date {date.strftime('%Y-%m-%d')}. "
+                                          f"Hypothetical counts: {hypothetical_weekday_counts}, Spread: {spread} (>1). Relaxation: {relaxation_level}. Returning -inf.")
+                            return float('-inf')
+                        else:
+                            penalty_weekday_balance = (spread - 1) * 250 
+                            score -= penalty_weekday_balance
+                            logging.debug(f"Score penalty (Relaxed Weekday Imbalance): Worker {worker_id_str} for date {date.strftime('%Y-%m-%d')}. "
+                                          f"Hypothetical counts: {hypothetical_weekday_counts}, Spread: {spread}. Penalty: -{penalty_weekday_balance}. Relaxation: {relaxation_level}.")
+                            
             # --- Scoring Components (softer constraints) ---\
 
             # 1. Overall Target Score (Reduced weight compared to monthly)
