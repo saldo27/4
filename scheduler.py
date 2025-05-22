@@ -296,6 +296,36 @@ class Scheduler:
             for w in self.workers_data
         }
 
+    def _save_current_as_best(self):
+        """
+        Save the current schedule as the best schedule found so far.
+        """
+        try:
+            logging.debug("Saving current schedule as best...")
+        
+            # Create a deep copy of the current schedule
+            best_schedule = {}
+            for date, shifts in self.schedule.items():
+                best_schedule[date] = shifts.copy()
+            
+            # Save all tracking data
+            self.best_schedule_data = {
+                'schedule': best_schedule,
+                'worker_assignments': {w_id: assignments.copy() for w_id, assignments in self.worker_assignments.items()},
+                'worker_posts': {w_id: posts.copy() for w_id, posts in self.worker_posts.items()},
+                'worker_weekdays': {w_id: counts.copy() for w_id, counts in self.worker_weekdays.items()},
+                'worker_weekends': {w_id: dates.copy() for w_id, dates in self.worker_weekends.items()},
+                'worker_shift_counts': self.worker_shift_counts.copy() if hasattr(self, 'worker_shift_counts') else None,
+                'worker_weekend_counts': self.worker_weekend_counts.copy() if hasattr(self, 'worker_weekend_counts') else None,
+                'score': self.calculate_score()
+            }
+        
+            logging.debug(f"Saved best schedule with score: {self.best_schedule_data['score']}")
+            return True
+        except Exception as e:
+            logging.error(f"Error saving best schedule: {str(e)}", exc_info=True)
+            return False
+
     def _initialize_schedule_with_variable_shifts(self):
         # Initialize loop variables
         current_date = self.start_date
