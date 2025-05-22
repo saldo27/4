@@ -16,18 +16,57 @@ from worker_eligibility import WorkerEligibilityTracker
 # Configure logging
 log_dir = "logs"
 if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-    
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(log_dir, "scheduler.log")),
-        logging.StreamHandler()  # Also log to console
-    ]
-)
+    try:
+        os.makedirs(log_dir)
+        print(f"Log directory '{log_dir}' created successfully.")
+    except OSError as e:
+        print(f"Error creating log directory '{log_dir}': {e}. Logs might not be saved to file.")
+        # Fallback to current directory if 'logs' can't be made
+        log_dir = "." 
 
-# Class definition
+log_file_path = os.path.join(log_dir, "scheduler.log")
+print(f"Logging to: {os.path.abspath(log_file_path)}")
+
+# Configure root logger
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
+# Remove any existing handlers to avoid duplicates
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+    handler.close()
+
+# Create and add handlers
+try:
+    # File handler - using 'a' (append) mode instead of 'w' (overwrite)
+    # Also specifying UTF-8 encoding to properly handle special characters
+    file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8', errors='replace')
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+    
+    # Console handler with UTF-8 encoding if possible
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.DEBUG)
+    console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+    console_handler.setFormatter(console_formatter)
+    # Try to configure console for UTF-8
+    if hasattr(console_handler.stream, 'reconfigure'):
+        try:
+            console_handler.stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception as e:
+            print(f"Could not reconfigure console stream encoding: {e}")
+    logger.addHandler(console_handler)
+    
+    # Test log message to verify configuration
+    logging.info("Logging system configured successfully.")
+except Exception as e:
+    print(f"ERROR: Failed to configure logging: {e}")
+    # Set up a basic console logger as fallback
+    logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
+    logging.error(f"Failed to set up file logging. Logs will only appear in console. Error: {e}")# Define classes and methods...
+
 class SchedulerError(Exception):
     """Custom exception for Scheduler errors"""
     pass
