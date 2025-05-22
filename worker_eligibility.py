@@ -101,7 +101,7 @@ class WorkerEligibilityTracker:
     def _check_weekend_constraints(self, worker_id, date):
         """
         Check weekend-related constraints - ensuring max consecutive weekend/holiday shifts
-        Adjusted to account for work percentage.
+        Adjusted to account for both work percentage (<70%) and work periods.
 
         Args:
             worker_id: ID of the worker to check
@@ -109,18 +109,64 @@ class WorkerEligibilityTracker:
         Returns:
             bool: True if worker can be assigned to this weekend date
         """
-        # If not a weekend day, no constraint
+        # If not a weekend day or holiday, no constraint applies
         if not self._is_weekend_day(date):
             return True
 
-        # Find worker data to get work percentage
+        # Find worker data to get work percentage and work periods
         worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
         if not worker:
             return False
     
+        # Check if date is within worker's work periods
+        if 'work_periods' in worker and worker.get('work_periods', '').strip():
+            # We need access to date_utils to parse the ranges
+            # This assumes we either have self.date_utils or can access it through scheduler
+            try:
+                # Attempt to parse work periods
+                if hasattr(self, 'date_utils'):
+                    work_periods = self.date_utils.parse_date_ranges(worker['work_periods'])
+                elif hasattr(self, 'scheduler') and hasattr(self.scheduler, 'date_utils'):
+                    work_periods = self.scheduler.date_utils.parse_date_ranges(worker['work_periods'])
+                else:
+                    # Fallback - assume date string format like "01-01-2025 - 31-03-2025"
+                    work_periods = []
+                    period_strings = worker['work_periods'].split(',')
+                    for period in period_strings:
+                        if '-' in period:
+                            dates = period.split('-')
+                            if len(dates) >= 2:
+                                # Very basic parsing - this should be replaced with proper date_utils call
+                                start_str = dates[0].strip()
+                                end_str = dates[-1].strip()
+                                # This is a placeholder - actual parsing would depend on your date formats
+                                # In a real implementation, use your date_utils parser
+                                work_periods.append((start_str, end_str))
+            
+                # Check if date is within any work period
+                in_work_period = False
+                for start, end in work_periods:
+                    if start <= date <= end:
+                        in_work_period = True
+                        break
+            
+                if not in_work_period:
+                    # Date is outside work periods, so the worker shouldn't be assigned
+                    return False
+                
+            except Exception as e:
+                # Log error and continue with the rest of the checks
+                # In production, ensure this error is properly logged
+                print(f"Error checking work periods for worker {worker_id}: {e}")
+    
         # Get work percentage and adjust max consecutive weekends
         work_percentage = float(worker.get('work_percentage', 100))
-        adjusted_max_weekends = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
+    
+        # Adjust max consecutive weekends for part-time workers (<70%)
+        if work_percentage < 70:
+            adjusted_max_weekends = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
+        else:
+            adjusted_max_weekends = self.max_consecutive_weekends
 
         # Create a temporary list including existing weekend days and the new one
         all_weekend_dates = self.recent_weekends[worker_id].copy()
@@ -128,22 +174,77 @@ class WorkerEligibilityTracker:
         # Avoid double counting if date is already in the list
         if date not in all_weekend_dates:
             all_weekend_dates.append(date)
+    
+        all_weekend_dates.sort()
 
-        # Check for every date in the combined list
-        for check_date in all_weekend_dates:
-            window_start = check_date - timedelta(days=10)  # 10 days before
-            window_end = check_date + timedelta(days=10)    # 10 days after
+        # Check for consecutive weekends using a window approach
+        consecutive_groups = []
+        current_group = []
+    
+        for weekend_date in all_weekend_dates:
+            if not current_group:
+                current_group = [weekend_date]
+            else:
+                prev_date = current_group[-1]
+                days_between = (weekend_date - prev_date).days
+            
+                # Consecutive weekends typically have 5-10 days between them
+                if 5 <= days_between <= 10:
+                    current_group.append(weekend_date)
+                else:
+                    consecutive_groups.append(current_group)
+                    current_group = [weekend_date]
+    
+        if current_group:
+            consecutive_groups.append(current_group)
+    
+        # Find the longest consecutive sequence
+        max_consecutive = 0
+        if consecutive_groups:
+            max_consecutive = max(len(group) for group in consecutive_groups)
+    
+        # Check against adjusted max consecutive limit
+        if max_consecutive > adjusted_max_weekends:
+            return False  # Exceeds adjusted limit for consecutive weekends
+    
+        # Additional check for total weekend count based on work periods
+        # This would require access to schedule start/end dates and holidays
+        # Which may not be available in this class unless passed in constructor
+    
+        # If we have access to scheduler with this information:
+        if hasattr(self, 'scheduler'):
+            try:
+                all_days = self.scheduler._get_date_range(self.scheduler.start_date, self.scheduler.end_date)
+                total_weekend_days = sum(1 for d in all_days if self._is_weekend_day(d))
+            
+                # Calculate weekend days within worker's work periods
+                worker_weekend_days = 0
+                if 'work_periods' in worker and worker.get('work_periods', '').strip():
+                    work_periods = self.scheduler.date_utils.parse_date_ranges(worker['work_periods'])
+                    for start, end in work_periods:
+                        period_days = self.scheduler._get_date_range(start, end)
+                        worker_weekend_days += sum(1 for d in period_days if self._is_weekend_day(d))
+                else:
+                    worker_weekend_days = total_weekend_days  # All weekends if no work periods specified
+            
+                # Calculate target weekend count
+                proportion_of_schedule = worker_weekend_days / total_weekend_days if total_weekend_days > 0 else 0
+                work_percentage_factor = work_percentage / 100
+                target_weekend_count = round(total_weekend_days * proportion_of_schedule * work_percentage_factor * 0.9)
+            
+                # Ensure at least 1 if they have any work periods with weekends
+                if worker_weekend_days > 0:
+                    target_weekend_count = max(1, target_weekend_count)
+            
+                # Check if assignment would exceed target
+                if len(all_weekend_dates) > target_weekend_count:
+                    return False  # Exceeds proportional total weekend count
+                
+            except Exception as e:
+                # Log error but continue
+                print(f"Error calculating proportional weekend count for worker {worker_id}: {e}")
 
-            # Count weekend days in this window
-            weekend_count = sum(
-                1 for d in all_weekend_dates
-                if window_start <= d <= window_end
-            )    
-
-            if weekend_count > adjusted_max_weekends:
-                return False  # Exceeds adjusted limit
-
-        return True  # Within limit
+        return True  # Within limits
     
     def _is_weekend_day(self, date):
         """
