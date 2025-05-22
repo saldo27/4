@@ -167,7 +167,11 @@ class Scheduler:
                 self.workers_data,
                 self.holidays,
                 self.gap_between_shifts,
-                self.max_consecutive_weekends
+                self.max_consecutive_weekends,
+                start_date=self.start_date,  # Pass start_date
+                end_date=self.end_date,      # Pass end_date
+                date_utils=self.date_utils,  # Pass date_utils
+                scheduler=self              # Pass reference to scheduler
             )
 
             # Sort the variable shifts by start date for efficient lookup
