@@ -72,16 +72,34 @@ class DateTimeUtils:
                 logging.warning(f"Invalid date range format '{date_range}' - {str(e)}")
         return ranges
     
-    def is_weekend_day(self, date, holidays_list): # Ensure this helper exists or is adapted
+    def is_weekend_day(self, date, holidays_list=None):
         """
-        Checks if a date is a weekend day (Fri, Sat, Sun) or a holiday, or day before holiday.
-        (This might already exist in your ConstraintChecker or be similar)
+        Check if a date is a weekend day or holiday
+    
+        Args:
+            date: Date to check
+            holidays_list: Optional list of holiday dates to check against
+    
+        Returns:
+            bool: True if date is a weekend day (Fri, Sat, Sun) or holiday
         """
-        return (
-            date.weekday() >= 4 or  # Friday, Saturday, Sunday
-            date in holidays_list or
-            (date + timedelta(days=1)) in holidays_list # Day before a holiday
-        )
+        if holidays_list is None:
+            holidays_list = []  # Default to empty list if not provided
+        
+        # Check if it's Friday, Saturday or Sunday
+        if date.weekday() >= 4:  # 4=Friday, 5=Saturday, 6=Sunday
+            return True
+        
+        # Check if it's a holiday
+        if date in holidays_list:
+            return True
+        
+        # Check if it's a day before holiday (treated as special in some parts of the code)
+        next_day = date + timedelta(days=1)
+        if next_day in holidays_list:
+            return True
+        
+        return False
 
     def get_weekend_start(self, date, holidays=None):
         """
