@@ -101,7 +101,8 @@ class WorkerEligibilityTracker:
     def _check_weekend_constraints(self, worker_id, date):
         """
         Check weekend-related constraints - ensuring max consecutive weekend/holiday shifts
-    
+        Adjusted to account for work percentage.
+
         Args:
             worker_id: ID of the worker to check
             date: Date to check
@@ -111,28 +112,37 @@ class WorkerEligibilityTracker:
         # If not a weekend day, no constraint
         if not self._is_weekend_day(date):
             return True
+
+        # Find worker data to get work percentage
+        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        if not worker:
+            return False
     
+        # Get work percentage and adjust max consecutive weekends
+        work_percentage = float(worker.get('work_percentage', 100))
+        adjusted_max_weekends = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
+
         # Create a temporary list including existing weekend days and the new one
         all_weekend_dates = self.recent_weekends[worker_id].copy()
-    
+
         # Avoid double counting if date is already in the list
         if date not in all_weekend_dates:
             all_weekend_dates.append(date)
-    
+
         # Check for every date in the combined list
         for check_date in all_weekend_dates:
             window_start = check_date - timedelta(days=10)  # 10 days before
             window_end = check_date + timedelta(days=10)    # 10 days after
-    
+
             # Count weekend days in this window
             weekend_count = sum(
                 1 for d in all_weekend_dates
                 if window_start <= d <= window_end
             )    
-    
-            if weekend_count > self.max_consecutive_weekends:
-                return False  # Exceeds configured limit
-    
+
+            if weekend_count > adjusted_max_weekends:
+                return False  # Exceeds adjusted limit
+
         return True  # Within limit
     
     def _is_weekend_day(self, date):
