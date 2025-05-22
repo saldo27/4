@@ -2942,26 +2942,43 @@ class ScheduleBuilder:
         return self.scheduler._restore_best_schedule()
 
     def _save_current_as_best(self, initial=False):
-        # Placeholder for your method in ScheduleBuilder or call scheduler's
-        if hasattr(self.scheduler, '_save_current_as_best') and not initial : # Corrected attribute name and removed erroneous backslash
-             # This might be complex if the scheduler\'s method relies on its own context deeply
-             # For now, let\'s assume it\'s mostly about copying data.
-             # The builder should update its own best_schedule_data
-            current_score = self.calculate_score()
-            old_score = self.best_schedule_data['score'] if self.best_schedule_data is not None else float('-inf')
-            if initial or self.best_schedule_data is None or current_score > old_score:
-                self.best_schedule_data = {\
-                    'schedule': copy.deepcopy(self.schedule),\
-                    'worker_assignments': copy.deepcopy(self.worker_assignments),\
-                    'worker_shift_counts': copy.deepcopy(self.scheduler.worker_shift_counts), # Use scheduler\'s as source of truth
-                    'worker_weekend_shifts': copy.deepcopy(self.scheduler.worker_weekend_shifts),\
-                    'worker_posts': copy.deepcopy(self.worker_posts),\
-                    'last_assigned_date': copy.deepcopy(self.scheduler.last_assigned_date),\
-                    'consecutive_shifts': copy.deepcopy(self.scheduler.consecutive_shifts),\
-                    'score': current_score\
-                }
-                logging.info(f"Builder saved new best schedule. Score: {current_score:.2f}")
+        """
+        Save the current schedule as the best one found so far.
+    
+        Args:
+            initial: Whether this is the initial best schedule (default: False)
+        """
+        try:
+            best_score = self.calculate_score(self.schedule, self.worker_assignments)
+        
+            # Log what we're doing
+            if initial:
+                logging.info(f"Initializing best schedule with score {best_score}")
+            else:
+                current_best = self.best_schedule.get('score', 0)
+                if best_score > current_best:
+                    logging.info(f"Saving new best schedule: score {best_score} (previous: {current_best})")
+                else:
+                    logging.debug(f"Current score {best_score} not better than best {current_best}")
+                    return False
 
+            # Create a deep copy of the current state
+            self.best_schedule = {
+                'schedule': copy.deepcopy(self.schedule),
+                'worker_assignments': copy.deepcopy(self.worker_assignments),
+                'score': best_score,
+                'worker_shift_counts': copy.deepcopy(self.scheduler.worker_shift_counts),
+                'worker_weekend_counts': copy.deepcopy(self.scheduler.worker_weekend_counts),  # FIXED: Use worker_weekend_counts instead of worker_weekend_shifts
+                'worker_posts': copy.deepcopy(self.scheduler.worker_posts),
+                'last_assignment_date': copy.deepcopy(self.scheduler.last_assignment_date),
+                'consecutive_shifts': copy.deepcopy(self.scheduler.consecutive_shifts)
+            }
+        
+            return True
+        except Exception as e:
+            logging.error(f"Error saving best schedule: {str(e)}", exc_info=True)
+            return False
+        
     def get_best_schedule(self):
         """ Returns the best schedule data dictionary found. """
         if self.best_schedule_data is None:
