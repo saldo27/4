@@ -643,7 +643,7 @@ class WorkerDetailsScreen(Screen):
         self.form_layout.add_widget(self.worker_id)
 
         # Work Periods
-        self.form_layout.add_widget(Label(text='Periodos de trabajo en vacaciones (DD-MM-YYYY):'))
+        self.form_layout.add_widget(Label(text='Periodos de trabajo (DD-MM-YYYY):'))
         self.work_periods = TextInput(multiline=True, size_hint_y=None, height=60)
         self.form_layout.add_widget(self.work_periods)
 

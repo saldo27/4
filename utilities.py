@@ -72,17 +72,28 @@ class DateTimeUtils:
                 logging.warning(f"Invalid date range format '{date_range}' - {str(e)}")
         return ranges
     
-    def is_weekend_day(self, date, holidays_list): # Ensure this helper exists or is adapted
+    def is_weekend_day(self, date, holidays=None):
         """
-        Checks if a date is a weekend day (Fri, Sat, Sun) or a holiday, or day before holiday.
-        (This might already exist in your ConstraintChecker or be similar)
-        """
-        return (
-            date.weekday() >= 4 or  # Friday, Saturday, Sunday
-            date in holidays_list or
-            (date + timedelta(days=1)) in holidays_list # Day before a holiday
-        )
+        Check if date is a weekend day, holiday, or pre-holiday
 
+        Args:
+            date: datetime object
+            holidays: optional list of holidays (if None, no holiday check)
+        Returns:
+            bool: True if weekend/holiday/pre-holiday, False otherwise
+        """
+        # Check if it's a holiday
+        if holidays is not None:
+            if date in holidays:
+                return True
+    
+            # Check if it's a pre-holiday (day before a holiday)
+            next_day = date + timedelta(days=1)
+            if next_day in holidays:
+                return True
+
+        # Check if it's a weekend (Friday, Saturday, Sunday)
+        return date.weekday() >= 4  # 4 = Friday, 5 = Saturday, 6 = Sunday
         
     def is_holiday(self, date, holidays=None):
         """
@@ -247,62 +258,3 @@ class DateTimeUtils:
             date for date in self._get_month_dates(year, month)
             if not self._is_weekend_day(date) and not self._is_holiday(date)
         ]
-
-    def get_worker_specific_weekend_ratio(self, worker_config, schedule_start_date, schedule_end_date, holidays_list):
-        """
-        Calculates the ratio of a worker's available weekend/holiday work days to their total available work days
-        within the given schedule period, considering their work_periods and days_off.
-
-        Args:
-            worker_config (dict): The worker's configuration data.
-            schedule_start_date (datetime.date): The start date of the schedule period.
-            schedule_end_date (datetime.date): The end date of the schedule period.
-            holidays_list (list): A list of holiday dates.
-
-        Returns:
-            float: The ratio of eligible weekend/holiday days to total eligible days for the worker.
-                   Returns 0.0 if the worker has no eligible days.
-        """
-        worker_id = worker_config.get('id', 'Unknown')
-        work_periods_str = worker_config.get('work_periods', '')
-        days_off_str = worker_config.get('days_off', '')
-
-        try:
-            parsed_work_periods = self.parse_date_ranges(work_periods_str)
-            if not parsed_work_periods: # If empty or invalid, assume full schedule period
-                parsed_work_periods = [(schedule_start_date, schedule_end_date)]
-        except ValueError as e:
-            logging.warning(f"Error parsing work_periods for worker {worker_id} ('{work_periods_str}'): {e}. Assuming full period.")
-            parsed_work_periods = [(schedule_start_date, schedule_end_date)]
-
-        try:
-            parsed_days_off = self.parse_date_ranges(days_off_str)
-        except ValueError as e:
-            logging.warning(f"Error parsing days_off for worker {worker_id} ('{days_off_str}'): {e}. Assuming no specific days off.")
-            parsed_days_off = []
-
-        eligible_days_count = 0
-        eligible_weekend_holiday_days_count = 0
-
-        current_date = schedule_start_date
-        while current_date <= schedule_end_date:
-            is_in_work_period = any(start <= current_date <= end for start, end in parsed_work_periods)
-            is_on_day_off = any(start <= current_date <= end for start, end in parsed_days_off)
-
-            if is_in_work_period and not is_on_day_off:
-                eligible_days_count += 1
-                # Use the existing is_weekend_day logic (ensure it's accessible or replicated)
-                # Assuming is_weekend_day is a method of DateTimeUtils or a static/global one.
-                # For this example, let's assume it's: self.is_weekend_day(current_date, holidays_list)
-                if self.is_weekend_day(current_date, holidays_list): # Pass holidays_list
-                    eligible_weekend_holiday_days_count += 1
-            
-            current_date += timedelta(days=1)
-
-        if eligible_days_count == 0:
-            logging.debug(f"Worker {worker_id} has 0 eligible working days in the period.")
-            return 0.0
-        
-        ratio = eligible_weekend_holiday_days_count / eligible_days_count
-        logging.debug(f"Worker {worker_id}: Eligible WH days: {eligible_weekend_holiday_days_count}, Eligible total days: {eligible_days_count}, Specific WH Ratio: {ratio:.3f}")
-        return ratio
