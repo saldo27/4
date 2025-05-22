@@ -140,130 +140,147 @@ class ConstraintChecker:
     
     def _would_exceed_weekend_limit(self, worker_id, date):
         """
-        Check if assigning this date would exceed the weekend limit.
-        This constraint is NOT subject to relaxation.
-        Properly accounts for work percentage and work periods.
+        Check if assigning this date would exceed the weekend/holiday constraints:
+        1. Max consecutive weekend/holiday constraint (from UI, adjusted for part-time)
+        2. Total weekend/holiday count proportional to work periods and percentage
         """ 
         try:
-            # If it's not a weekend day or holiday, no need to check
-            is_target_weekend = (date.weekday() >= 4 or # Fri, Sat, Sun
-                                date in self.scheduler.holidays or
-                                (date + timedelta(days=1)) in self.scheduler.holidays)
-            if not is_target_weekend:
-                return False
+            # Check if the date is a weekend or holiday
+            is_weekend_or_holiday = (date.weekday() >= 4 or  # Fri, Sat, Sun
+                                    date in self.scheduler.holidays or
+                                    (date + timedelta(days=1)) in self.scheduler.holidays)
+            if not is_weekend_or_holiday:
+                return False  # Not a weekend/holiday, no need to check
 
+            # Get worker data
             worker_data = next((w for w in self.workers_data if w['id'] == worker_id), None)
-            if not worker_data: 
-                return True # Should not happen
+            if not worker_data:
+                return True  # Worker not found
         
-            # Check if worker is in a work period for this date
-            if 'work_periods' in worker_data and worker_data['work_periods'].strip():
-                # This assumes date_utils has a method to parse date ranges
-                work_periods = self.date_utils.parse_date_ranges(worker_data['work_periods'])
-                if not any(start <= date <= end for start, end in work_periods):
-                    # If worker is not in a work period for this date, 
-                    # they're unavailable, but this is not a weekend limit issue
-                    return False
-
-            # Get worker's percentage and adjust max consecutive weekends accordingly
+            # Get work percentage
             work_percentage = float(worker_data.get('work_percentage', 100))
         
-            # Base max consecutive weekends from scheduler config
-            base_max_weekends = self.scheduler.max_consecutive_weekends
-        
-            # Adjust based on work percentage - scale proportionally but ensure at least 1
-            # For example: 100% -> max_consecutive_weekends, 50% -> max_consecutive_weekends/2
-            adjusted_max_weekends = max(1, int(base_max_weekends * work_percentage / 100))
-        
-            logging.debug(f"Worker {worker_id} has work_percentage {work_percentage}%, "
-                        f"adjusted weekend limit: {adjusted_max_weekends} (base: {base_max_weekends})")
+            # Get work periods or default to full schedule period
+            work_periods = []
+            if 'work_periods' in worker_data and worker_data['work_periods'].strip():
+                work_periods = self.date_utils.parse_date_ranges(worker_data['work_periods'])
+                # Check if current date is within any work period
+                if not any(start <= date <= end for start, end in work_periods):
+                    # Date is outside work periods, so it's not a weekend limit issue but an availability issue
+                    return False
+            else:
+                # Default to full schedule if no work periods specified
+                work_periods = [(self.scheduler.start_date, self.scheduler.end_date)]
 
-            # Get all weekend assignments INCLUDING the new date from scheduler's live data
-            current_worker_assignments = self.scheduler.worker_assignments.get(worker_id, set())
+            # PART 1: CHECK MAX CONSECUTIVE WEEKENDS/HOLIDAYS
+            # Get the base max consecutive value from UI
+            base_max_consecutive = self.scheduler.max_consecutive_weekends
+        
+            # Adjust max consecutive for part-time workers (<70%)
+            if work_percentage < 70:
+                # For part-time workers, reduce the max consecutive proportionally (but at least 1)
+                adjusted_max_consecutive = max(1, int(base_max_consecutive * work_percentage / 100))
+            else:
+                adjusted_max_consecutive = base_max_consecutive
+        
+            # Get all weekend/holiday assignments including the prospective date
+            current_assignments = self.scheduler.worker_assignments.get(worker_id, set())
             weekend_dates = []
-            for d_val in current_worker_assignments:
-                if (d_val.weekday() >= 4 or 
-                    d_val in self.scheduler.holidays or
-                    (d_val + timedelta(days=1)) in self.scheduler.holidays):
-                    weekend_dates.append(d_val)
-    
-            if date not in weekend_dates: # Add the date being checked
+            for d in current_assignments:
+                if (d.weekday() >= 4 or 
+                    d in self.scheduler.holidays or
+                    (d + timedelta(days=1)) in self.scheduler.holidays):
+                    weekend_dates.append(d)
+        
+            # Add the date being checked if it's not already included
+            if date not in weekend_dates:
                 weekend_dates.append(date)
-    
+        
             weekend_dates.sort()
-    
-            if not weekend_dates:
-                return False
-
-            # Check for consecutive weekends (logic from ScheduleBuilder's simulated version)
-            # This identifies groups of weekends that are on consecutive calendar weeks.
-            consecutive_groups = []
-            current_group = []
-    
-            for i, d_val in enumerate(weekend_dates):
-                if not current_group:
-                    current_group = [d_val]
-                else:
-                    prev_weekend_day_in_group = current_group[-1]
-                    # A common definition for consecutive weekends: next calendar weekend.
-                    # This usually means 5-9 days apart (e.g. Sat to next Fri, or Fri to next Sun)
-                    # The original code in ScheduleBuilder used 5-10 days. Let's be consistent.
-                    if 5 <= (d_val - prev_weekend_day_in_group).days <= 10: 
-                        current_group.append(d_val)
+        
+            # Check consecutive weekend/holiday constraint
+            if weekend_dates:
+                # Group weekend dates that are on consecutive calendar weekends
+                consecutive_groups = []
+                current_group = []
+            
+                for i, weekend_date in enumerate(weekend_dates):
+                    if not current_group:
+                        current_group = [weekend_date]
                     else:
-                        if current_group: # Save previous group
+                        prev_date = current_group[-1]
+                        days_between = (weekend_date - prev_date).days
+                    
+                        # Consecutive weekends typically have 5-10 days between them
+                        # (e.g., Sunday to Friday/Saturday/Sunday of next week)
+                        if 5 <= days_between <= 10:
+                            current_group.append(weekend_date)
+                        else:
                             consecutive_groups.append(current_group)
-                        current_group = [d_val] # Start new group
-    
-            if current_group: # Add the last group
-                consecutive_groups.append(current_group)
-
-            # Find the longest sequence of such consecutive weekends
-            max_found_consecutive = 0
-            if not consecutive_groups: # No weekends assigned at all
-                 max_found_consecutive = 0
-            elif all(len(g) == 1 for g in consecutive_groups): # Only isolated weekends
-                max_found_consecutive = 1 if any(g for g in consecutive_groups) else 0
-            else: # At least one group has more than one weekend
-                max_found_consecutive = max(len(group) for group in consecutive_groups if group) if any(g for g in consecutive_groups) else 0
-    
-            if max_found_consecutive == 0 and weekend_dates: # If there are weekends, min consecutive is 1
-                max_found_consecutive = 1
-
-            if max_found_consecutive > adjusted_max_weekends:
-                logging.debug(f"Constraint Check: Worker {worker_id} on {date.strftime('%Y-%m-%d')} would have "
-                             f"{max_found_consecutive} consecutive weekends (adjusted max: {adjusted_max_weekends}, "
-                             f"work percentage: {work_percentage}%).")
+                            current_group = [weekend_date]
+            
+                if current_group:
+                    consecutive_groups.append(current_group)
+            
+                # Find the longest consecutive sequence
+                max_consecutive = 0
+                if consecutive_groups:
+                    max_consecutive = max(len(group) for group in consecutive_groups)
+            
+                # Check against adjusted max consecutive limit
+                if max_consecutive > adjusted_max_consecutive:
+                    logging.debug(f"Worker {worker_id} would exceed adjusted max consecutive weekends/holidays: "
+                                 f"{max_consecutive} > {adjusted_max_consecutive} "
+                                 f"(base: {base_max_consecutive}, work %: {work_percentage}%)")
+                    return True
+        
+            # PART 2: CHECK PROPORTIONAL TOTAL WEEKEND/HOLIDAY COUNT
+        
+            # Calculate total weekend/holiday days in the schedule
+            all_days = self.scheduler._get_date_range(self.scheduler.start_date, self.scheduler.end_date)
+            total_weekend_days = sum(1 for d in all_days if (
+                d.weekday() >= 4 or 
+                d in self.scheduler.holidays or
+                (d + timedelta(days=1)) in self.scheduler.holidays
+            ))
+        
+            # Calculate weekend/holiday days within worker's work periods
+            worker_weekend_days = 0
+            for start, end in work_periods:
+                period_days = self.scheduler._get_date_range(start, end)
+                worker_weekend_days += sum(1 for d in period_days if (
+                    d.weekday() >= 4 or 
+                    d in self.scheduler.holidays or
+                    (d + timedelta(days=1)) in self.scheduler.holidays
+                ))
+        
+            # Calculate the proportion of weekends this worker should cover
+            # based on their work periods and work percentage
+            proportion_of_schedule = worker_weekend_days / total_weekend_days if total_weekend_days > 0 else 0
+            work_percentage_factor = work_percentage / 100
+        
+            # Calculate target weekend/holiday count for this worker
+            # The 0.9 factor assumes approximately 90% of weekend/holiday slots need to be filled
+            target_weekend_count = round(total_weekend_days * proportion_of_schedule * work_percentage_factor * 0.9)
+        
+            # Ensure at least 1 if they have any work periods with weekends
+            if worker_weekend_days > 0:
+                target_weekend_count = max(1, target_weekend_count)
+        
+            # Check if this assignment would exceed the target count
+            if len(weekend_dates) > target_weekend_count:
+                logging.debug(f"Worker {worker_id} would exceed proportional weekend/holiday count: "
+                             f"{len(weekend_dates)} > {target_weekend_count} "
+                             f"(work periods: {proportion_of_schedule:.2f} of schedule, "
+                             f"work %: {work_percentage}%)")
                 return True
-
-            # Additionally, let's check the total number of weekend shifts based on work percentage
-            total_weekend_count = len(weekend_dates)
-       
-            # Calculate the target ratio based on work percentage
-            # For example, a 50% worker should have roughly 50% of the weekend shifts compared to a 100% worker
-            # Get the total number of weekend days in the schedule period
-            all_dates = self.scheduler._get_date_range(self.scheduler.start_date, self.scheduler.end_date)
-            total_weekend_days = sum(1 for d in all_dates if (d.weekday() >= 4 or 
-                                                             d in self.scheduler.holidays or
-                                                             (d + timedelta(days=1)) in self.scheduler.holidays))
         
-            # Maximum weekend shifts for a 100% worker (might be all weekend days or a fraction)
-            max_weekend_shifts_full_time = min(total_weekend_days, int(total_weekend_days * 0.8))  # 80% coverage as example
-        
-            # Adjust for work percentage
-            max_weekend_shifts_this_worker = max(1, int(max_weekend_shifts_full_time * work_percentage / 100))
-        
-            if total_weekend_count > max_weekend_shifts_this_worker:
-                logging.debug(f"Constraint Check: Worker {worker_id} on {date.strftime('%Y-%m-%d')} would have "
-                             f"{total_weekend_count} total weekend shifts (adjusted max: {max_weekend_shifts_this_worker}, "
-                             f"work percentage: {work_percentage}%).")
-                return True
-
+            # All checks passed
             return False
     
         except Exception as e:
             logging.error(f"Error checking weekend limit for {worker_id} on {date}: {str(e)}", exc_info=True)
-            return True  # Fail safe: assume limit exceeded on error
+            return True  # Fail safe
             
     def _is_worker_unavailable(self, worker_id, date):
         """
