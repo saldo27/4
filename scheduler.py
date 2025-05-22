@@ -288,7 +288,7 @@ class Scheduler:
         """Reset all schedule data"""
         self.schedule = {}
         self.worker_assignments = {w['id']: set() for w in self.workers_data}
-        self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
+        self.worker_posts = {w['id']: set() for w in self.workers_data}
         self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
         self.worker_weekends = {w['id']: [] for w in self.workers_data}
         self.constraint_skips = {
@@ -728,6 +728,58 @@ class Scheduler:
         except Exception as e:
             logging.error(f"Error in _update_tracking_data for worker {worker_id}, date {date}, post {post}, removing={removing}: {str(e)}", exc_info=True)
             raise
+        
+    def _synchronize_tracking_data(self):
+        """
+        Ensures all tracking data structures are consistent with the schedule.
+        Called by the ScheduleBuilder to maintain data integrity.
+        """
+        try:
+            logging.info("Synchronizing tracking data structures...")
+        
+            # Reset existing tracking data
+            self.worker_assignments = {w['id']: set() for w in self.workers_data}
+            self.worker_posts = {w['id']: set() for w in self.workers_data}
+            self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
+            self.worker_weekends = {w['id']: [] for w in self.workers_data}
+            self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
+            self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data}
+        
+            # Rebuild tracking data from the current schedule
+            for date, shifts in self.schedule.items():
+                for post_idx, worker_id in enumerate(shifts):
+                    if worker_id is not None:
+                        # Update worker assignments
+                        self.worker_assignments[worker_id].add(date)
+                    
+                        # Update posts worked
+                        self.worker_posts[worker_id].add(post_idx)
+                    
+                        # Update weekday counts
+                        weekday = date.weekday()
+                        self.worker_weekdays[worker_id][weekday] = self.worker_weekdays[worker_id].get(weekday, 0) + 1
+                    
+                        # Update weekends/holidays
+                        is_weekend_or_holiday = (date.weekday() >= 4 or 
+                                              date in self.holidays or 
+                                              (date + timedelta(days=1)) in self.holidays)
+                        if is_weekend_or_holiday:
+                            if date not in self.worker_weekends[worker_id]:
+                                self.worker_weekends[worker_id].append(date)
+                            self.worker_weekend_counts[worker_id] += 1
+                    
+                        # Update shift counts
+                        self.worker_shift_counts[worker_id] += 1
+        
+            # Sort weekend dates for consistency
+            for worker_id in self.worker_weekends:
+                self.worker_weekends[worker_id].sort()
+        
+            logging.info("Tracking data synchronization complete.")
+            return True
+        except Exception as e:
+            logging.error(f"Error synchronizing tracking data: {str(e)}", exc_info=True)
+            return False
     
     def _get_date_range(self, start_date, end_date):
         """
@@ -1281,7 +1333,7 @@ class Scheduler:
             self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
             # Assuming self.worker_weekend_counts is the correct attribute name based on __init__
             self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data} 
-            self.worker_posts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
+            self.worker_posts = {w['id']: set() for w in self.workers_data}
             self.last_assignment_date = {w['id']: None for w in self.workers_data}
             self.consecutive_shifts = {w['id']: 0 for w in self.workers_data}            
 
