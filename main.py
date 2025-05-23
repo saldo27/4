@@ -23,6 +23,17 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+original_log = logging.Logger._log
+
+def patched_log(self, *args, **kwargs):
+    # Prevent recursion by limiting call depth
+    frame = sys._getframe(1)
+    if frame.f_code.filename.endswith('kivy/logger.py'):
+        return
+    return original_log(self, *args, **kwargs)
+
+# Apply the patch
+logging.Logger._log = patched_log
 
 def numeric_sort_key(item):
     """
@@ -2270,6 +2281,11 @@ class ShiftManagerApp(App):
         # Print the default current screen
         print(f"DEBUG: Default current screen: {sm.current}") # <<< ADD THIS LINE
         return sm
+
+    def main():
+        # Initialize your Kivy app
+        app = MyApp()
+        app.run()
 
 if __name__ == '__main__':
     ShiftManagerApp().run()
