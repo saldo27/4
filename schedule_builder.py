@@ -1997,7 +1997,7 @@ class ScheduleBuilder:
             self._save_current_as_best()
         return changes_made > 0
 
-    def _optimize_schedule(self, iterations=3):
+    def _optimize_schedule(self, iterations=30):
         """Main schedule optimization function"""
         # Ensure initial state is the best known if nothing better is found
         if self.best_schedule_data is None:
