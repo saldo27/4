@@ -1220,12 +1220,22 @@ class CalendarViewScreen(Screen):
         # Add empty cells for days before the first of the month
         for _ in range(first_weekday):
             empty_cell = Label(text='')
+            # Add white background to empty cells
+            with empty_cell.canvas.before:
+                Color(1, 1, 1, 1)  # White color (RGBA)
+                Rectangle(pos=empty_cell.pos, size=empty_cell.size)
+                # Add a light gray border
+                Color(0.9, 0.9, 0.9, 1)  # Light gray border
+                Line(rectangle=(empty_cell.x, empty_cell.y, empty_cell.width, empty_cell.height))
+        
+            # Bind position and size to ensure the background follows the cell
+            empty_cell.bind(pos=self.update_rect, size=self.update_rect)
             self.calendar_grid.add_widget(empty_cell)
-    
+
         # Add days of the month
         for day in range(1, days_in_month + 1):
             current = datetime(date.year, date.month, day)
-        
+    
             # Create a BoxLayout for the cell with vertical orientation
             cell = BoxLayout(
                 orientation='vertical',
@@ -1235,28 +1245,43 @@ class CalendarViewScreen(Screen):
                 height=120  # Increase cell height
             )
 
-            # Set background color
-            bg_color = self.get_day_color(current)
+            # Set background color - Always start with white, then modify for special days
+            # First set default to white
+            bg_color = (1, 1, 1, 1)  # White
+
+            # Then check if it's a special day and adjust color
+            app = App.get_running_app()
+            is_weekend = current.weekday() >= 5
+            is_holiday = current in app.schedule_config.get('holidays', [])
+            is_today = current.date() == datetime.now().date()
+    
+            if is_today:
+                bg_color = (0.85, 0.91, 0.98, 1)  # Light blue for today, more solid
+            elif is_holiday:
+                bg_color = (1, 0.92, 0.92, 1)  # Light red for holidays, more solid
+            elif is_weekend:
+                bg_color = (1, 0.96, 0.96, 1)  # Very light red for weekends, more solid
+        
+            # Apply the background color
             with cell.canvas.before:
                 Color(*bg_color)
-                Rectangle(pos=cell.pos, size=cell.size)
+                rect = Rectangle(pos=cell.pos, size=cell.size)
             
                 # Add border
                 Color(0.7, 0.7, 0.7, 1)  # Gray border
                 Line(rectangle=(cell.x, cell.y, cell.width, cell.height))
+        
+            # Bind position and size to ensure rectangle follows cell
+            cell.rect = rect
+            cell.bind(pos=self.update_rect, size=self.update_rect)
 
             # Day number with special formatting for weekends/holidays
-            app = App.get_running_app()
-            is_weekend = current.weekday() >= 5
-            is_holiday = current in app.schedule_config.get('holidays', [])
-        
-            # Create header box for day number
             header_box = BoxLayout(
                 orientation='horizontal',
                 size_hint_y=None,
                 height=20
             )
-        
+    
             day_label = Label(
                 text=str(day),
                 bold=True,
@@ -1264,7 +1289,7 @@ class CalendarViewScreen(Screen):
                 size_hint_x=0.3
             )
             header_box.add_widget(day_label)
-        
+    
             # Add shift count if there are workers
             if current in self.schedule:
                 shift_count = len(self.schedule[current])
@@ -1276,9 +1301,9 @@ class CalendarViewScreen(Screen):
                     halign='right'
                 )
                 header_box.add_widget(count_label)
-        
+    
             cell.add_widget(header_box)
-        
+    
             # Add worker information
             if current in self.schedule:
                 workers = self.schedule[current]
@@ -1287,7 +1312,7 @@ class CalendarViewScreen(Screen):
                     padding=[5, 2],
                     spacing=2
                 )
-            
+        
                 for i, worker_id in enumerate(workers):
                     worker_label = Label(
                         text=f'S{i+1}: {worker_id}',
@@ -1300,26 +1325,36 @@ class CalendarViewScreen(Screen):
                     )
                     worker_label.bind(size=worker_label.setter('text_size'))
                     content_box.add_widget(worker_label)
-            
+        
                 cell.add_widget(content_box)
-            
+        
                 # Make the cell clickable
                 btn = Button(
-                    background_color=(0.95, 0.95, 0.95, 0.3),
+                    background_color=(0, 0, 0, 0),  # Transparent background
                     background_normal=''
                 )
                 btn.bind(on_press=lambda x, d=current: self.show_details(d))
                 cell.bind(size=btn.setter('size'), pos=btn.setter('pos'))
-            
+        
                 # Add the button at the beginning of the cell's widgets
                 cell.add_widget(btn)
-            
+        
             self.calendar_grid.add_widget(cell)
-    
+
         # Fill remaining cells
         remaining_cells = 42 - (first_weekday + days_in_month)  # 42 = 6 rows * 7 days
         for _ in range(remaining_cells):
             empty_cell = Label(text='')
+            # Add white background to empty cells
+            with empty_cell.canvas.before:
+                Color(1, 1, 1, 1)  # White color
+                Rectangle(pos=empty_cell.pos, size=empty_cell.size)
+                # Add a light gray border
+                Color(0.9, 0.9, 0.9, 1)  # Light gray border
+                Line(rectangle=(empty_cell.x, empty_cell.y, empty_cell.width, empty_cell.height))
+        
+            # Bind position and size to ensure the background follows the cell
+            empty_cell.bind(pos=self.update_rect, size=self.update_rect)
             self.calendar_grid.add_widget(empty_cell)
 
         # Update the calendar grid's properties
@@ -1327,6 +1362,13 @@ class CalendarViewScreen(Screen):
         self.calendar_grid.cols = 7  # Fixed number of columns
         self.calendar_grid.spacing = [2, 2]  # Add spacing between cells
         self.calendar_grid.padding = [5, 5]  # Add padding around the grid
+
+    # Add this helper method to your CalendarViewScreen class
+    def update_rect(self, instance, value):
+        """Update the rectangle position and size when the cell changes."""
+        if hasattr(instance, 'rect'):
+            instance.rect.pos = instance.pos
+            instance.rect.size = instance.size
 
     def show_details(self, date):
         self.details_layout.clear_widgets()
@@ -1431,8 +1473,6 @@ class CalendarViewScreen(Screen):
                          content=Label(text=f'Failed to export: {str(e)}'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
-
-    # Fix for the CalendarViewScreen Summary button
 
     def show_summary(self):
         """
