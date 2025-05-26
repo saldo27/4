@@ -3,10 +3,53 @@ from datetime import datetime, timedelta
 import copy
 import logging
 import random
+import math
 from typing import TYPE_CHECKING
 from exceptions import SchedulerError
+from adaptive_iterations import AdaptiveIterationManager
 if TYPE_CHECKING:
     from scheduler import Scheduler
+
+class AdaptiveIterationManager:
+    """Manages iteration counts for scheduling optimization based on problem complexity"""
+    
+    def __init__(self, scheduler):
+        self.scheduler = scheduler
+        self.start_time = None
+        self.convergence_threshold = 3
+        self.max_time_minutes = 5
+        
+    def calculate_adaptive_iterations(self):
+        """Calculate adaptive iteration counts for different optimization phases"""
+        num_workers = len(self.scheduler.workers_data)
+        shifts_per_day = self.scheduler.num_shifts
+        total_days = (self.scheduler.end_date - self.scheduler.start_date).days + 1
+        
+        # Calculate complexity
+        base_complexity = num_workers * shifts_per_day * total_days
+        
+        # Simple complexity-based iteration calculation
+        if base_complexity < 1000:
+            return {'max_optimization_loops': 5, 'last_post_max_iterations': 3}
+        elif base_complexity < 5000:
+            return {'max_optimization_loops': 8, 'last_post_max_iterations': 5}
+        elif base_complexity < 15000:
+            return {'max_optimization_loops': 12, 'last_post_max_iterations': 8}
+        else:
+            return {'max_optimization_loops': 20, 'last_post_max_iterations': 12}
+    
+    def start_timer(self):
+        self.start_time = datetime.now()
+    
+    def should_continue(self, iteration, no_improvement_count):
+        # Time check
+        if self.start_time:
+            elapsed_minutes = (datetime.now() - self.start_time).total_seconds() / 60
+            if elapsed_minutes > self.max_time_minutes:
+                return False
+        
+        # Convergence check
+        return no_improvement_count < self.convergence_threshold
 
 class ScheduleBuilder:
     """Handles schedule generation and improvement"""
@@ -46,6 +89,9 @@ class ScheduleBuilder:
         self.constraint_skips = scheduler.constraint_skips
         self.last_assigned_date = scheduler.last_assignment_date # Used in calculate_score
         self.consecutive_shifts = scheduler.consecutive_shifts # Used in calculate_score
+        self.iteration_manager = AdaptiveIterationManager(scheduler)
+        self.adaptive_config = self.iteration_manager.calculate_adaptive_iterations()
+        logging.info(f"Adaptive config: {self.adaptive_config}")
 
         logging.debug(f"[ScheduleBuilder.__init__] self.schedule object ID: {id(self.schedule)}, Initial keys: {list(self.schedule.keys())[:5]}")
         logging.info("ScheduleBuilder initialized")
@@ -1997,120 +2043,126 @@ class ScheduleBuilder:
             self._save_current_as_best()
         return changes_made > 0
 
-    def _optimize_schedule(self, iterations=30):
-        """Main schedule optimization function"""
-        # Ensure initial state is the best known if nothing better is found
-        if self.best_schedule_data is None:
-             self._save_current_as_best(initial=True)
+        def _optimize_schedule_adaptive(self):
+            """Enhanced optimization with adaptive iterations"""
+            self.iteration_manager.start_optimization_timer()
         
-        best_score = self._evaluate_schedule() # Evaluate current schedule score
-        if self.best_schedule_data and self.best_schedule_data['score'] > best_score:
-            best_score = self.best_schedule_data['score']
-            # If a better schedule was loaded or previously saved, restore it before optimizing
-            self._restore_best_schedule() 
-            # best_score is now correctly reflecting the restored best schedule
-        else:
-            # If current is better or no best_schedule_data, save current as best to start
-             self._save_current_as_best(initial=True)
-             best_score = self.best_schedule_data['score']
-
-
-        iterations_without_improvement = 0
-        # iterations parameter here refers to max_iterations_without_improvement for the main loop
-        max_main_loop_iterations_without_improvement = iterations 
-
-        logging.info(f"Starting schedule optimization. Initial best score: {best_score:.2f}")
-
-        # Main optimization loop
-        for i in range(self.config.get('max_optimization_loops', 10)): # Max overall loops for optimization
-            logging.info(f"--- Main Optimization Loop Iteration: {i + 1} ---")
-            made_change_in_main_iteration = False
-            
-            # Synchronize data at the beginning of each major optimization iteration
-            self._synchronize_tracking_data()
-
-            # 1. Try to fill empty shifts (includes direct fill and swaps for empty slots)
-            if self._try_fill_empty_shifts():
-                logging.info("Improved schedule by filling empty shifts.")
-                made_change_in_main_iteration = True
-                self._synchronize_tracking_data() # Resync as swaps might have occurred
-
-            # 2. Try to improve weekend distribution (more complex weekend/weekday swaps)
-            # Using _balance_weekend_shifts as it seems more comprehensive than _improve_weekend_distribution
-            if self._balance_weekend_shifts():
-                logging.info("Improved schedule through comprehensive weekend shift balancing.")
-                made_change_in_main_iteration = True
-                self._synchronize_tracking_data() # Resync
-
-            # 3. Try to balance overall workloads
-            if self._balance_workloads():
-                logging.info("Improved schedule through workload balancing.")
-                made_change_in_main_iteration = True
-                self._synchronize_tracking_data() # Resync
-
-            # 4. Iteratively adjust last post distribution (using the enhanced method)
-            # The enhanced _adjust_last_post_distribution has its own internal iteration.
-            # Pass parameters for tolerance and its internal max_iterations.
-            # e.g., self.config.get('last_post_balance_tolerance', 0.5)
-            # e.g., self.config.get('last_post_max_iterations', 5)
-            logging.info("Attempting comprehensive last post distribution adjustment...")
-            if self._adjust_last_post_distribution(
-                balance_tolerance=self.config.get('last_post_balance_tolerance', 0.5), 
-                max_iterations=self.config.get('last_post_max_iterations', 5) 
-            ):
-                logging.info("Schedule potentially improved through iterative last post adjustments.")
-                made_change_in_main_iteration = True
-                # _adjust_last_post_distribution should call _synchronize_tracking_data and _save_current_as_best internally if changes are made.
-            
-            # 5. Final verification of incompatibilities and attempt to fix them.
-            # This is good to run after various swaps.
-            if self._verify_no_incompatibilities(): # This method also tries to fix them
-                 logging.info("Fixed incompatibility violations during optimization.")
-                 made_change_in_main_iteration = True
-                 self._synchronize_tracking_data()
-
-
-            # Evaluate the schedule after this full pass of optimizations
-            current_score = self._evaluate_schedule()
-            logging.info(f"Score after main optimization iteration {i + 1}: {current_score:.2f}. Previous best: {best_score:.2f}")
-
-            if current_score > best_score:
-                logging.info(f"Overall schedule improved. New best score: {current_score:.2f} (was {best_score:.2f})")
-                best_score = current_score
-                self._save_current_as_best() # Save the new best state
-                iterations_without_improvement = 0 # Reset counter
+            # Get adaptive configuration
+            config = self.optimization_config
+            max_main_loops = config['max_optimization_loops']
+            convergence_threshold = config['convergence_threshold']
+        
+            logging.info(f"Starting adaptive optimization with max {max_main_loops} loops")
+        
+            # Ensure initial state is saved
+            if self.best_schedule_data is None:
+                self._save_current_as_best(initial=True)
+        
+            best_score = self._evaluate_schedule()
+            if self.best_schedule_data and self.best_schedule_data['score'] > best_score:
+                best_score = self.best_schedule_data['score']
+                self._restore_best_schedule()
             else:
-                iterations_without_improvement += 1
-                logging.info(f"No overall improvement in main iteration {i+1}. Score: {current_score:.2f}. Iterations without improvement: {iterations_without_improvement}/{max_main_loop_iterations_without_improvement}")
-                # If no improvement, restore the previously known best to avoid keeping a worse state
-                if self.best_schedule_data and self.schedule != self.best_schedule_data['schedule']:
-                    logging.info(f"Restoring to best known score: {self.best_schedule_data['score']:.2f}")
-                    self._restore_best_schedule()
-
-
-            if not made_change_in_main_iteration and iterations_without_improvement >= 1 : # If no change was made at all in this iteration, and we already had no score improvement
-                logging.info(f"No changes made in main optimization iteration {i+1}, and no score improvement. Considering early exit from main loop.")
-                # break # Optional: break if a full pass makes absolutely no changes
-            
-            if iterations_without_improvement >= max_main_loop_iterations_without_improvement:
-                logging.info(f"Reached {max_main_loop_iterations_without_improvement} main iterations without score improvement. Stopping main optimization loop.")
-                break
+                self._save_current_as_best(initial=True)
+                best_score = self.best_schedule_data['score']
         
-        # One final check and save if the loop completed or broke.
-        # Ensure the final state in self.schedule is indeed the best one found.
-        if self.best_schedule_data and self.schedule != self.best_schedule_data['schedule']:
-            final_current_score = self._evaluate_schedule()
-            if final_current_score < self.best_schedule_data['score']:
-                 logging.info(f"Final check: Restoring to best saved score {self.best_schedule_data['score']:.2f} as current ({final_current_score:.2f}) is worse.")
-                 self._restore_best_schedule()
-            elif final_current_score > self.best_schedule_data['score']:
-                 logging.info(f"Final check: Current schedule score {final_current_score:.2f} is better than saved {self.best_schedule_data['score']:.2f}. Saving current.")
-                 self._save_current_as_best()
-                 best_score = final_current_score
-
-
-        logging.info(f"Optimization process complete. Final best score: {best_score:.2f}")
-        return best_score
+            iterations_without_improvement = 0
+        
+            logging.info(f"Starting adaptive optimization. Initial best score: {best_score:.2f}")
+        
+            # Main optimization loop with adaptive control
+            for i in range(max_main_loops):
+                logging.info(f"--- Adaptive Optimization Loop {i + 1}/{max_main_loops} ---")
+                made_change_in_iteration = False
+            
+                # Check if we should continue
+                current_score = self._evaluate_schedule()
+                if not self.iteration_manager.should_continue_optimization(
+                    i, iterations_without_improvement, current_score, best_score):
+                    break
+            
+                # Synchronize data at the beginning of each iteration
+                self._synchronize_tracking_data()
+            
+                # 1. Fill empty shifts with adaptive attempts
+                fill_attempts = min(config['max_fill_attempts'], 3 + i // 2)
+                for attempt in range(fill_attempts):
+                    if self._try_fill_empty_shifts():
+                        logging.info(f"Filled empty shifts (attempt {attempt + 1})")
+                        made_change_in_iteration = True
+                        self._synchronize_tracking_data()
+                        break  # Success, move to next phase
+            
+                # 2. Balance workloads with adaptive iterations
+                balance_iterations = min(config['max_balance_iterations'], 2 + i // 3)
+                for _ in range(balance_iterations):
+                    if self._balance_workloads():
+                        logging.info("Improved workload balance")
+                        made_change_in_iteration = True
+                        self._synchronize_tracking_data()
+                        break
+            
+                # 3. Improve weekend distribution with adaptive passes
+                weekend_passes = min(config['max_weekend_passes'], 2 + i // 4)
+                for pass_num in range(weekend_passes):
+                    if self._balance_weekend_shifts():
+                        logging.info(f"Improved weekend distribution (pass {pass_num + 1})")
+                        made_change_in_iteration = True
+                        self._synchronize_tracking_data()
+            
+                # 4. Adjust last post distribution
+                post_iterations = config['last_post_max_iterations']
+                if self._adjust_last_post_distribution(
+                    balance_tolerance=config['last_post_balance_tolerance'],
+                    max_iterations=post_iterations
+                ):
+                    logging.info("Adjusted last post distribution")
+                    made_change_in_iteration = True
+            
+                # 5. Verify and fix incompatibilities
+                if self._verify_no_incompatibilities():
+                    logging.info("Fixed incompatibility violations")
+                    made_change_in_iteration = True
+                    self._synchronize_tracking_data()
+            
+                # Evaluate progress
+                current_score = self._evaluate_schedule()
+                logging.info(f"Score after iteration {i + 1}: {current_score:.2f} (best: {best_score:.2f})")
+            
+                improvement = current_score - best_score
+                if improvement > config['improvement_threshold']:
+                    logging.info(f"Significant improvement: +{improvement:.2f}")
+                    best_score = current_score
+                    self._save_current_as_best()
+                    iterations_without_improvement = 0
+                else:
+                    iterations_without_improvement += 1
+                    logging.info(f"No significant improvement. Count: {iterations_without_improvement}")
+                
+                    # Restore best if current is worse
+                    if self.best_schedule_data and current_score < self.best_schedule_data['score']:
+                        self._restore_best_schedule()
+            
+                # Early exit if no changes made and no improvement
+                if not made_change_in_iteration and iterations_without_improvement >= 2:
+                    logging.info("No changes and no improvement for 2 iterations. Early exit.")
+                    break
+        
+            # Final check and restoration
+            if self.best_schedule_data and self.schedule != self.best_schedule_data['schedule']:
+                final_current_score = self._evaluate_schedule()
+                if final_current_score < self.best_schedule_data['score']:
+                    logging.info(f"Final restoration to best score: {self.best_schedule_data['score']:.2f}")
+                    self._restore_best_schedule()
+                elif final_current_score > self.best_schedule_data['score']:
+                    logging.info(f"Final save of improved score: {final_current_score:.2f}")
+                    self._save_current_as_best()
+                    best_score = final_current_score
+        
+            elapsed_time = (datetime.now() - self.iteration_manager.start_time).total_seconds()
+            logging.info(f"Adaptive optimization complete in {elapsed_time:.1f}s. Final score: {best_score:.2f}")
+        
+            return best_score
 
     def _can_worker_swap(self, worker1_id, date1, post1, worker2_id, date2, post2):
         """
@@ -2988,3 +3040,5 @@ class ScheduleBuilder:
     def calculate_score(self, schedule_to_score=None, assignments_to_score=None):
         # Placeholder - use scheduler\'s score calculation for consistency
         return self.scheduler.calculate_score(schedule_to_score or self.schedule, assignments_to_score or self.worker_assignments)
+
+
