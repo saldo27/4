@@ -3076,7 +3076,7 @@ class ScheduleBuilder:
         try:
             if not hasattr(self, 'best_schedule_data') or self.best_schedule_data is None:
                 logging.warning("No best schedule saved, creating one from current state")
-                current_score = self._evaluate_schedule()
+                current_score = self.scheduler.calculate_score()
                 if current_score > float('-inf'):
                     self._save_current_as_best()
                     logging.info(f"Emergency save: Created best schedule with score {current_score}")
@@ -3129,7 +3129,7 @@ class ScheduleBuilder:
                     'worker_posts': getattr(self, 'worker_posts', {}),
                     'last_assignment_date': getattr(self, 'last_assignment_date', {}),
                     'consecutive_shifts': getattr(self, 'consecutive_shifts', {}),
-                    'score': self._evaluate_schedule()
+                    'score': self.scheduler.calculate_score()
                 }
             
                 # Save this as our best schedule
