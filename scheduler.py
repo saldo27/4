@@ -1572,10 +1572,27 @@ class Scheduler:
                  logging.info(f"  Worker {worker_id}: {count} weekend shifts")
 
             logging.info("Post Assignments per Worker:")
-            for worker_id, posts_dict in sorted(self.worker_posts.items()):
-                 if posts_dict: # Only log if worker has assignments
-                      logging.info(f"  Worker {worker_id}: {dict(sorted(posts_dict.items()))}")
-
+            for worker_id in sorted(self.worker_posts.keys()):
+                posts_set = self.worker_posts[worker_id]
+                if posts_set: # Only log if worker has assignments
+                    # Convert set to sorted list for display
+                    posts_list = sorted(list(posts_set))
+        
+                    # Count how many times each post was worked
+                    post_counts = {}
+                    for date, shifts in self.schedule.items():
+                        for post_idx, assigned_worker in enumerate(shifts):
+                            if assigned_worker == worker_id:
+                                post_counts[post_idx] = post_counts.get(post_idx, 0) + 1
+        
+                    # Display both the posts worked and their counts
+                    post_details = []
+                    for post in posts_list:
+                        count = post_counts.get(post, 0)
+                        post_details.append(f"P{post}({count})")
+        
+                    logging.info(f"  Worker {worker_id}: {', '.join(post_details)}")
+                    
             # Add more stats as needed (e.g., consecutive shifts, score)
             current_score = self.schedule_builder.calculate_score(self.schedule, self.worker_assignments) # Assuming calculate_score uses current state
             logging.info(f"Current Schedule Score: {current_score}")
