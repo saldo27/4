@@ -2178,14 +2178,30 @@ class ScheduleBuilder:
                 self._save_current_as_best()
                 best_score = final_current_score
 
-        # Log final statistics
+        # Ensure we have a valid best schedule saved before returning
+        if not self._ensure_best_schedule_saved():
+            logging.error("Critical: Failed to ensure best schedule is saved")
+            # Try one more time to save current state
+            try:
+                self._save_current_as_best()
+                logging.info("Emergency save attempt completed")
+            except Exception as e:
+                logging.error(f"Emergency save failed: {str(e)}")
+    
         elapsed_time = (datetime.now() - self.iteration_manager.start_time).total_seconds()
         logging.info(f"Adaptive optimization process complete in {elapsed_time:.1f}s. "
                     f"Final best score: {best_score:.2f}")
         logging.info(f"Completed {i + 1} optimization loops with {iterations_without_improvement} "
                     f"final iterations without improvement")
     
-        return best_score
+    # Final verification
+    if hasattr(self, 'best_schedule_data') and self.best_schedule_data:
+        logging.info(f"Optimization complete - best schedule confirmed with score: {self.best_schedule_data.get('score', 'unknown')}")
+    else:
+        logging.warning("Optimization complete but no best schedule data found")
+    
+    return best_score
+        
 
     def _can_worker_swap(self, worker1_id, date1, post1, worker2_id, date2, post2):
         """
@@ -3011,10 +3027,6 @@ class ScheduleBuilder:
     def _backup_best_schedule(self):
         """Save a backup of the current best schedule by delegating to scheduler"""
         return self.scheduler._backup_best_schedule()
-    
-    def _restore_best_schedule(self):
-        """Restore backup by delegating to scheduler"""
-        return self.scheduler._restore_best_schedule()
 
     def _save_current_as_best(self, initial=False):
         """
@@ -3053,12 +3065,86 @@ class ScheduleBuilder:
         except Exception as e:
             logging.error(f"Error saving best schedule: {str(e)}", exc_info=True)
             return False
+
+    def _restore_best_schedule(self):
+        """Restore backup by delegating to scheduler"""
+        return self.scheduler._restore_best_schedule()
+
+    def _ensure_best_schedule_saved(self):
+        """
+        Ensure that a best schedule is always saved during optimization
+        """
+        try:
+            if not hasattr(self, 'best_schedule_data') or self.best_schedule_data is None:
+                logging.warning("No best schedule saved, creating one from current state")
+                current_score = self._evaluate_schedule()
+                if current_score > float('-inf'):
+                    self._save_current_as_best()
+                    logging.info(f"Emergency save: Created best schedule with score {current_score}")
+                else:
+                    logging.error("Cannot save current state - invalid score")
+                    return False
+        
+            # Verify the saved data is valid
+            if 'schedule' not in self.best_schedule_data or not self.best_schedule_data['schedule']:
+                logging.error("Saved best schedule data is invalid - no schedule found")
+                return False
+            
+            return True
+        
+        except Exception as e:
+            logging.error(f"Error ensuring best schedule saved: {str(e)}", exc_info=True)
+            return False
         
     def get_best_schedule(self):
-        """ Returns the best schedule data dictionary found. """
-        if self.best_schedule_data is None:
-             logging.warning("get_best_schedule called but no best schedule was saved.")
-        return self.best_schedule_data
+        """
+        Get the best schedule found during optimization with enhanced safety checks
+        """
+        try:
+            # Check if we have a saved best schedule
+            if hasattr(self, 'best_schedule_data') and self.best_schedule_data is not None:
+                if 'schedule' in self.best_schedule_data and self.best_schedule_data['schedule']:
+                    logging.info(f"Returning saved best schedule with score: {self.best_schedule_data.get('score', 'unknown')}")
+                    return self.best_schedule_data
+                else:
+                    logging.warning("best_schedule_data exists but contains no valid schedule data")
+            else:
+                logging.warning("No best_schedule_data found")
+        
+            # Fallback: Create best schedule from current state if it has assignments
+            current_schedule = getattr(self, 'schedule', {})
+            if current_schedule and any(any(worker is not None for worker in shifts) 
+                                      for shifts in current_schedule.values()):
+                logging.info("Creating best schedule data from current state")
+            
+                # Ensure we have all required tracking data
+                if not hasattr(self, 'worker_assignments') or not self.worker_assignments:
+                    self._synchronize_tracking_data()
+            
+            # Create the best schedule data structure
+                best_data = {
+                    'schedule': current_schedule,
+                    'worker_assignments': getattr(self, 'worker_assignments', {}),
+                    'worker_shift_counts': getattr(self, 'worker_shift_counts', {}),
+                    'worker_weekend_counts': getattr(self, 'worker_weekend_counts', {}),
+                    'worker_posts': getattr(self, 'worker_posts', {}),
+                    'last_assignment_date': getattr(self, 'last_assignment_date', {}),
+                    'consecutive_shifts': getattr(self, 'consecutive_shifts', {}),
+                    'score': self._evaluate_schedule()
+                }
+            
+                # Save this as our best schedule
+                self.best_schedule_data = best_data
+                logging.info(f"Created and saved best schedule data with score: {best_data['score']}")
+                return best_data
+        
+            # If we reach here, we have no valid schedule data
+            logging.error("No valid schedule data found in current state or saved best")
+            return None
+        
+        except Exception as e:
+            logging.error(f"Error in get_best_schedule: {str(e)}", exc_info=True)
+            return None
 
     def calculate_score(self, schedule_to_score=None, assignments_to_score=None):
         # Placeholder - use scheduler\'s score calculation for consistency
