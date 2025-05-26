@@ -2194,14 +2194,13 @@ class ScheduleBuilder:
         logging.info(f"Completed {i + 1} optimization loops with {iterations_without_improvement} "
                     f"final iterations without improvement")
     
-    # Final verification
-    if hasattr(self, 'best_schedule_data') and self.best_schedule_data:
-        logging.info(f"Optimization complete - best schedule confirmed with score: {self.best_schedule_data.get('score', 'unknown')}")
-    else:
-        logging.warning("Optimization complete but no best schedule data found")
+        # Final verification
+        if hasattr(self, 'best_schedule_data') and self.best_schedule_data:
+            logging.info(f"Optimization complete - best schedule confirmed with score: {self.best_schedule_data.get('score', 'unknown')}")
+        else:
+            logging.warning("Optimization complete but no best schedule data found")
     
-    return best_score
-        
+        return best_score        
 
     def _can_worker_swap(self, worker1_id, date1, post1, worker2_id, date2, post2):
         """
