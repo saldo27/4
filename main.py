@@ -43,7 +43,7 @@ class PasswordScreen(Screen):
         super(PasswordScreen, self).__init__(**kwargs)
         layout = BoxLayout(orientation='vertical', padding=50, spacing=20)
 
-        layout.add_widget(Label(text='Introduza la contrasela:', size_hint_y=None, height=40))
+        layout.add_widget(Label(text='Introduza la contraseña:', size_hint_y=None, height=40))
 
         self.password_input = TextInput(
             multiline=False,
