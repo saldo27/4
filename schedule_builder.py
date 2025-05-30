@@ -1686,7 +1686,7 @@ class ScheduleBuilder:
                             break
                         
             # Case 2: Worker has too few weekend shifts
-            elif deviation < -allowed_deviation:
+            elif deviation < allowed_deviation:
                 logging.info(f"Worker {worker_id_val} has too few weekend shifts ({weekend_shifts}, target {target_weekend_shifts:.2f})")
                 swap_found = False
             
@@ -1894,6 +1894,92 @@ class ScheduleBuilder:
 
         return overassigned_simple, underassigned_simple
     
+    def _balance_target_shifts_aggressively(self):
+        """Balance workers to meet their exact target_shifts, focusing on largest deviations first"""
+        logging.info("Starting aggressive target balancing...")
+        changes_made = 0
+    
+        # Calculate deviations for all workers
+        worker_deviations = []
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            target = worker['target_shifts']
+            current = len(self.worker_assignments.get(worker_id, []))
+            deviation = current - target
+            if abs(deviation) > 0.5:  # Only process workers with meaningful deviation
+                worker_deviations.append((worker_id, deviation, target, current))
+    
+        # Sort by absolute deviation (largest first)
+        worker_deviations.sort(key=lambda x: abs(x[1]), reverse=True)
+    
+        for worker_id, deviation, target, current in worker_deviations:
+            if deviation > 0:  # Worker has too many shifts
+                changes_made += self._try_redistribute_excess_shifts(worker_id, int(deviation))
+    
+        return changes_made
+
+    def _try_redistribute_excess_shifts(self, overloaded_worker_id, excess_count):
+        """Try to move excess shifts from overloaded worker to underloaded workers"""
+        changes = 0
+        max_attempts = min(excess_count, 5)  # Limit attempts to avoid disruption
+    
+        # Find underloaded workers
+        underloaded_workers = []
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            if worker_id == overloaded_worker_id:
+                continue
+            target = worker['target_shifts']
+            current = len(self.worker_assignments.get(worker_id, []))
+            if current < target:
+                deficit = target - current
+                underloaded_workers.append((worker_id, deficit))
+    
+        # Sort by largest deficit first
+        underloaded_workers.sort(key=lambda x: x[1], reverse=True)
+    
+        if not underloaded_workers:
+            return 0
+    
+        # Try to move shifts
+        assignments = list(self.worker_assignments.get(overloaded_worker_id, []))
+        random.shuffle(assignments)
+    
+        for date in assignments[:max_attempts]:
+            if (overloaded_worker_id, date) in self._locked_mandatory:
+                continue
+            if self._is_mandatory(overloaded_worker_id, date):
+                continue
+            
+            try:
+                post = self.schedule[date].index(overloaded_worker_id)
+            except (ValueError, KeyError):
+                continue
+            
+            # Try to assign to an underloaded worker
+            for under_worker_id, deficit in underloaded_workers:
+                if under_worker_id in self.schedule.get(date, []):
+                    continue  # Already assigned this date
+                
+                if self._can_assign_worker(under_worker_id, date, post):
+                    # Make the transfer
+                    self.schedule[date][post] = under_worker_id
+                    self.worker_assignments[overloaded_worker_id].remove(date)
+                    self.worker_assignments.setdefault(under_worker_id, set()).add(date)
+                
+                    # Update tracking
+                    self.scheduler._update_tracking_data(overloaded_worker_id, date, post, removing=True)
+                    self.scheduler._update_tracking_data(under_worker_id, date, post)
+                
+                    changes += 1
+                    logging.info(f"Redistributed shift on {date.strftime('%Y-%m-%d')} from worker {overloaded_worker_id} to {under_worker_id}")
+                    break
+                
+            if changes >= max_attempts:
+                break
+    
+        return changes
+
     def _balance_workloads(self):
         """
         """
@@ -2093,6 +2179,12 @@ class ScheduleBuilder:
             if not self.iteration_manager.should_continue(i, iterations_without_improvement, current_score):
                 logging.info("Early termination due to convergence, time limit, or quality threshold")
                 break
+            # 0. Priority phase: Focus on workers furthest from targets
+            if i < 3:  # First 3 iterations focus heavily on targets
+                if self._aggressive_target_balancing():
+                    logging.info(f"Improved target matching in iteration {i + 1}")
+                    made_change_in_main_iteration = True
+                    self._synchronize_tracking_data()
         
             # Synchronize data at the beginning of each major optimization iteration
             self._synchronize_tracking_data()
