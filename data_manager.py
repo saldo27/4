@@ -778,7 +778,7 @@ class DataManager:
         assignments = self.worker_assignments[worker_id]
         
         shift_difference = abs(len(assignments) - worker['target_shifts'])
-        if shift_difference > 2:  # Allow small deviation
+        if shift_difference > 1:  # Changed from 2 to 1
             warnings.append(
                 f"Worker {worker_id} has {len(assignments)} shifts "
                 f"(target: {worker['target_shifts']})"

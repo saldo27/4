@@ -860,13 +860,15 @@ class ScheduleBuilder:
         
             # Stop if worker already met or exceeded non-mandatory target (except at higher relaxation)
             if shift_difference <= 0:
-                if relaxation_level < 2:
-                    return float('-inf')  # Strict limit at relaxation levels 0-1
+                if relaxation_level == 0:
+                    score -= 8000 * abs(shift_difference)  # Heavy penalty, not impossible
+                elif relaxation_level == 1:
+                    score -= 5000 * abs(shift_difference)  # Moderate penalty
                 else:
-                    score -= 10000  # Severe penalty but still possible at highest relaxation
+                    score -= 2000 * abs(shift_difference)  # Light penalty at high relaxation
             else:
-                # Higher priority for workers further from their non-mandatory target
-                score += shift_difference * 1000
+                # Prioritize workers who are furthest below target
+                score += shift_difference * 2000  # Increased from 1000
 
             # --- MONTHLY TARGET CHECK ---
             month_key = f"{date.year}-{date.month:02d}"
@@ -915,12 +917,12 @@ class ScheduleBuilder:
                     logging.debug(f"    Worker {worker_id} rejected for {date.strftime('%Y-%m-%d')}: Would exceed effective monthly max ({shifts_this_month + 1} > {effective_max_monthly}) at relax level {relaxation_level}")
                     return float('-inf')
                 # At higher relaxation, it's a penalty but not a hard stop, unless it's way over.
-                elif relaxation_level < 2 and (shifts_this_month + 1 > effective_max_monthly + 1) : # Allow one more if relax_level = 1
-                    logging.debug(f"    Worker {worker_id} rejected for {date.strftime('%Y-%m-%d')}: Would significantly exceed effective monthly max ({shifts_this_month + 1} > {effective_max_monthly + 1}) at relax level {relaxation_level}")
-                    return float('-inf')
-                else: # relaxation_level == 2 or higher, or just slightly over at relax_level == 1
-                    score -= (shifts_this_month + 1 - effective_max_monthly) * 2000 # Heavy penalty
-                    logging.debug(f"    Worker {worker_id} penalized for {date.strftime('%Y-%m-%d')}: Exceeds effective monthly max ({shifts_this_month + 1} > {effective_max_monthly}). Score impact: {(shifts_this_month + 1 - effective_max_monthly) * -2000}")
+                #elif relaxation_level < 2 and (shifts_this_month + 1 > effective_max_monthly + 1) : # Allow one more if relax_level = 1
+                    #logging.debug(f"    Worker {worker_id} rejected for {date.strftime('%Y-%m-%d')}: Would significantly exceed effective monthly max ({shifts_this_month + 1} > {effective_max_monthly + 1}) at relax level {relaxation_level}")
+                    #return float('-inf')
+                #else: # relaxation_level == 2 or higher, or just slightly over at relax_level == 1
+                    #score -= (shifts_this_month + 1 - effective_max_monthly) * 2000 # Heavy penalty
+                    #logging.debug(f"    Worker {worker_id} penalized for {date.strftime('%Y-%m-%d')}: Exceeds effective monthly max ({shifts_this_month + 1} > {effective_max_monthly}). Score impact: {(shifts_this_month + 1 - effective_max_monthly) * -2000}")
 
 
             # Scoring based on being below target (positive score impact)
@@ -1600,7 +1602,10 @@ class ScheduleBuilder:
             # Calculate target weekend shifts for this worker
             target_weekend_shifts = total_shifts * weekend_percentage
             deviation = weekend_shifts - target_weekend_shifts
-            allowed_deviation = 1.0  # Allow ±1 shift from perfect distribution
+            allowed_deviation = 0.75  # Tighten the tolerance
+
+            # And add priority scoring based on how far workers are from target:
+            deviation_priority = abs(deviation) distribution
         
             logging.debug(f"Worker {worker_id_val}: {weekend_shifts} weekend shifts, target {target_weekend_shifts:.2f}, deviation {deviation:.2f}")
         
@@ -2320,7 +2325,7 @@ class ScheduleBuilder:
             # Check if this would violate max consecutive weekends
             max_weekend_count = self.max_consecutive_weekends
             work_percentage = worker1_data_val.get('work_percentage', 100)
-            if work_percentage < 100:
+            if work_percentage < 70:
                 max_weekend_count = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
         
             for i, weekend_date_val in enumerate(worker1_weekend_dates): # Renamed weekend_date
@@ -2467,7 +2472,7 @@ class ScheduleBuilder:
         logging.info("Attempting to improve special day (weekend/holiday/eve) distribution")
     
         # Ensure data consistency before proceeding
-        # self._ensure_data_integrity() # This should call scheduler's data sync if it exists
+        self._ensure_data_integrity() # This should call scheduler's data sync if it exists
                                       # or be robust enough on its own.
                                       # For now, assuming scheduler's data is the source of truth.
 
