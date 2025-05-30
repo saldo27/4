@@ -43,7 +43,7 @@ class PasswordScreen(Screen):
         super(PasswordScreen, self).__init__(**kwargs)
         layout = BoxLayout(orientation='vertical', padding=50, spacing=20)
 
-        layout.add_widget(Label(text='Introduza la contraseña:', size_hint_y=None, height=40))
+        layout.add_widget(Label(text='Introduza la contrasela:', size_hint_y=None, height=40))
 
         self.password_input = TextInput(
             multiline=False,
@@ -2148,43 +2148,36 @@ class CalendarViewScreen(Screen):
         popup.open()
 
     def reset_schedule(self, popup):
-        """Reset the schedule and return to setup screen"""
+        """Reset the schedule but keep worker data and return to worker details screen"""
         try:
             app = App.get_running_app()
+    
+            # Keep ALL current settings including worker data
+            current_config = app.schedule_config.copy()
+    
+            # Only clear the generated schedule, keep everything else
+            current_config['schedule'] = {}
+            current_config['current_worker_index'] = 0
         
-            # Keep some basic settings from the current configuration
-            basic_settings = {
-                'start_date': app.schedule_config.get('start_date'),
-                'end_date': app.schedule_config.get('end_date'),
-                'holidays': app.schedule_config.get('holidays', []),
-                'num_workers': app.schedule_config.get('num_workers', 0),
-                'num_shifts': app.schedule_config.get('num_shifts', 0)
-            }
-        
-            # Reset config to just the basic settings
-            app.schedule_config = basic_settings
-        
-            # Clear out the workers_data and schedule
-            app.schedule_config['workers_data'] = []
-            app.schedule_config['schedule'] = {}
-            app.schedule_config['current_worker_index'] = 0
-        
+            # Update the app config
+            app.schedule_config = current_config
+    
             # Dismiss the popup
             popup.dismiss()
-        
+    
             # Show success message
             success = Popup(
                 title='Success',
-                content=Label(text='Schedule has been reset.\nReturning to worker details...'),
+                content=Label(text='Schedule has been reset.\nWorker data preserved.\nReturning to worker details...'),
                 size_hint=(None, None),
                 size=(400, 200)
             )
             success.open()
-        
+    
             # Schedule a callback to close the popup and navigate
             from kivy.clock import Clock
             Clock.schedule_once(lambda dt: self.navigate_after_reset(success), 2)
-        
+    
         except Exception as e:
             # Show error
             error_popup = Popup(
@@ -2194,7 +2187,7 @@ class CalendarViewScreen(Screen):
                 size=(400, 200)
             )
             error_popup.open()
-        
+    
             # Dismiss the confirmation popup
             popup.dismiss()
 
