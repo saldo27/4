@@ -1604,10 +1604,9 @@ class ScheduleBuilder:
             deviation = weekend_shifts - target_weekend_shifts
             allowed_deviation = 0.75  # Tighten the tolerance
 
-            # And add priority scoring based on how far workers are from target:
-            deviation_priority = abs(deviation) distribution
-        
-            logging.debug(f"Worker {worker_id_val}: {weekend_shifts} weekend shifts, target {target_weekend_shifts:.2f}, deviation {deviation:.2f}")
+            ## And add priority scoring based on how far workers are from target:
+            deviation_priority = abs(deviation)
+            # Process workers with largest deviations first            logging.debug(f"Worker {worker_id_val}: {weekend_shifts} weekend shifts, target {target_weekend_shifts:.2f}, deviation {deviation:.2f}")
         
             # Case 1: Worker has too many weekend shifts
             if deviation > allowed_deviation:
@@ -2181,7 +2180,7 @@ class ScheduleBuilder:
                 break
             # 0. Priority phase: Focus on workers furthest from targets
             if i < 3:  # First 3 iterations focus heavily on targets
-                if self._aggressive_target_balancing():
+                if self._balance_target_shifts_aggressively():
                     logging.info(f"Improved target matching in iteration {i + 1}")
                     made_change_in_main_iteration = True
                     self._synchronize_tracking_data()
