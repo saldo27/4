@@ -71,11 +71,12 @@ class AdaptiveIterationManager:
             weekend_passes = 4
             post_adjustment_iterations = 8
         else:
-            main_loops = 20
-            fill_attempts = 12
-            balance_iterations = 8
-            weekend_passes = 6
-            post_adjustment_iterations = 12
+            # MODIFIED: Increased iterations for typical complex schedules
+            main_loops = 30                    # Increased from 20 to 30
+            fill_attempts = 12                 # Keeping at 12 (was already good)
+            balance_iterations = 15            # Increased from 8 to 15
+            weekend_passes = 10                # Increased from 6 to 10
+            post_adjustment_iterations = 5     # Decreased from 12 to 5 as requested
         
         # Adjust based on worker count
         num_workers = len(self.scheduler.workers_data)
