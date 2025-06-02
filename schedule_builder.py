@@ -1065,32 +1065,6 @@ class ScheduleBuilder:
         
             # Higher weight for target difference as schedule progresses
             score += shift_difference * 500 * schedule_completion
-
-            # Team composition bonus
-            team_composition_bonus = self._calculate_team_composition_bonus(worker['id'], date)
-            score += team_composition_bonus
-    
-            # Preference bonus (if you want to add worker preferences)
-            preference_bonus = self._calculate_preference_bonus(worker['id'], date, post)
-            score += preference_bonus
-    
-            # Fatigue penalty (based on recent assignments)
-            fatigue_penalty = self._calculate_fatigue_penalty(worker['id'], date)
-            score -= fatigue_penalty
-    
-            # Skill matching bonus (if you have skill requirements per post)
-            skill_bonus = self._calculate_skill_bonus(worker, post)
-            score += skill_bonus
-    
-            # Enhanced logging for debugging
-            if team_composition_bonus > 0 or preference_bonus > 0 or fatigue_penalty > 0 or skill_bonus > 0:
-                logging.debug(f"Enhanced scoring for worker {worker['id']}: "
-                             f"team_bonus={team_composition_bonus}, "
-                             f"preference_bonus={preference_bonus}, "
-                             f"fatigue_penalty={fatigue_penalty}, "
-                             f"skill_bonus={skill_bonus}")
-    
-            return score
         
             # Log the score calculation
             logging.debug(f"Score for worker {worker_id}: {score} "\
@@ -1374,54 +1348,93 @@ class ScheduleBuilder:
 
     # 6. Schedule Improvement Methods
 
-    def _try_fill_empty_shifts(self, relaxation_level=0):
+    def _try_fill_empty_shifts(self):
         """
         Try to fill empty shifts in the authoritative self.schedule.
-        Enhanced with priority-based slot selection and multiple strategies.
+        Pass 1: Direct assignment, attempting with increasing relaxation levels.
+        Pass 2: Attempt swaps for remaining empty shifts.
         """
-        logging.debug(f"ENTERED _try_fill_empty_shifts with relaxation_level={relaxation_level}")
+        logging.debug(f"ENTERED _try_fill_empty_shifts. self.schedule ID: {id(self.schedule)}. Keys count: {len(self.schedule.keys())}. Sample: {dict(list(self.schedule.items())[:2])}")
 
-        # ADD THIS: Get prioritized empty slots instead of simple list
-        initial_empty_slots = self._get_prioritized_empty_slots()
-    
+        initial_empty_slots = []
+        for date_val, workers_in_posts in self.schedule.items():
+            for post_index, worker_in_post in enumerate(workers_in_posts):
+                if worker_in_post is None:
+                    initial_empty_slots.append((date_val, post_index))
+        
         logging.debug(f"[_try_fill_empty_shifts] Initial identified empty_slots count: {len(initial_empty_slots)}")
         if not initial_empty_slots:
             logging.info(f"--- No initial empty shifts to fill. ---")
             return False
 
-        logging.info(f"Attempting to fill {len(initial_empty_slots)} empty shifts with relaxation level {relaxation_level}...")
+        logging.info(f"Attempting to fill {len(initial_empty_slots)} empty shifts...")
+        initial_empty_slots.sort(key=lambda x: (x[0], x[1])) # Process chronologically, then by post
 
         shifts_filled_this_pass_total = 0
         made_change_overall = False
         remaining_empty_shifts_after_pass1 = []
 
         logging.info("--- Starting Pass 1: Direct Fill with Relaxation Iteration ---")
-        for date_val, post_val, priority in initial_empty_slots:  # Now includes priority
+        for date_val, post_val in initial_empty_slots:
             if self.schedule[date_val][post_val] is not None:
-                logging.debug(f"[Pass 1] Slot ({date_val.strftime('%Y-%m-%d')}, {post_val}) already filled. Skipping.")
+                logging.debug(f"[Pass 1] Slot ({date_val.strftime('%Y-%m-%d')}, {post_val}) already filled by {self.schedule[date_val][post_val]}. Skipping.")
                 continue
-        
+            
             assigned_this_post_pass1 = False
-        
-            # ADD THIS: Try multiple strategies for each slot
-            # Strategy 1: Direct assignment
-            if self._try_direct_assignment(date_val, post_val, relaxation_level):
-                assigned_this_post_pass1 = True
-                shifts_filled_this_pass_total += 1
-                made_change_overall = True
-                logging.info(f"[Pass 1 Direct] Filled slot {date_val.strftime('%Y-%m-%d')} Post {post_val} (Priority: {priority})")
-        
-            # Strategy 2: Local swaps (same day) if direct assignment failed
-            elif self._try_local_swaps(date_val, post_val):
-                assigned_this_post_pass1 = True
-                shifts_filled_this_pass_total += 1
-                made_change_overall = True
-                logging.info(f"[Pass 1 Local Swap] Filled slot {date_val.strftime('%Y-%m-%d')} Post {post_val}")
-        
-            if not assigned_this_post_pass1:
+            
+            # Iterate through relaxation levels for direct fill
+            # Max relaxation level can be a config, e.g., self.scheduler.config.get('max_direct_fill_relaxation', 3)
+            # For now, let's assume up to 2 (0, 1, 2)
+            for relax_lvl_attempt in range(3): 
+                pass1_candidates = []
+                logging.debug(f"  [Pass 1 Attempt] Date: {date_val.strftime('%Y-%m-%d')}, Post: {post_val}, Relaxation Level: {relax_lvl_attempt}")
+
+                for worker_data_val in self.workers_data:
+                    worker_id_val = worker_data_val['id']
+                    logging.debug(f"    [Pass 1 Candidate Check] Worker: {worker_id_val} for Date: {date_val.strftime('%Y-%m-%d')}, Post: {post_val}, Relax: {relax_lvl_attempt}")
+                    
+                    score = self._calculate_worker_score(worker_data_val, date_val, post_val, relaxation_level=relax_lvl_attempt)
+
+                    if score > float('-inf'):
+                        logging.debug(f"      -> Pass1 ACCEPTED as candidate: Worker {worker_id_val} with score {score} at relax {relax_lvl_attempt}")
+                        pass1_candidates.append((worker_data_val, score))
+                    else:
+                        logging.debug(f"      -> Pass1 REJECTED (Score Check): Worker {worker_id_val} at relax {relax_lvl_attempt}")
+            
+                if pass1_candidates:
+                    pass1_candidates.sort(key=lambda x: x[1], reverse=True)
+                    logging.debug(f"    [Pass 1] Candidates for {date_val.strftime('%Y-%m-%d')} Post {post_val} (Relax {relax_lvl_attempt}): {[(c[0]['id'], c[1]) for c in pass1_candidates]}")
+                    
+                    # Try the top candidate that is valid at this relaxation level
+                    candidate_worker_data, candidate_score = pass1_candidates[0]
+                    worker_id_to_assign = candidate_worker_data['id']
+                    
+                    if self.schedule[date_val][post_val] is None: 
+                        others_now = [w for i, w in enumerate(self.schedule.get(date_val, [])) if i != post_val and w is not None]
+                        if not self._check_incompatibility_with_list(worker_id_to_assign, others_now):
+                            logging.debug(f"      -> Pass1 Assignment REJECTED (Last Minute Incompat): W:{worker_id_to_assign} for {date_val.strftime('%Y-%m-%d')} P:{post_val} at Relax {relax_lvl_attempt}")
+                        else:
+                            self.schedule[date_val][post_val] = worker_id_to_assign
+                            self.worker_assignments.setdefault(worker_id_to_assign, set()).add(date_val)
+                            self.scheduler._update_tracking_data(worker_id_to_assign, date_val, post_val, removing=False)
+                            logging.info(f"[Pass 1 Direct Fill] Filled empty shift on {date_val.strftime('%Y-%m-%d')} Post {post_val} with W:{worker_id_to_assign} (Score: {candidate_score:.2f}, Relax: {relax_lvl_attempt})")
+                            shifts_filled_this_pass_total += 1
+                            made_change_overall = True
+                            assigned_this_post_pass1 = True
+                            break # Break from the relaxation_level attempts for this slot, as it's filled
+                    else: 
+                        # Slot was filled by a previous iteration (should not happen if logic is sequential for a slot)
+                        # or by another process if this method is called concurrently (not expected here)
+                        logging.warning(f"    [Pass 1] Slot ({date_val.strftime('%Y-%m-%d')}, {post_val}) was unexpectedly filled before assignment at Relax {relax_lvl_attempt}. Current: {self.schedule[date_val][post_val]}")
+                        assigned_this_post_pass1 = True # Consider it "handled" to break relaxation attempts
+                        break 
+            
+            if not assigned_this_post_pass1 and self.schedule[date_val][post_val] is None:
                 remaining_empty_shifts_after_pass1.append((date_val, post_val))
-            if not remaining_empty_shifts_after_pass1:
-                logging.info(f"--- Finished Pass 1. No remaining empty shifts for Pass 2. ---")
+                logging.debug(f"Could not find compatible direct candidate in Pass 1 for {date_val.strftime('%Y-%m-%d')} Post {post_val} after all relaxation attempts.")
+
+        if not remaining_empty_shifts_after_pass1:
+            logging.info(f"--- Finished Pass 1. No remaining empty shifts for Pass 2. ---")
         else:
             logging.info(f"--- Finished Pass 1. Starting Pass 2: Attempting swaps for {len(remaining_empty_shifts_after_pass1)} empty shifts ---")
             for date_empty, post_empty in remaining_empty_shifts_after_pass1:
@@ -1503,9 +1516,10 @@ class ScheduleBuilder:
         
         logging.info(f"--- Finished _try_fill_empty_shifts. Total filled/swapped: {shifts_filled_this_pass_total} ---")
         if made_change_overall:
-            self._synchronize_tracking_data()
+            self._synchronize_tracking_data() # Ensure builder's and scheduler's data are aligned
             self._save_current_as_best()
         return made_change_overall
+
     
     def _find_swap_candidate(self, worker_W_id, conflict_date, conflict_post):
         """
@@ -2123,11 +2137,6 @@ class ScheduleBuilder:
         """Enhanced optimization with adaptive iterations and convergence detection"""
         # Start the optimization timer
         self.iteration_manager.start_timer()
-
-        # ADD THIS: Enhanced convergence tracking
-        score_history = []
-        stagnation_threshold = 3
-        min_improvement = 0.1  # Minimum score improvement to consider meaningful
     
         # Use adaptive iterations if not specified
         if iterations is None:
@@ -2139,14 +2148,14 @@ class ScheduleBuilder:
             max_main_loops = iterations
             max_post_iterations = max(3, iterations // 2)
             convergence_threshold = 3
-
+    
         logging.info(f"Starting adaptive optimization with max {max_main_loops} loops, "
                     f"convergence threshold: {convergence_threshold}")
-
+    
         # Ensure initial state is the best known if nothing better is found
         if self.best_schedule_data is None:
             self._save_current_as_best(initial=True)
-
+    
         best_score = self._evaluate_schedule()
         if self.best_schedule_data and self.best_schedule_data['score'] > best_score:
             best_score = self.best_schedule_data['score']
@@ -2156,7 +2165,7 @@ class ScheduleBuilder:
             best_score = self.best_schedule_data['score']
 
         iterations_without_improvement = 0
-
+    
         logging.info(f"Starting schedule optimization. Initial best score: {best_score:.2f}")
 
         # Main optimization loop with adaptive control
@@ -2164,45 +2173,26 @@ class ScheduleBuilder:
             logging.info(f"--- Main Optimization Loop Iteration: {i + 1}/{max_main_loops} ---")
             made_change_in_main_iteration = False
         
-            # ADD THIS: Adaptive relaxation - start strict, become more lenient
-            relaxation_level = min(2, i // 3)  # Gradually increase relaxation every 3 iterations
-        
             # Check if we should continue optimization
             current_score = self._evaluate_schedule()
-        
-            # ADD THIS: Enhanced convergence detection
-            score_history.append(current_score)
-            if len(score_history) > 10:  # Keep only last 10 scores
-                score_history.pop(0)
-            
-            # Check for stagnation
-            if len(score_history) >= stagnation_threshold:
-                recent_scores = score_history[-stagnation_threshold:]
-                score_variance = max(recent_scores) - min(recent_scores)
-                if score_variance < min_improvement:
-                    logging.info(f"Convergence detected - score variance {score_variance:.3f} < {min_improvement}")
-                    break
-        
             if not self.iteration_manager.should_continue(i, iterations_without_improvement, current_score):
                 logging.info("Early termination due to convergence, time limit, or quality threshold")
                 break
-            
             # 0. Priority phase: Focus on workers furthest from targets
             if i < 3:  # First 3 iterations focus heavily on targets
                 if self._balance_target_shifts_aggressively():
                     logging.info(f"Improved target matching in iteration {i + 1}")
                     made_change_in_main_iteration = True
                     self._synchronize_tracking_data()
-
+        
             # Synchronize data at the beginning of each major optimization iteration
             self._synchronize_tracking_data()
 
             # 1. Try to fill empty shifts with adaptive attempts
             fill_attempts = min(self.adaptive_config.get('max_fill_attempts', 5), 3 + i // 2)
             for attempt in range(fill_attempts):
-                # ADD THIS: Pass relaxation level to fill method
-                if self._try_fill_empty_shifts(relaxation_level=relaxation_level):
-                    logging.info(f"Improved schedule by filling empty shifts (attempt {attempt + 1}, relaxation: {relaxation_level})")
+                if self._try_fill_empty_shifts():
+                    logging.info(f"Improved schedule by filling empty shifts (attempt {attempt + 1})")
                     made_change_in_main_iteration = True
                     self._synchronize_tracking_data()
                     break  # Success, move to next optimization phase
@@ -3250,172 +3240,6 @@ class ScheduleBuilder:
         except Exception as e:
             logging.error(f"Error in get_best_schedule: {str(e)}", exc_info=True)
             return None
-
-    def _get_prioritized_empty_slots(self):
-        """Get empty slots prioritized by importance and ease of filling"""
-        empty_slots = []
-        for date_val, shifts in self.schedule.items():
-            for post_idx, worker in enumerate(shifts):
-                if worker is None:
-                    priority = self._calculate_slot_priority(date_val, post_idx)
-                    empty_slots.append((date_val, post_idx, priority))
-        
-        # Sort by priority (higher priority first)
-        empty_slots.sort(key=lambda x: x[2], reverse=True)
-        return empty_slots
-
-    def _calculate_slot_priority(self, date, post):
-        """Calculate priority for filling a specific slot"""
-        priority = 100  # Base priority
-        
-        # Higher priority for dates closer to start (easier to plan)
-        days_from_start = (date - self.start_date).days
-        priority += max(0, 30 - days_from_start)
-        
-        # Higher priority for first post (usually most critical)
-        if post == 0:
-            priority += 20
-        elif post == self.num_shifts - 1:  # Last post
-            priority += 10
-        
-        # Lower priority for weekends (harder to fill)
-        if date.weekday() >= 5:
-            priority -= 10
-        
-        # Higher priority for holidays (important to cover)
-        if date in self.holidays:
-            priority += 15
-            
-        return priority
-
-    def _try_direct_assignment(self, date, post, relaxation_level=0):
-        """Try direct assignment with specified relaxation level"""
-        candidates = self._get_candidates(date, post, relaxation_level)
-        if candidates:
-            best_candidate, score = candidates[0]
-            if score > float('-inf'):
-                return self.assign_worker_to_shift(best_candidate['id'], date, post)
-        return False
-
-    def _try_local_swaps(self, date, post):
-        """Try swapping workers within the same day"""
-        if date not in self.schedule:
-            return False
-            
-        # Find workers on the same day who might swap posts
-        workers_today = [(i, w) for i, w in enumerate(self.schedule[date]) if w is not None]
-        
-        for current_post, worker_id in workers_today:
-            if self._can_worker_move_to_post(worker_id, date, current_post, post):
-                # Perform the swap
-                self.schedule[date][current_post] = None
-                self.schedule[date][post] = worker_id
-                
-                # Update tracking
-                self.scheduler._update_tracking_data(worker_id, date, current_post, removing=True)
-                self.scheduler._update_tracking_data(worker_id, date, post, removing=False)
-                
-                logging.info(f"Local swap: Worker {worker_id} moved from post {current_post} to {post} on {date.strftime('%Y-%m-%d')}")
-                return True
-        return False
-
-    def _can_worker_move_to_post(self, worker_id, date, from_post, to_post):
-        """Check if a worker can move from one post to another on the same day"""
-        # Basic check - ensure the target post is empty
-        if (len(self.schedule[date]) > to_post and 
-            self.schedule[date][to_post] is not None):
-            return False
-        
-        # Check if there are any post-specific constraints (if you have them)
-        # For now, allow any post movement within the same day
-        return True
-
-    def _calculate_team_composition_bonus(self, worker_id, date):
-        """Calculate bonus for good team composition"""
-        bonus = 0
-        
-        # Get workers already assigned to this date
-        assigned_workers = [w for w in self.schedule.get(date, []) if w is not None]
-        
-        # Bonus for experience diversity (if you track experience levels)
-        # This is a placeholder - adapt based on your worker data structure
-        worker_data = next((w for w in self.workers_data if w['id'] == worker_id), None)
-        if worker_data:
-            experience = worker_data.get('experience_level', 'medium')
-            
-            # Count current experience levels on this day
-            experience_counts = {'low': 0, 'medium': 0, 'high': 0}
-            for other_worker_id in assigned_workers:
-                other_worker = next((w for w in self.workers_data if w['id'] == other_worker_id), None)
-                if other_worker:
-                    other_exp = other_worker.get('experience_level', 'medium')
-                    experience_counts[other_exp] += 1
-            
-            # Bonus for balancing experience levels
-            if experience_counts[experience] < 2:  # Encourage diversity
-                bonus += 10
-        
-        return bonus
-
-    def _calculate_fatigue_penalty(self, worker_id, date):
-        """Calculate penalty based on recent assignments (fatigue)"""
-        penalty = 0
-        
-        # Check assignments in the last week
-        week_ago = date - timedelta(days=7)
-        recent_assignments = [d for d in self.worker_assignments.get(worker_id, []) 
-                             if week_ago <= d < date]
-        
-        # Penalty increases with more recent assignments
-        if len(recent_assignments) > 2:
-            penalty = (len(recent_assignments) - 2) * 5
-        
-        return penalty
-
-    def _calculate_preference_bonus(self, worker_id, date, post):
-        """Calculate bonus based on worker preferences (if you have them)"""
-        bonus = 0
-        
-        # This is a placeholder - you can add worker preferences to your data structure
-        worker_data = next((w for w in self.workers_data if w['id'] == worker_id), None)
-        if worker_data:
-            # Example: if worker prefers certain days of the week
-            preferred_weekdays = worker_data.get('preferred_weekdays', [])
-            if date.weekday() in preferred_weekdays:
-                bonus += 15
-            
-            # Example: if worker prefers certain posts
-            preferred_posts = worker_data.get('preferred_posts', [])
-            if post in preferred_posts:
-                bonus += 10
-        
-        return bonus
-
-    def _calculate_skill_bonus(self, worker, post):
-        """Calculate bonus based on skill matching (if you have skill requirements)"""
-        bonus = 0
-        
-        # This is a placeholder - you can add skill requirements per post
-        worker_skills = worker.get('skills', [])
-        
-        # Example post requirements (you would define these in your configuration)
-        post_requirements = {
-            0: ['leadership', 'communication'],  # Post 0 requires leadership
-            1: ['technical', 'detail-oriented'],  # Post 1 requires technical skills
-            # Add more as needed
-        }
-        
-        required_skills = post_requirements.get(post, [])
-        matching_skills = set(worker_skills) & set(required_skills)
-        
-        # Bonus for each matching skill
-        bonus += len(matching_skills) * 5
-        
-        return bonus
-
-    def calculate_score(self, schedule_to_score=None, assignments_to_score=None):
-        # Placeholder - use scheduler's score calculation for consistency
-        return self.scheduler.calculate_score(schedule_to_score or self.schedule, assignments_to_score or self.worker_assignments)
 
     def calculate_score(self, schedule_to_score=None, assignments_to_score=None):
         # Placeholder - use scheduler\'s score calculation for consistency
