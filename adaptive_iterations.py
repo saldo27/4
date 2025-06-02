@@ -4,7 +4,7 @@ class AdaptiveIterationManager:
     def __init__(self, scheduler):
         self.scheduler = scheduler
         self.start_time = None
-        self.convergence_threshold = 3  # Stop if no improvement for 3 iterations
+        self.convergence_threshold = 4  # Stop if no improvement for 4 iterations
         self.max_time_minutes = 5  # Maximum optimization time in minutes
         
     def calculate_base_iterations(self):
@@ -65,17 +65,17 @@ class AdaptiveIterationManager:
             weekend_passes = 3
             post_adjustment_iterations = 5
         elif complexity < 15000:
-            main_loops = 12
-            fill_attempts = 8
-            balance_iterations = 5
-            weekend_passes = 4
-            post_adjustment_iterations = 8
+            main_loops = 20
+            fill_attempts = 10
+            balance_iterations = 12
+            weekend_passes = 8
+            post_adjustment_iterations = 5
         else:
             # MODIFIED: Increased iterations for typical complex schedules
-            main_loops = 30                    # Increased from 20 to 30
+            main_loops = 40                    # Increased from 20 to 30
             fill_attempts = 12                 # Keeping at 12 (was already good)
-            balance_iterations = 15            # Increased from 8 to 15
-            weekend_passes = 10                # Increased from 6 to 10
+            balance_iterations = 18            # Increased from 8 to 15
+            weekend_passes = 12                # Increased from 6 to 10
             post_adjustment_iterations = 5     # Decreased from 12 to 5 as requested
         
         # Adjust based on worker count
