@@ -928,39 +928,85 @@ class WorkerDetailsScreen(Screen):
     def generate_schedule(self):
         app = App.get_running_app()
         try:
-            print("DEBUG: generate_schedule - Starting schedule generation...") # <<< ADD
+            print("DEBUG: generate_schedule - Starting schedule generation...")
             scheduler = Scheduler(app.schedule_config)
-            success = scheduler.generate_schedule()  # This returns True/False
+            success = scheduler.generate_schedule()
 
-            if not success:  # Schedule generation failed
+            if not success:
                 raise ValueError("Failed to generate schedule - validation errors detected")
 
-            # Get the actual schedule from the scheduler object
             schedule = scheduler.schedule
-
-            if not schedule:  # Schedule is empty
+            if not schedule:
                 raise ValueError("Generated schedule is empty")
 
             app.schedule_config['schedule'] = schedule
-            print("DEBUG: generate_schedule - Schedule generated and saved to config.") # <<< ADD
+            print("DEBUG: generate_schedule - Schedule generated and saved to config.")
+
+            # *** NEW: Automatically export PDF summary after successful generation ***
+            try:
+                calendar_screen = self.manager.get_screen('calendar_view')
+                calendar_screen._auto_export_schedule_summary(scheduler, app.schedule_config)
+            except Exception as export_error:
+                logging.warning(f"Auto PDF export failed, but schedule was generated successfully: {export_error}")
+                # Don't fail the whole operation if PDF export fails
 
             popup = Popup(title='Success',
                          content=Label(text='Schedule generated successfully!'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
-            print("DEBUG: generate_schedule - Success popup opened.") # <<< ADD
+            print("DEBUG: generate_schedule - Success popup opened.")
 
-            # --- Transition Point ---
-            print("DEBUG: generate_schedule - Preparing to switch to calendar_view...") # <<< ADD
+            print("DEBUG: generate_schedule - Preparing to switch to calendar_view...")
             self.manager.current = 'calendar_view'
-            print("DEBUG: generate_schedule - Switched manager.current to calendar_view.") # <<< ADD
-            # --- End Transition Point ---
+            print("DEBUG: generate_schedule - Switched manager.current to calendar_view.")
 
         except Exception as e:
             error_message = f"Failed to generate schedule: {str(e)}"
-            print(f"DEBUG: generate_schedule - ERROR: {error_message}") # <<< ADD ERROR PRINT
-            logging.error(error_message, exc_info=True) # Keep logging
+            print(f"DEBUG: generate_schedule - ERROR: {error_message}")
+            logging.error(error_message, exc_info=True)
             self.show_error(error_message)
+
+    def generate_schedule_async(self):
+        """Generate schedule in a separate thread to prevent UI freezing"""
+        import threading
+        from kivy.clock import Clock
+        
+        def run_generation():
+            try:
+                app = App.get_running_app()
+                cfg = app.schedule_config
+                
+                scheduler = Scheduler(cfg)
+                success = scheduler.generate_schedule()
+                
+                if success:
+                    app.schedule_config['schedule'] = scheduler.schedule
+                    # Schedule the PDF export on the main thread
+                    Clock.schedule_once(lambda dt: self._handle_success(scheduler, cfg))
+                else:
+                    Clock.schedule_once(lambda dt: self.show_error("No se pudo generar un horario válido."))
+                    
+            except Exception as e:
+                Clock.schedule_once(lambda dt: self.show_error(f"Error: {str(e)}"))
+        
+        # Start generation in background thread
+        thread = threading.Thread(target=run_generation)
+        thread.daemon = True
+        thread.start()
+    
+    def _handle_success(self, scheduler, config):
+        """Handle successful schedule generation on main thread"""
+        try:
+            calendar_screen = self.manager.get_screen('calendar_view')
+            calendar_screen._auto_export_schedule_summary(scheduler, config)
+        except Exception as export_error:
+            logging.warning(f"Auto PDF export failed: {export_error}")
+        
+        popup = Popup(title='Success',
+                     content=Label(text='Schedule generated successfully!'),
+                     size_hint=(None, None), size=(400, 200))
+        popup.open()
+        self.manager.current = 'calendar_view'
         
     def clear_inputs(self):
         self.worker_id.text = ''
@@ -2104,6 +2150,126 @@ class CalendarViewScreen(Screen):
             )
             popup.open()
 
+    def _auto_export_schedule_summary(self, scheduler, config):
+        """Automatically export PDF summary after schedule generation"""
+        from pdf_exporter import PDFExporter
+        from datetime import datetime
+        import os
+        import subprocess
+        import platform
+        
+        try:
+            # Create PDF exporter with the generated schedule
+            schedule_config_for_export = {
+                'schedule': scheduler.schedule,
+                'workers_data': config.get('workers_data', []),
+                'num_shifts': config.get('num_shifts', 0),
+                'holidays': config.get('holidays', [])
+            }
+            
+            pdf_exporter = PDFExporter(schedule_config_for_export)
+            
+            # Generate statistics for the PDF
+            stats_data = self._generate_stats_for_export(scheduler, config)
+            
+            # Export the PDF
+            filename = pdf_exporter.export_summary_pdf(stats_data)
+            
+            if filename and os.path.exists(filename):
+                logging.info(f"Schedule summary automatically exported to: {filename}")
+                
+                # Automatically open the PDF
+                self._open_pdf_file(filename)
+                
+                # Show success popup
+                from kivy.uix.popup import Popup
+                from kivy.uix.label import Label
+                popup = Popup(
+                    title='Schedule Generated & Exported', 
+                    content=Label(text=f'Schedule generated successfully!\nPDF exported to: {filename}\nFile opened automatically.'),
+                    size_hint=(None, None), 
+                    size=(500, 250)
+                )
+                popup.open()
+                
+        except Exception as e:
+            logging.error(f"Auto export failed: {e}")
+            raise e
+
+    def _generate_stats_for_export(self, scheduler, config):
+        """Generate statistics data for PDF export"""
+        from datetime import datetime
+        
+        workers_stats = {}
+        worker_shifts_all = {}
+        
+        for worker in config.get('workers_data', []):
+            worker_id = worker['id']
+            assignments = scheduler.worker_assignments.get(worker_id, set())
+            
+            # Basic stats calculation
+            total_shifts = len(assignments)
+            weekend_shifts = sum(1 for date in assignments if date.weekday() >= 4)
+            holiday_shifts = sum(1 for date in assignments if date in config.get('holidays', []))
+            
+            # Post distribution
+            post_counts = {}
+            weekday_counts = {i: 0 for i in range(7)}
+            
+            shifts_list = []
+            for date in assignments:
+                if date in scheduler.schedule:
+                    try:
+                        post = scheduler.schedule[date].index(worker_id)
+                        post_counts[post] = post_counts.get(post, 0) + 1
+                        
+                        shifts_list.append({
+                            'date': date,
+                            'day': date.strftime('%A'),
+                            'post': post + 1,
+                            'is_weekend': date.weekday() >= 4,
+                            'is_holiday': date in config.get('holidays', [])
+                        })
+                    except ValueError:
+                        pass
+                
+                weekday_counts[date.weekday()] += 1
+            
+            workers_stats[worker_id] = {
+                'total': total_shifts,
+                'weekends': weekend_shifts,
+                'holidays': holiday_shifts,
+                'last_post': post_counts.get(config.get('num_shifts', 1) - 1, 0),
+                'weekday_counts': weekday_counts,
+                'post_counts': post_counts
+            }
+            
+            worker_shifts_all[worker_id] = shifts_list
+        
+        return {
+            'period_start': config.get('start_date', datetime.now()),
+            'period_end': config.get('end_date', datetime.now()),
+            'workers': workers_stats,
+            'worker_shifts': worker_shifts_all
+        }
+
+    def _open_pdf_file(self, filename):
+        """Automatically open the generated PDF file"""
+        try:
+            import os
+            import subprocess
+            import platform
+            
+            if platform.system() == 'Windows':
+                os.startfile(filename)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.run(['open', filename])
+            else:  # Linux
+                subprocess.run(['xdg-open', filename])
+                
+        except Exception as e:
+            logging.warning(f"Could not auto-open PDF file: {e}")
+
     def confirm_reset_schedule(self, instance):
         """Show confirmation dialog before resetting schedule"""
         content = BoxLayout(orientation='vertical', padding=10, spacing=10)
@@ -2228,6 +2394,13 @@ class GenerateScheduleScreen(Screen):
 
             # Store for later display/review
             app.final_schedule = scheduler.schedule
+
+            # *** NEW: Automatically export PDF summary after successful generation ***
+            try:
+                self._auto_export_schedule_summary(scheduler, cfg)
+            except Exception as export_error:
+                logging.warning(f"Auto PDF export failed, but schedule was generated successfully: {export_error}")
+                # Don't fail the whole operation if PDF export fails
 
             # Switch to your “review” screen:
             self.manager.current = "schedule_review"
