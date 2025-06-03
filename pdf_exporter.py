@@ -8,6 +8,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, cm # Use cm for better control maybe
 from calendar import monthcalendar
 from datetime import datetime
+from utilities import numeric_sort_key
 import logging
 
 def numeric_sort_key(item):
