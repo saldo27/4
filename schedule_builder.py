@@ -10,47 +10,6 @@ from adaptive_iterations import AdaptiveIterationManager
 if TYPE_CHECKING:
     from scheduler import Scheduler
 
-class AdaptiveIterationManager:
-    """Manages iteration counts for scheduling optimization based on problem complexity"""
-    
-    def __init__(self, scheduler):
-        self.scheduler = scheduler
-        self.start_time = None
-        self.convergence_threshold = 3
-        self.max_time_minutes = 5
-        
-    def calculate_adaptive_iterations(self):
-        """Calculate adaptive iteration counts for different optimization phases"""
-        num_workers = len(self.scheduler.workers_data)
-        shifts_per_day = self.scheduler.num_shifts
-        total_days = (self.scheduler.end_date - self.scheduler.start_date).days + 1
-        
-        # Calculate complexity
-        base_complexity = num_workers * shifts_per_day * total_days
-        
-        # Simple complexity-based iteration calculation
-        if base_complexity < 1000:
-            return {'max_optimization_loops': 5, 'last_post_max_iterations': 3}
-        elif base_complexity < 5000:
-            return {'max_optimization_loops': 8, 'last_post_max_iterations': 5}
-        elif base_complexity < 15000:
-            return {'max_optimization_loops': 12, 'last_post_max_iterations': 8}
-        else:
-            return {'max_optimization_loops': 20, 'last_post_max_iterations': 12}
-    
-    def start_timer(self):
-        self.start_time = datetime.now()
-    
-    def should_continue(self, iteration, no_improvement_count):
-        # Time check
-        if self.start_time:
-            elapsed_minutes = (datetime.now() - self.start_time).total_seconds() / 60
-            if elapsed_minutes > self.max_time_minutes:
-                return False
-        
-        # Convergence check
-        return no_improvement_count < self.convergence_threshold
-
 class ScheduleBuilder:
     """Handles schedule generation and improvement"""
     
