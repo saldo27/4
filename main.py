@@ -24,6 +24,17 @@ logging.basicConfig(
     ]
 )
 
+def numeric_sort_key(item):
+    """
+    Attempts to convert the first element of a tuple (the key) to an integer
+    for sorting. Returns a tuple to prioritize numeric keys and handle errors.
+    item[0] is assumed to be the worker ID (key).
+    """
+    try:
+        return (0, int(item[0])) # (0, numeric_value) - sorts numbers first
+    except (ValueError, TypeError):
+        return (1, item[0]) # (1, original_string) - sorts non-numbers after numbers
+
 class PasswordScreen(Screen):
     def __init__(self, **kwargs):
         super(PasswordScreen, self).__init__(**kwargs)
