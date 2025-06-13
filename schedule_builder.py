@@ -335,51 +335,12 @@ class ScheduleBuilder:
         """
         Verify that the final schedule doesn't have any incompatibility violations
         and fix any found violations.
+    
+        This method now delegates to the consolidated _detect_and_fix_incompatibility_violations method.
         """
         logging.info("Performing final incompatibility verification check")
-    
-        violations_found = 0
-        violations_fixed = 0
-    
-        # Check each date for incompatible worker assignments
-        for date_val in sorted(self.schedule.keys()): # Renamed date to avoid conflict
-            workers_today = [w for w in self.schedule[date_val] if w is not None]
-        
-            # Process all pairs to find incompatibilities
-            for i in range(len(workers_today)):
-                for j in range(i+1, len(workers_today)):
-                    worker1_id = workers_today[i]
-                    worker2_id = workers_today[j]
-                
-                    # Check if they are incompatible
-                    if self._are_workers_incompatible(worker1_id, worker2_id):
-                        violations_found += 1
-                        logging.warning(f"Final verification found incompatibility violation: {worker1_id} and {worker2_id} on {date_val.strftime('%d-%m-%Y')}")
-                    
-                        # Find their positions
-                        post1 = self.schedule[date_val].index(worker1_id)
-                        post2 = self.schedule[date_val].index(worker2_id)
-                    
-                        # Remove one of the workers (choose the one with more shifts assigned)
-                        w1_shifts = len(self.worker_assignments.get(worker1_id, set()))
-                        w2_shifts = len(self.worker_assignments.get(worker2_id, set()))
-                    
-                        # Remove the worker with more shifts or the second worker if equal
-                        if w1_shifts > w2_shifts:
-                            self.schedule[date_val][post1] = None
-                            self.worker_assignments[worker1_id].remove(date_val)
-                            self.scheduler._update_tracking_data(worker1_id, date_val, post1, removing=True)
-                            violations_fixed += 1
-                            logging.info(f"Removed worker {worker1_id} from {date_val.strftime('%d-%m-%Y')} to fix incompatibility")
-                        else:
-                            self.schedule[date_val][post2] = None
-                            self.worker_assignments[worker2_id].remove(date_val)
-                            self.scheduler._update_tracking_data(worker2_id, date_val, post2, removing=True)
-                            violations_fixed += 1
-                            logging.info(f"Removed worker {worker2_id} from {date_val.strftime('%d-%m-%Y')} to fix incompatibility")
-    
-        logging.info(f"Final verification: found {violations_found} violations, fixed {violations_fixed}")
-        return violations_fixed > 0
+        # Call the consolidated method
+        return self._detect_and_fix_incompatibility_violations()
 
     # 4. Worker Assignment Methods
 
@@ -2690,37 +2651,13 @@ class ScheduleBuilder:
     def _fix_incompatibility_violations(self):
         """
         Check the entire schedule for incompatibility violations and fix them
-        by reassigning incompatible workers to different days
+        by reassigning incompatible workers to different days.
+    
+        This method now delegates to the consolidated _detect_and_fix_incompatibility_violations method.
         """
         logging.info("Checking and fixing incompatibility violations")
-    
-        violations_fixed = 0
-        violations_found = 0
-    
-        # Check each date for incompatible worker assignments
-        for date_val in sorted(self.schedule.keys()): # Renamed date
-            workers_today = [w for w in self.schedule[date_val] if w is not None]
-        
-            # Check each pair of workers
-            for i, worker1_id in enumerate(workers_today):
-                for worker2_id in workers_today[i+1:]:
-                    # Check if these workers are incompatible
-                    if self._are_workers_incompatible(worker1_id, worker2_id):
-                        violations_found += 1
-                        logging.warning(f"Found incompatibility violation: {worker1_id} and {worker2_id} on {date_val}")
-                    
-                        # Try to fix the violation by moving one of the workers
-                        # Let's try to move the second worker first
-                        if self._try_reassign_worker(worker2_id, date_val):
-                            violations_fixed += 1
-                            logging.info(f"Fixed by reassigning {worker2_id} from {date_val}")
-                        # If that didn't work, try moving the first worker
-                        elif self._try_reassign_worker(worker1_id, date_val):
-                            violations_fixed += 1
-                            logging.info(f"Fixed by reassigning {worker1_id} from {date_val}")
-    
-        logging.info(f"Incompatibility check: found {violations_found} violations, fixed {violations_fixed}")
-        return violations_fixed > 0
+        # Call the consolidated method
+        return self._detect_and_fix_incompatibility_violations()
 
     def _detect_and_fix_incompatibility_violations(self):
         """
