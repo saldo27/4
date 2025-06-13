@@ -2182,7 +2182,7 @@ class ScheduleBuilder:
                 made_change_in_main_iteration = True
 
             # 5. Final verification of incompatibilities and attempt to fix them
-            if self._verify_no_incompatibilities():
+            if self._detect_and_fix_incompatibility_violations():
                 logging.info("Fixed incompatibility violations during optimization.")
                 made_change_in_main_iteration = True
                 self._synchronize_tracking_data()
@@ -2721,6 +2721,72 @@ class ScheduleBuilder:
     
         logging.info(f"Incompatibility check: found {violations_found} violations, fixed {violations_fixed}")
         return violations_fixed > 0
+
+    def _detect_and_fix_incompatibility_violations(self):
+        """
+        Check the entire schedule for incompatibility violations and fix them
+        using a two-step approach:
+        1. First try to reassign incompatible workers to different days
+        2. If reassignment fails, remove the worker with more shifts
+    
+        Returns:
+            bool: True if any violations were fixed, False otherwise
+        """
+        logging.info("Checking and fixing incompatibility violations")
+    
+        violations_fixed = 0
+        violations_found = 0
+    
+        # Check each date for incompatible worker assignments
+        for date_val in sorted(self.schedule.keys()):
+            workers_today = [w for w in self.schedule[date_val] if w is not None]
+        
+            # Check each pair of workers
+            for i, worker1_id in enumerate(workers_today):
+                for worker2_id in workers_today[i+1:]:
+                    # Check if these workers are incompatible
+                    if self._are_workers_incompatible(worker1_id, worker2_id):
+                        violations_found += 1
+                        logging.warning(f"Found incompatibility violation: {worker1_id} and {worker2_id} on {date_val}")
+                    
+                        # APPROACH 1: Try to fix by reassigning one of the workers
+                        # First try reassigning worker2
+                        if self._try_reassign_worker(worker2_id, date_val):
+                            violations_fixed += 1
+                            logging.info(f"Fixed by reassigning {worker2_id} from {date_val}")
+                            continue
+                        
+                        # If that didn't work, try reassigning worker1
+                        if self._try_reassign_worker(worker1_id, date_val):
+                            violations_fixed += 1
+                            logging.info(f"Fixed by reassigning {worker1_id} from {date_val}")
+                            continue
+                    
+                        # APPROACH 2: If reassignment failed, remove one worker
+                        # Find their positions
+                        post1 = self.schedule[date_val].index(worker1_id)
+                        post2 = self.schedule[date_val].index(worker2_id)
+                    
+                        # Determine which worker to remove (the one with more shifts)
+                        w1_shifts = len(self.worker_assignments.get(worker1_id, set()))
+                        w2_shifts = len(self.worker_assignments.get(worker2_id, set()))
+                    
+                        # Remove the worker with more shifts or worker2 if equal
+                        if w1_shifts > w2_shifts:
+                            self.schedule[date_val][post1] = None
+                            self.worker_assignments[worker1_id].remove(date_val)
+                            self.scheduler._update_tracking_data(worker1_id, date_val, post1, removing=True)
+                            violations_fixed += 1
+                            logging.info(f"Removed worker {worker1_id} from {date_val.strftime('%d-%m-%Y')} to fix incompatibility")
+                        else:
+                            self.schedule[date_val][post2] = None
+                            self.worker_assignments[worker2_id].remove(date_val)
+                            self.scheduler._update_tracking_data(worker2_id, date_val, post2, removing=True)
+                            violations_fixed += 1
+                            logging.info(f"Removed worker {worker2_id} from {date_val.strftime('%d-%m-%Y')} to fix incompatibility")
+    
+        logging.info(f"Incompatibility check: found {violations_found} violations, fixed {violations_fixed}")
+        return violations_fixed > 0
         
     def _try_reassign_worker(self, worker_id, date):
         """
@@ -2837,7 +2903,7 @@ class ScheduleBuilder:
 
         # 5. Final Incompatibility Check (Important after swaps/reassignments)
         # It might be better to run this *last* to clean up any issues created by other steps.
-        if self._verify_no_incompatibilities(): # Assuming this tries to fix them
+        if self._detect_and_fix_incompatibility_violations(): # Assuming this tries to fix them
              logging.info(f"Attempt {attempt_number}: Fixed incompatibility violations.")
              any_change_made = True
              # No need to verify consistency again, as this function should handle it
