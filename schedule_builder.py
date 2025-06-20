@@ -2951,44 +2951,44 @@ class ScheduleBuilder:
     
         return missing_mandatory
     
-def _evaluate_schedule(self):
-    """
-    Evaluate the current schedule quality with multiple metrics optimized for schedule building.
+    def _evaluate_schedule(self):
+        """
+        Evaluate the current schedule quality with multiple metrics optimized for schedule building.
     
-    Returns:
-        float: Combined score representing schedule quality (higher is better)
-    """
-    try:
-        # Get base score from scheduler
-        base_score = self.scheduler.calculate_score(self.schedule, self.worker_assignments)
+        Returns:
+            float: Combined score representing schedule quality (higher is better)
+        """
+        try:
+            # Get base score from scheduler
+            base_score = self.scheduler.calculate_score(self.schedule, self.worker_assignments)
         
-        # Calculate coverage percentage (critical for schedule building)
-        total_slots = sum(len(shifts) for shifts in self.schedule.values())
-        filled_slots = sum(1 for shifts in self.schedule.values() 
-                          for worker in shifts if worker is not None)
+            # Calculate coverage percentage (critical for schedule building)
+            total_slots = sum(len(shifts) for shifts in self.schedule.values())
+            filled_slots = sum(1 for shifts in self.schedule.values() 
+                              for worker in shifts if worker is not None)
         
-        coverage_percentage = (filled_slots / total_slots * 100) if total_slots > 0 else 0
+            coverage_percentage = (filled_slots / total_slots * 100) if total_slots > 0 else 0
         
-        # Check for constraint violations (should be heavily penalized)
-        violations = self._check_schedule_constraints() if hasattr(self, '_check_schedule_constraints') else []
-        violation_penalty = len(violations) * 10  # Heavy penalty for violations
+            # Check for constraint violations (should be heavily penalized)
+            violations = self._check_schedule_constraints() if hasattr(self, '_check_schedule_constraints') else []
+            violation_penalty = len(violations) * 10  # Heavy penalty for violations
         
-        # Calculate final score
-        # - Base score weighted by coverage
-        # - Subtract violation penalties
-        # - Bonus for high coverage (incentivizes filling empty shifts)
-        coverage_bonus = max(0, coverage_percentage - 90) * 2  # Bonus for >90% coverage
+            # Calculate final score
+            # - Base score weighted by coverage
+            # - Subtract violation penalties
+            # - Bonus for high coverage (incentivizes filling empty shifts)
+            coverage_bonus = max(0, coverage_percentage - 90) * 2  # Bonus for >90% coverage
         
-        final_score = (base_score * (coverage_percentage / 100)) - violation_penalty + coverage_bonus
+            final_score = (base_score * (coverage_percentage / 100)) - violation_penalty + coverage_bonus
         
-        logging.debug(f"Schedule evaluation: base={base_score:.2f}, coverage={coverage_percentage:.1f}%, "
-                     f"violations={len(violations)}, final={final_score:.2f}")
+            logging.debug(f"Schedule evaluation: base={base_score:.2f}, coverage={coverage_percentage:.1f}%, "
+                         f"violations={len(violations)}, final={final_score:.2f}")
         
-        return final_score
+            return final_score
         
-    except Exception as e:
-        logging.error(f"Error evaluating schedule: {str(e)}", exc_info=True)
-        return float('-inf')
+        except Exception as e:
+            logging.error(f"Error evaluating schedule: {str(e)}", exc_info=True)
+            return float('-inf')
         
     # ========================================
     # 13. BACKUP AND RESTORE OPERATIONS
