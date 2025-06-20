@@ -3123,4 +3123,3 @@ class ScheduleBuilder:
     def calculate_score(self, schedule_to_score=None, assignments_to_score=None):
         # Placeholder - use scheduler\'s score calculation for consistency
         return self.scheduler.calculate_score(schedule_to_score or self.schedule, assignments_to_score or self.worker_assignments)
-
