@@ -3000,37 +3000,42 @@ def _evaluate_schedule(self):
     def _save_current_as_best(self, initial=False):
         """
         Save the current schedule as the best one found so far.
-    
+
         Args:
             initial: Whether this is the initial best schedule (default: False)
         """
         try:
-            best_score = self.calculate_score(self.schedule, self.worker_assignments)
+            # Calculate current score
+            current_score = self.calculate_score(self.schedule, self.worker_assignments)
         
-            # Log what we're doing
-            if initial:
-                logging.info(f"Initializing best schedule with score {best_score}")
+            # Check if this is better than existing best (or if it's the initial save)
+            if initial or not hasattr(self, 'best_schedule_data') or self.best_schedule_data is None:
+                should_save = True
+                logging.info(f"{'Initializing' if initial else 'Setting'} best schedule with score {current_score:.2f}")
             else:
-                current_best = self.best_schedule.get('score', 0)
-                if best_score > current_best:
-                    logging.info(f"Saving new best schedule: score {best_score} (previous: {current_best})")
+                current_best_score = self.best_schedule_data.get('score', float('-inf'))
+                should_save = current_score > current_best_score
+                if should_save:
+                    logging.info(f"Saving new best schedule: score {current_score:.2f} (previous: {current_best_score:.2f})")
                 else:
-                    logging.debug(f"Current score {best_score} not better than best {current_best}")
-                    return False
+                    logging.debug(f"Current score {current_score:.2f} not better than best {current_best_score:.2f}")
 
-            # Create a deep copy of the current state
-            self.best_schedule = {
-                'schedule': copy.deepcopy(self.schedule),
-                'worker_assignments': copy.deepcopy(self.worker_assignments),
-                'score': best_score,
-                'worker_shift_counts': copy.deepcopy(self.scheduler.worker_shift_counts),
-                'worker_weekend_counts': copy.deepcopy(self.scheduler.worker_weekend_counts),  # FIXED: Use worker_weekend_counts instead of worker_weekend_shifts
-                'worker_posts': copy.deepcopy(self.scheduler.worker_posts),
-                'last_assignment_date': copy.deepcopy(self.scheduler.last_assignment_date),
-                'consecutive_shifts': copy.deepcopy(self.scheduler.consecutive_shifts)
-            }
+            if should_save:
+                # Create a deep copy of the current state
+                self.best_schedule_data = {
+                    'schedule': copy.deepcopy(self.schedule),
+                    'worker_assignments': copy.deepcopy(self.worker_assignments),
+                    'worker_shift_counts': copy.deepcopy(getattr(self.scheduler, 'worker_shift_counts', {})),
+                    'worker_weekend_counts': copy.deepcopy(getattr(self.scheduler, 'worker_weekend_counts', {})),
+                    'worker_posts': copy.deepcopy(getattr(self.scheduler, 'worker_posts', {})),
+                    'last_assignment_date': copy.deepcopy(getattr(self.scheduler, 'last_assignment_date', {})),
+                    'consecutive_shifts': copy.deepcopy(getattr(self.scheduler, 'consecutive_shifts', {})),
+                    'score': current_score
+                }
+                return True
+            else:
+                return False
         
-            return True
         except Exception as e:
             logging.error(f"Error saving best schedule: {str(e)}", exc_info=True)
             return False
