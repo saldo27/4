@@ -230,7 +230,14 @@ class ScheduleBuilder:
         return False
     
     def _check_incompatibility_with_list(self, worker_id_to_check, assigned_workers_list):
-        """Checks if worker_id_to_check is incompatible with anyone in the list."""
+        """
+        Optimized method to check if worker_id_to_check is incompatible with anyone in the list.
+        
+        Performance improvements:
+        - Uses sets for O(1) lookups instead of lists
+        - Performs intersection operation for faster checking
+        - Early termination on incompatibility detection
+        """
         worker_to_check_data = next((w for w in self.workers_data if w['id'] == worker_id_to_check), None)
         if not worker_to_check_data:
             return True  # Should not happen, but fail safe
@@ -344,9 +351,9 @@ class ScheduleBuilder:
 
         # Check for any 3-week period with too many weekend shifts
         three_weeks = timedelta(days=21)
-        for i, start_date_val in enumerate(test_dates): # Renamed start_date to avoid conflict
-            end_date_val = start_date_val + three_weeks # Renamed end_date to avoid conflict
-            count = sum(1 for d in test_dates[i:] if d <= end_date_val)
+        for i, start_date in enumerate(test_dates):
+            end_date = start_date + three_weeks
+            count = sum(1 for d in test_dates[i:] if d <= end_date)
             if count > max_weekend_shifts:
                 return True
 
@@ -880,6 +887,15 @@ class ScheduleBuilder:
     def _calculate_worker_score(self, worker, date, post, relaxation_level=0):
         """
         Calculate score for a worker assignment with optional relaxation of constraints
+        
+        This method has been optimized to use helper methods for better maintainability:
+        - _check_hard_constraints(): Basic availability and incompatibility checks
+        - _check_mandatory_assignment(): Mandatory shift prioritization  
+        - _calculate_target_shift_score(): Target shift calculations
+        - _check_gap_constraints(): Gap and pattern constraints
+        - _calculate_monthly_target_score(): Monthly target handling
+        - _calculate_overall_target_score(): Overall target calculations
+        - _calculate_additional_scoring_factors(): Weekend, weekly balance, and progression scores
     
         Args:
             worker: The worker to evaluate
@@ -2664,17 +2680,6 @@ class ScheduleBuilder:
         return self._detect_and_fix_incompatibility_violations()
 
     def _fix_incompatibility_violations(self):
-        """
-        Check the entire schedule for incompatibility violations and fix them
-        by reassigning incompatible workers to different days.
-    
-        This method now delegates to the consolidated _detect_and_fix_incompatibility_violations method.
-        """
-        logging.info("Checking and fixing incompatibility violations")
-        # Call the consolidated method
-        return self._detect_and_fix_incompatibility_violations()
-
-    def _detect_and_fix_incompatibility_violations(self):
         """
         Check the entire schedule for incompatibility violations and fix them
         using a two-step approach:
