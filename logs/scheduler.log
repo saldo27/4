@@ -279,3 +279,47 @@ KeyError: 'gap'
 2025-06-28 12:28:29,900 - root - INFO - Schedule validation completed: 1 errors, 2 warnings
 2025-06-28 12:28:29,900 - root - INFO - Generated schedule metrics
 2025-06-28 12:28:29,900 - root - ERROR - Schedule validation failed with 1 errors
+2025-06-28 12:29:37,632 - root - INFO - Logging system configured successfully.
+2025-06-28 12:29:37,632 - root - INFO - Scheduler initialized
+2025-06-28 12:29:37,632 - root - INFO - DateTimeUtils initialized
+2025-06-28 12:29:37,632 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-06-28 12:29:37,632 - root - DEBUG - Worker W0 incompatible_with list: []
+2025-06-28 12:29:37,633 - root - DEBUG - Worker W1 incompatible_with list: []
+2025-06-28 12:29:37,633 - root - DEBUG - Worker W2 incompatible_with list: []
+2025-06-28 12:29:37,633 - root - DEBUG - Worker W3 incompatible_with list: []
+2025-06-28 12:29:37,633 - root - DEBUG - Worker W4 incompatible_with list: []
+2025-06-28 12:29:37,633 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:29:37,633 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:29:37,633 - root - INFO - ConstraintChecker initialized
+2025-06-28 12:29:37,633 - root - INFO - DataManager initialized
+2025-06-28 12:29:37,633 - root - INFO - Calculating target shifts based on availability and percentage
+2025-06-28 12:29:37,633 - root - DEBUG - Worker W0: 93 available slots
+2025-06-28 12:29:37,633 - root - DEBUG - Worker W1: 93 available slots
+2025-06-28 12:29:37,633 - root - DEBUG - Worker W2: 93 available slots
+2025-06-28 12:29:37,633 - root - DEBUG - Worker W3: 93 available slots
+2025-06-28 12:29:37,633 - root - DEBUG - Worker W4: 93 available slots
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W0: weight=93.00 (available=93, percentage=100.0%)
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W1: weight=83.70 (available=93, percentage=90.0%)
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W2: weight=74.40 (available=93, percentage=80.0%)
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W3: weight=65.10 (available=93, percentage=70.0%)
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W4: weight=55.80 (available=93, percentage=60.0%)
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W0: target=23, mandatory=0, adjusted=23
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W1: target=21, mandatory=0, adjusted=21
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W2: target=19, mandatory=0, adjusted=19
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W3: target=16, mandatory=0, adjusted=16
+2025-06-28 12:29:37,634 - root - DEBUG - Worker W4: target=14, mandatory=0, adjusted=14
+2025-06-28 12:29:37,634 - root - INFO - Target calculation complete. Total slots: 93, Assigned: 93
+2025-06-28 12:29:37,634 - root - INFO - Target calculation complete via WorkloadCalculator. Total slots: 93, Assigned: 93
+2025-06-28 12:29:37,634 - root - INFO - Scheduler initialized with:
+2025-06-28 12:29:37,634 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-06-28 12:29:37,634 - root - INFO - End date: 2024-01-31 00:00:00
+2025-06-28 12:29:37,634 - root - INFO - Number of shifts: 3
+2025-06-28 12:29:37,634 - root - INFO - Number of workers: 5
+2025-06-28 12:29:37,634 - root - INFO - Holidays: []
+2025-06-28 12:29:37,634 - root - INFO - Gap between shifts: 3
+2025-06-28 12:29:37,634 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-06-28 12:29:37,635 - root - INFO - Current datetime (Spain): 2025-06-28 12:29:37.633336
+2025-06-28 12:29:37,635 - root - INFO - Current user: saldo27
+2025-06-28 12:29:37,635 - root - INFO - Schedule validation completed: 1 errors, 5 warnings
+2025-06-28 12:29:37,635 - root - INFO - Generated schedule metrics
+2025-06-28 12:29:37,635 - root - ERROR - Schedule validation failed with 1 errors
