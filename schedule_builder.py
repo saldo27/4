@@ -205,22 +205,16 @@ class ScheduleBuilder:
         if not worker_data:
             return True
     
-        # Debug log
-        logging.debug(f"Checking availability for worker {worker_id} on {date.strftime('%d-%m-%Y')}")
-
         # Check work periods - if work_periods is empty, worker is available for all dates
         work_periods_str = worker_data.get('work_periods', '')
         if work_periods_str:
             try:
                 work_ranges = self.date_utils.parse_date_ranges(work_periods_str)
                 if not any(start <= date <= end for start, end in work_ranges):
-                    logging.debug(f"Worker {worker_id} not available - date outside work periods")
                     return True # Not within any defined work period
             except Exception as e:
                 logging.error(f"Error parsing work_periods for {worker_id}: {e}")
                 return True # Fail safe
-            # If we reach here, it means work_periods_str was present, parsed, and date is within a period.
-            # So, the worker IS NOT unavailable due to work_periods. We proceed to check days_off.
 
         # Check days off
         days_off_str = worker_data.get('days_off', '')
@@ -228,13 +222,11 @@ class ScheduleBuilder:
             try:
                 off_ranges = self.date_utils.parse_date_ranges(days_off_str)
                 if any(start <= date <= end for start, end in off_ranges):
-                    logging.debug(f"Worker {worker_id} not available - date is a day off")
                     return True
             except Exception as e:
                 logging.error(f"Error parsing days_off for {worker_id}: {e}")
                 return True # Fail safe
 
-        logging.debug(f"Worker {worker_id} is available on {date.strftime('%d-%m-%Y')}")
         return False
     
     def _check_incompatibility_with_list(self, worker_id_to_check, assigned_workers_list):
@@ -325,9 +317,7 @@ class ScheduleBuilder:
         current_worker_assignments = self.scheduler.worker_assignments.get(worker_id, set())
         weekend_dates = []
         for assignment_date in current_worker_assignments:
-            if (assignment_date.weekday() >= 4 or 
-                assignment_date in self.scheduler.holidays or
-                (assignment_date + timedelta(days=1)) in self.scheduler.holidays):
+            if self._is_weekend_or_holiday(assignment_date):
                 weekend_dates.append(assignment_date)
 
         # When checking the target 'date' itself:
@@ -364,9 +354,6 @@ class ScheduleBuilder:
     
     def _can_assign_worker(self, worker_id, date, post):
         try:
-            # Log all constraint checks
-            logging.debug(f"\nChecking worker {worker_id} for {date}, post {post}")
-        
             # Skip if already assigned to this date
             if worker_id in self.schedule.get(date, []):
                 return False
@@ -392,12 +379,10 @@ class ScheduleBuilder:
                 
                     # Check minimum gap
                     if 0 < days_between < self.gap_between_shifts + 1:
-                        logging.debug(f"- Failed: Insufficient gap ({days_between} days)")
                         return False
                 
                     # Check for 7-14 day pattern (same weekday in consecutive weeks)
                     if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
-                        logging.debug(f"- Failed: Would create {days_between} day pattern")
                         return False
             
             # Special case: Friday-Monday check if gap is only 1 day
@@ -720,6 +705,20 @@ class ScheduleBuilder:
     # 5. SCORING AND CANDIDATE SELECTION
     # ========================================
     
+    def _is_weekend_or_holiday(self, date):
+        """Cached check for weekend or holiday status"""
+        # Cache weekend checks to avoid repeated calculations
+        if not hasattr(self, '_weekend_cache'):
+            self._weekend_cache = {}
+        
+        if date not in self._weekend_cache:
+            self._weekend_cache[date] = (
+                date.weekday() >= 4 or 
+                date in self.holidays or
+                (date + timedelta(days=1)) in self.holidays
+            )
+        return self._weekend_cache[date]
+    
     def _check_hard_constraints(self, worker_id, date, post):
         """Check hard constraints that cannot be relaxed"""
         # Basic availability check
@@ -941,15 +940,10 @@ class ScheduleBuilder:
         score = 0
         
         # Weekend Balance Score
-        is_special_day_for_scoring = (date.weekday() >= 4 or 
-                                      date in self.holidays or
-                                      (date + timedelta(days=1)) in self.holidays)
-        if is_special_day_for_scoring:
+        if self._is_weekend_or_holiday(date):
             special_day_assignments = sum(
                 1 for d in self.worker_assignments[worker_id]
-                if (d.weekday() >= 4 or 
-                    d in self.holidays or
-                    (d + timedelta(days=1)) in self.holidays)
+                if self._is_weekend_or_holiday(d)
             )
             score -= special_day_assignments * 300 
 
