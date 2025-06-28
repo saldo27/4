@@ -23,29 +23,33 @@ class DateTimeUtils:
     def __init__(self):
         """Initialize the date/time utilities"""
         logging.info("DateTimeUtils initialized")
-        
-    def get_spain_time(self):
-        """Get current time in Spain timezone with fallback options"""
-        try:
-            response = requests.get(
-                'http://worldtimeapi.org/api/timezone/Europe/Madrid',
-                timeout=5,
-                verify=True
-            )
-            
-            if response.status_code == 200:
-                time_data = response.json()
-                return datetime.fromisoformat(time_data['datetime']).replace(tzinfo=None)
-                
-        except (requests.RequestException, ValueError) as e:
-            logging.warning(f"Error getting time from API: {str(e)}")
+        # Add caches
+        self._weekend_day_cache = {}
+        self._effective_weekday_cache = {}
 
-        try:
-            spain_tz = ZoneInfo('Europe/Madrid')
-            return datetime.now(spain_tz).replace(tzinfo=None)
-        except Exception as e:
-            logging.error(f"Fallback time error: {str(e)}")
-            return datetime.utcnow()
+    def is_weekend_day_cached(self, date, holidays_list=None):
+        """Cached version of is_weekend_day"""
+        # Create cache key that includes holidays
+        cache_key = (date, tuple(sorted(holidays_list)) if holidays_list else ())
+        
+        if cache_key not in self._weekend_day_cache:
+            self._weekend_day_cache[cache_key] = self.is_weekend_day(date, holidays_list)
+        
+        return self._weekend_day_cache[cache_key]
+
+    def get_effective_weekday_cached(self, date, holidays=None):
+        """Cached version of get_effective_weekday"""
+        cache_key = (date, tuple(sorted(holidays)) if holidays else ())
+        
+        if cache_key not in self._effective_weekday_cache:
+            self._effective_weekday_cache[cache_key] = self.get_effective_weekday(date, holidays)
+        
+        return self._effective_weekday_cache[cache_key]
+
+    def clear_caches(self):
+        """Clear all caches - useful for testing or when holidays change"""
+        self._weekend_day_cache.clear()
+        self._effective_weekday_cache.clear()
         
     def parse_dates(self, date_str):
         """Parse semicolon-separated dates"""
