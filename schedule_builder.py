@@ -171,7 +171,6 @@ class ScheduleBuilder:
             self.worker_posts = new_worker_posts
             self.scheduler.worker_posts = new_worker_posts
             self.scheduler.worker_shift_counts = {wid: len(dates_val) for wid, dates_val in new_worker_assignments.items()} # Renamed worker_shift_counts, dates
-            # self.scheduler.worker_shift_counts = self.worker_shift_counts # This line is redundant
             # Add other tracking data sync if needed (weekends, etc.)
                     
     # ========================================
