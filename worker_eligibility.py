@@ -25,8 +25,7 @@ class WorkerEligibilityTracker:
         self.max_consecutive_weekends = max_consecutive_weekends
         self.last_worked_date = {w['id']: None for w in workers_data}
         self.total_assignments = {w['id']: 0 for w in workers_data}
-        self.recent_weekends = {w['id']: [] for w in workers_data}
-        
+        self.recent_weekends = {w['id']: [] for w in workers_data}     
         # Store references that might be needed for weekend calculations
         self.start_date = start_date
         self.end_date = end_date
