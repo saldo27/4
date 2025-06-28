@@ -171,6 +171,7 @@ class ScheduleBuilder:
             self.worker_posts = new_worker_posts
             self.scheduler.worker_posts = new_worker_posts
             self.scheduler.worker_shift_counts = {wid: len(dates_val) for wid, dates_val in new_worker_assignments.items()} # Renamed worker_shift_counts, dates
+            # self.scheduler.worker_shift_counts = self.worker_shift_counts # This line is redundant
             # Add other tracking data sync if needed (weekends, etc.)
                     
     # ========================================
@@ -239,28 +240,26 @@ class ScheduleBuilder:
     def _check_incompatibility_with_list(self, worker_id_to_check, assigned_workers_list):
         """Checks if worker_id_to_check is incompatible with anyone in the list."""
         worker_to_check_data = next((w for w in self.workers_data if w['id'] == worker_id_to_check), None)
-        if not worker_to_check_data: 
-            return True
+        if not worker_to_check_data: return True # Should not happen, but fail safe
 
-        # Convert to set for O(1) lookups instead of O(n)
         incompatible_with_candidate = set(worker_to_check_data.get('incompatible_with', []))
-        assigned_workers_set = set(str(w) for w in assigned_workers_list if w is not None)
 
-        # Check if any assigned worker is incompatible
-        if incompatible_with_candidate & assigned_workers_set:
-            return False
+        # *** ADD TYPE LOGGING HERE ***
+        logging.debug(f"  CHECKING_INTERNAL: Worker={worker_id_to_check} (Type: {type(worker_id_to_check)}), AgainstList={assigned_workers_list}, IncompListForCheckWorker={incompatible_with_candidate}") # Corrected variable name
 
-        # Bidirectional check - convert once and reuse
         for assigned_id in assigned_workers_list:
             if assigned_id is None or assigned_id == worker_id_to_check:
                 continue
+            if str(assigned_id) in incompatible_with_candidate: # Ensure type consistency if IDs might be mixed
+                return False # Candidate is incompatible with an already assigned worker
+
+            # Bidirectional check
             assigned_worker_data = next((w for w in self.workers_data if w['id'] == assigned_id), None)
             if assigned_worker_data:
-                assigned_incompatible = set(assigned_worker_data.get('incompatible_with', []))
-                if str(worker_id_to_check) in assigned_incompatible:
-                    return False
-    
-        return True
+                if str(worker_id_to_check) in set(assigned_worker_data.get('incompatible_with', [])):
+                    return False # Assigned worker is incompatible with the ca
+        logging.debug(f"  CHECKING_INTERNAL: Worker={worker_id_to_check} vs List={assigned_workers_list} -> OK (No incompatibility detected)")
+        return True # No incompatibilities found
 
     def _check_incompatibility(self, worker_id, date):
         # Placeholder using _check_incompatibility_with_list
@@ -1462,6 +1461,24 @@ class ScheduleBuilder:
             self._synchronize_tracking_data() # Ensure builder's and scheduler's data are aligned
             self._save_current_as_best()
         return made_change_overall
+
+    def assign_worker_to_shift(self, worker_id, date, post):
+        """Assign a worker to a shift with proper incompatibility checking"""
+    
+        # Check if the date already exists in the schedule
+        if date not in self.schedule:
+            self.schedule[date] = [None] * self.num_shifts
+        
+        # Check for incompatibility with already assigned workers
+        already_assigned = [w for w in self.schedule[date] if w is not None]
+        if not self._check_incompatibility_with_list(worker_id, already_assigned):
+            logging.warning(f"Cannot assign worker {worker_id} due to incompatibility on {date}")
+            return False
+        
+        # Proceed with assignment if no incompatibility
+        self.schedule[date][post] = worker_id
+        self.scheduler._update_tracking_data(worker_id, date, post) # Corrected: self.scheduler._update_tracking_data
+        return True
         
     def _find_swap_candidate(self, worker_W_id, conflict_date, conflict_post):
         """
@@ -3175,13 +3192,15 @@ class ScheduleBuilder:
                     logging.debug(f"Current score {current_score:.2f} not better than best {current_best_score:.2f}")
 
             if should_save:
+                # Create a deep copy of the current state
                 self.best_schedule_data = {
-                    'schedule': {date: shifts[:] for date, shifts in self.schedule.items()},  # Shallow copy of lists
-                    'worker_assignments': {k: set(v) for k, v in self.worker_assignments.items()},  # Copy sets efficiently
-                    'worker_weekend_counts': getattr(self.scheduler, 'worker_weekend_counts', {}).copy(),
-                    'worker_posts': {k: set(v) for k, v in getattr(self.scheduler, 'worker_posts', {}).items()},
-                    'last_assignment_date': getattr(self.scheduler, 'last_assignment_date', {}).copy(),
-                    'consecutive_shifts': getattr(self.scheduler, 'consecutive_shifts', {}).copy(),
+                    'schedule': copy.deepcopy(self.schedule),
+                    'worker_assignments': copy.deepcopy(self.worker_assignments),
+                    'worker_shift_counts': copy.deepcopy(getattr(self.scheduler, 'worker_shift_counts', {})),
+                    'worker_weekend_counts': copy.deepcopy(getattr(self.scheduler, 'worker_weekend_counts', {})),
+                    'worker_posts': copy.deepcopy(getattr(self.scheduler, 'worker_posts', {})),
+                    'last_assignment_date': copy.deepcopy(getattr(self.scheduler, 'last_assignment_date', {})),
+                    'consecutive_shifts': copy.deepcopy(getattr(self.scheduler, 'consecutive_shifts', {})),
                     'score': current_score
                 }
                 return True

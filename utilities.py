@@ -23,7 +23,30 @@ class DateTimeUtils:
     def __init__(self):
         """Initialize the date/time utilities"""
         logging.info("DateTimeUtils initialized")
-       
+        
+    def get_spain_time(self):
+        """Get current time in Spain timezone with fallback options"""
+        try:
+            response = requests.get(
+                'http://worldtimeapi.org/api/timezone/Europe/Madrid',
+                timeout=5,
+                verify=True
+            )
+            
+            if response.status_code == 200:
+                time_data = response.json()
+                return datetime.fromisoformat(time_data['datetime']).replace(tzinfo=None)
+                
+        except (requests.RequestException, ValueError) as e:
+            logging.warning(f"Error getting time from API: {str(e)}")
+
+        try:
+            spain_tz = ZoneInfo('Europe/Madrid')
+            return datetime.now(spain_tz).replace(tzinfo=None)
+        except Exception as e:
+            logging.error(f"Fallback time error: {str(e)}")
+            return datetime.utcnow()
+        
     def parse_dates(self, date_str):
         """Parse semicolon-separated dates"""
         if not date_str:
