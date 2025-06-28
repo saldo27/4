@@ -1461,24 +1461,6 @@ class ScheduleBuilder:
             self._synchronize_tracking_data() # Ensure builder's and scheduler's data are aligned
             self._save_current_as_best()
         return made_change_overall
-
-    def assign_worker_to_shift(self, worker_id, date, post):
-        """Assign a worker to a shift with proper incompatibility checking"""
-    
-        # Check if the date already exists in the schedule
-        if date not in self.schedule:
-            self.schedule[date] = [None] * self.num_shifts
-        
-        # Check for incompatibility with already assigned workers
-        already_assigned = [w for w in self.schedule[date] if w is not None]
-        if not self._check_incompatibility_with_list(worker_id, already_assigned):
-            logging.warning(f"Cannot assign worker {worker_id} due to incompatibility on {date}")
-            return False
-        
-        # Proceed with assignment if no incompatibility
-        self.schedule[date][post] = worker_id
-        self.scheduler._update_tracking_data(worker_id, date, post) # Corrected: self.scheduler._update_tracking_data
-        return True
         
     def _find_swap_candidate(self, worker_W_id, conflict_date, conflict_post):
         """
