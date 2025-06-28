@@ -3181,7 +3181,7 @@ class ScheduleBuilder:
                     'worker_weekend_counts': getattr(self.scheduler, 'worker_weekend_counts', {}).copy(),
                     'worker_posts': {k: set(v) for k, v in getattr(self.scheduler, 'worker_posts', {}).items()},
                     'last_assignment_date': getattr(self.scheduler, 'last_assignment_date', {}).copy(),
-                    'consecutive_shifts': getattr(self.scheduler, 'consecutive_shifts', {}).copy(),,
+                    'consecutive_shifts': getattr(self.scheduler, 'consecutive_shifts', {}).copy(),
                     'score': current_score
                 }
                 return True
