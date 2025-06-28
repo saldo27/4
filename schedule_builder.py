@@ -3175,15 +3175,13 @@ class ScheduleBuilder:
                     logging.debug(f"Current score {current_score:.2f} not better than best {current_best_score:.2f}")
 
             if should_save:
-                # Create a deep copy of the current state
                 self.best_schedule_data = {
-                    'schedule': copy.deepcopy(self.schedule),
-                    'worker_assignments': copy.deepcopy(self.worker_assignments),
-                    'worker_shift_counts': copy.deepcopy(getattr(self.scheduler, 'worker_shift_counts', {})),
-                    'worker_weekend_counts': copy.deepcopy(getattr(self.scheduler, 'worker_weekend_counts', {})),
-                    'worker_posts': copy.deepcopy(getattr(self.scheduler, 'worker_posts', {})),
-                    'last_assignment_date': copy.deepcopy(getattr(self.scheduler, 'last_assignment_date', {})),
-                    'consecutive_shifts': copy.deepcopy(getattr(self.scheduler, 'consecutive_shifts', {})),
+                    'schedule': {date: shifts[:] for date, shifts in self.schedule.items()},  # Shallow copy of lists
+                    'worker_assignments': {k: set(v) for k, v in self.worker_assignments.items()},  # Copy sets efficiently
+                    'worker_weekend_counts': getattr(self.scheduler, 'worker_weekend_counts', {}).copy(),
+                    'worker_posts': {k: set(v) for k, v in getattr(self.scheduler, 'worker_posts', {}).items()},
+                    'last_assignment_date': getattr(self.scheduler, 'last_assignment_date', {}).copy(),
+                    'consecutive_shifts': getattr(self.scheduler, 'consecutive_shifts', {}).copy(),,
                     'score': current_score
                 }
                 return True
