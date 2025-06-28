@@ -6,7 +6,7 @@ to improve separation of concerns and maintainability.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Set, Any, Optional
 from dataclasses import dataclass
 
@@ -114,7 +114,7 @@ class ScheduleValidator:
         current_date = self.scheduler.start_date
         while current_date <= self.scheduler.end_date:
             expected_dates.add(current_date)
-            current_date += datetime.timedelta(days=1)
+            current_date += timedelta(days=1)
         
         actual_dates = set(self.scheduler.schedule.keys())
         missing_dates = expected_dates - actual_dates

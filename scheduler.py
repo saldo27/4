@@ -152,7 +152,7 @@ class Scheduler:
                     worker['target_shifts'] = SchedulerDefaults.DEFAULT_TARGET_SHIFTS
 
             # Set current time and user
-            self.current_datetime = self.date_utils.get_spain_time()
+            self.current_datetime = datetime.now()  # Use local time instead of Spain time
             self.current_user = SchedulerDefaults.DEFAULT_USER
         
             # Add max_shifts_per_worker calculation
@@ -1847,8 +1847,8 @@ class Scheduler:
             validation_result = self.validator.validate_final_schedule()
             
             # Gather additional statistics and metrics
-            stats = self.gather_statistics()
-            metrics = self.get_schedule_metrics()
+            stats = self.stats.gather_statistics()
+            metrics = self.stats.get_schedule_metrics()
             
             # Prepare result dictionary
             result_data = {

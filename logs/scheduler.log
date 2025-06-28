@@ -1,2 +1,281 @@
 2025-06-28 12:15:35,726 - root - INFO - Logging system configured successfully.
 2025-06-28 12:22:06,205 - root - INFO - Logging system configured successfully.
+2025-06-28 12:24:35,168 - root - INFO - Logging system configured successfully.
+2025-06-28 12:24:35,169 - root - INFO - Scheduler initialized
+2025-06-28 12:24:35,169 - root - INFO - DateTimeUtils initialized
+2025-06-28 12:24:35,169 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-06-28 12:24:35,169 - root - DEBUG - Worker W1 incompatible_with list: []
+2025-06-28 12:24:35,169 - root - DEBUG - Worker W2 incompatible_with list: []
+2025-06-28 12:24:35,169 - root - ERROR - Initialization error: 'DateTimeUtils' object has no attribute 'get_spain_time'
+Traceback (most recent call last):
+  File "/home/runner/work/4/4/scheduler.py", line 155, in __init__
+    self.current_datetime = self.date_utils.get_spain_time()
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DateTimeUtils' object has no attribute 'get_spain_time'
+2025-06-28 12:25:38,131 - root - INFO - Logging system configured successfully.
+2025-06-28 12:25:38,131 - root - INFO - Scheduler initialized
+2025-06-28 12:25:38,131 - root - INFO - DateTimeUtils initialized
+2025-06-28 12:25:38,131 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-06-28 12:25:38,131 - root - DEBUG - Worker W1 incompatible_with list: []
+2025-06-28 12:25:38,131 - root - DEBUG - Worker W2 incompatible_with list: []
+2025-06-28 12:25:38,131 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:25:38,131 - root - INFO - ConstraintChecker initialized
+2025-06-28 12:25:38,131 - root - INFO - DataManager initialized
+2025-06-28 12:25:38,131 - root - INFO - Calculating target shifts based on availability and percentage
+2025-06-28 12:25:38,131 - root - DEBUG - Worker W1: 14 available slots
+2025-06-28 12:25:38,131 - root - DEBUG - Worker W2: 14 available slots
+2025-06-28 12:25:38,132 - root - DEBUG - Worker W1: weight=14.00 (available=14, percentage=100.0%)
+2025-06-28 12:25:38,132 - root - DEBUG - Worker W2: weight=11.20 (available=14, percentage=80.0%)
+2025-06-28 12:25:38,132 - root - DEBUG - Worker W1: target=8, mandatory=0, adjusted=8
+2025-06-28 12:25:38,132 - root - DEBUG - Worker W2: target=6, mandatory=0, adjusted=6
+2025-06-28 12:25:38,132 - root - INFO - Target calculation complete. Total slots: 14, Assigned: 14
+2025-06-28 12:25:38,132 - root - INFO - Target calculation complete via WorkloadCalculator. Total slots: 14, Assigned: 14
+2025-06-28 12:25:38,132 - root - INFO - Scheduler initialized with:
+2025-06-28 12:25:38,132 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-06-28 12:25:38,132 - root - INFO - End date: 2024-01-07 00:00:00
+2025-06-28 12:25:38,132 - root - INFO - Number of shifts: 2
+2025-06-28 12:25:38,132 - root - INFO - Number of workers: 2
+2025-06-28 12:25:38,132 - root - INFO - Holidays: []
+2025-06-28 12:25:38,132 - root - INFO - Gap between shifts: 3
+2025-06-28 12:25:38,132 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-06-28 12:25:38,132 - root - INFO - Current datetime (Spain): 2025-06-28 12:25:38.131617
+2025-06-28 12:25:38,132 - root - INFO - Current user: saldo27
+2025-06-28 12:25:48,889 - root - INFO - Logging system configured successfully.
+2025-06-28 12:25:48,889 - root - INFO - Scheduler initialized
+2025-06-28 12:25:48,889 - root - ERROR - Initialization error: num_shifts must be an integer >= 1
+Traceback (most recent call last):
+  File "/home/runner/work/4/4/scheduler.py", line 97, in __init__
+    self.config.validate()
+  File "/home/runner/work/4/4/scheduler_config.py", line 118, in validate
+    raise ValueError(f"num_shifts must be an integer >= {ValidationThresholds.MIN_SHIFTS}")
+ValueError: num_shifts must be an integer >= 1
+2025-06-28 12:25:48,890 - root - INFO - Scheduler initialized
+2025-06-28 12:25:48,890 - root - INFO - DateTimeUtils initialized
+2025-06-28 12:25:48,890 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-06-28 12:25:48,890 - root - DEBUG - Worker W1 incompatible_with list: []
+2025-06-28 12:25:48,890 - root - DEBUG - Worker W2 incompatible_with list: []
+2025-06-28 12:25:48,890 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:25:48,890 - root - INFO - ConstraintChecker initialized
+2025-06-28 12:25:48,890 - root - INFO - DataManager initialized
+2025-06-28 12:25:48,890 - root - INFO - Calculating target shifts based on availability and percentage
+2025-06-28 12:25:48,890 - root - DEBUG - Worker W1: 14 available slots
+2025-06-28 12:25:48,891 - root - DEBUG - Worker W2: 14 available slots
+2025-06-28 12:25:48,891 - root - DEBUG - Worker W1: weight=14.00 (available=14, percentage=100.0%)
+2025-06-28 12:25:48,891 - root - DEBUG - Worker W2: weight=11.20 (available=14, percentage=80.0%)
+2025-06-28 12:25:48,891 - root - DEBUG - Worker W1: target=8, mandatory=0, adjusted=8
+2025-06-28 12:25:48,891 - root - DEBUG - Worker W2: target=6, mandatory=0, adjusted=6
+2025-06-28 12:25:48,891 - root - INFO - Target calculation complete. Total slots: 14, Assigned: 14
+2025-06-28 12:25:48,891 - root - INFO - Target calculation complete via WorkloadCalculator. Total slots: 14, Assigned: 14
+2025-06-28 12:25:48,891 - root - INFO - Scheduler initialized with:
+2025-06-28 12:25:48,891 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-06-28 12:25:48,891 - root - INFO - End date: 2024-01-07 00:00:00
+2025-06-28 12:25:48,891 - root - INFO - Number of shifts: 2
+2025-06-28 12:25:48,891 - root - INFO - Number of workers: 2
+2025-06-28 12:25:48,891 - root - INFO - Holidays: []
+2025-06-28 12:25:48,891 - root - INFO - Gap between shifts: 3
+2025-06-28 12:25:48,891 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-06-28 12:25:48,892 - root - INFO - Current datetime (Spain): 2025-06-28 12:25:48.890754
+2025-06-28 12:25:48,892 - root - INFO - Current user: saldo27
+2025-06-28 12:25:48,892 - root - INFO - Schedule validation completed: 1 errors, 3 warnings
+2025-06-28 12:25:48,892 - root - ERROR - Schedule validation failed with exception: 'Scheduler' object has no attribute 'gather_statistics'
+Traceback (most recent call last):
+  File "/home/runner/work/4/4/scheduler.py", line 1850, in verify_schedule_integrity
+    stats = self.gather_statistics()
+            ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Scheduler' object has no attribute 'gather_statistics'
+2025-06-28 12:26:17,909 - root - INFO - Logging system configured successfully.
+2025-06-28 12:26:17,909 - root - INFO - Scheduler initialized
+2025-06-28 12:26:17,909 - root - INFO - DateTimeUtils initialized
+2025-06-28 12:26:17,910 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-06-28 12:26:17,910 - root - DEBUG - Worker W1 incompatible_with list: []
+2025-06-28 12:26:17,910 - root - DEBUG - Worker W2 incompatible_with list: []
+2025-06-28 12:26:17,910 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:26:17,910 - root - INFO - ConstraintChecker initialized
+2025-06-28 12:26:17,910 - root - INFO - DataManager initialized
+2025-06-28 12:26:17,910 - root - INFO - Calculating target shifts based on availability and percentage
+2025-06-28 12:26:17,910 - root - DEBUG - Worker W1: 14 available slots
+2025-06-28 12:26:17,910 - root - DEBUG - Worker W2: 14 available slots
+2025-06-28 12:26:17,910 - root - DEBUG - Worker W1: weight=14.00 (available=14, percentage=100.0%)
+2025-06-28 12:26:17,910 - root - DEBUG - Worker W2: weight=11.20 (available=14, percentage=80.0%)
+2025-06-28 12:26:17,910 - root - DEBUG - Worker W1: target=8, mandatory=0, adjusted=8
+2025-06-28 12:26:17,910 - root - DEBUG - Worker W2: target=6, mandatory=0, adjusted=6
+2025-06-28 12:26:17,910 - root - INFO - Target calculation complete. Total slots: 14, Assigned: 14
+2025-06-28 12:26:17,910 - root - INFO - Target calculation complete via WorkloadCalculator. Total slots: 14, Assigned: 14
+2025-06-28 12:26:17,910 - root - INFO - Scheduler initialized with:
+2025-06-28 12:26:17,910 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-06-28 12:26:17,910 - root - INFO - End date: 2024-01-07 00:00:00
+2025-06-28 12:26:17,911 - root - INFO - Number of shifts: 2
+2025-06-28 12:26:17,911 - root - INFO - Number of workers: 2
+2025-06-28 12:26:17,911 - root - INFO - Holidays: []
+2025-06-28 12:26:17,911 - root - INFO - Gap between shifts: 3
+2025-06-28 12:26:17,911 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-06-28 12:26:17,911 - root - INFO - Current datetime (Spain): 2025-06-28 12:26:17.910211
+2025-06-28 12:26:17,911 - root - INFO - Current user: saldo27
+2025-06-28 12:26:17,911 - root - INFO - Schedule validation completed: 1 errors, 3 warnings
+2025-06-28 12:26:17,911 - root - ERROR - Schedule validation failed with exception: 'StatisticsCalculator' object has no attribute 'end_date'
+Traceback (most recent call last):
+  File "/home/runner/work/4/4/scheduler.py", line 1850, in verify_schedule_integrity
+    stats = self.stats.gather_statistics()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/4/4/statistics.py", line 115, in gather_statistics
+    'total_days': (self.end_date - self.start_date).days + 1,
+                   ^^^^^^^^^^^^^
+AttributeError: 'StatisticsCalculator' object has no attribute 'end_date'
+2025-06-28 12:26:51,483 - root - INFO - Logging system configured successfully.
+2025-06-28 12:26:51,483 - root - INFO - Scheduler initialized
+2025-06-28 12:26:51,483 - root - INFO - DateTimeUtils initialized
+2025-06-28 12:26:51,483 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-06-28 12:26:51,483 - root - DEBUG - Worker W1 incompatible_with list: []
+2025-06-28 12:26:51,483 - root - DEBUG - Worker W2 incompatible_with list: []
+2025-06-28 12:26:51,484 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:26:51,484 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:26:51,484 - root - INFO - ConstraintChecker initialized
+2025-06-28 12:26:51,484 - root - INFO - DataManager initialized
+2025-06-28 12:26:51,484 - root - INFO - Calculating target shifts based on availability and percentage
+2025-06-28 12:26:51,484 - root - DEBUG - Worker W1: 14 available slots
+2025-06-28 12:26:51,484 - root - DEBUG - Worker W2: 14 available slots
+2025-06-28 12:26:51,484 - root - DEBUG - Worker W1: weight=14.00 (available=14, percentage=100.0%)
+2025-06-28 12:26:51,484 - root - DEBUG - Worker W2: weight=11.20 (available=14, percentage=80.0%)
+2025-06-28 12:26:51,484 - root - DEBUG - Worker W1: target=8, mandatory=0, adjusted=8
+2025-06-28 12:26:51,484 - root - DEBUG - Worker W2: target=6, mandatory=0, adjusted=6
+2025-06-28 12:26:51,484 - root - INFO - Target calculation complete. Total slots: 14, Assigned: 14
+2025-06-28 12:26:51,484 - root - INFO - Target calculation complete via WorkloadCalculator. Total slots: 14, Assigned: 14
+2025-06-28 12:26:51,484 - root - INFO - Scheduler initialized with:
+2025-06-28 12:26:51,484 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-06-28 12:26:51,484 - root - INFO - End date: 2024-01-07 00:00:00
+2025-06-28 12:26:51,484 - root - INFO - Number of shifts: 2
+2025-06-28 12:26:51,484 - root - INFO - Number of workers: 2
+2025-06-28 12:26:51,485 - root - INFO - Holidays: []
+2025-06-28 12:26:51,485 - root - INFO - Gap between shifts: 3
+2025-06-28 12:26:51,485 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-06-28 12:26:51,485 - root - INFO - Current datetime (Spain): 2025-06-28 12:26:51.483996
+2025-06-28 12:26:51,485 - root - INFO - Current user: saldo27
+2025-06-28 12:26:51,485 - root - INFO - Schedule validation completed: 1 errors, 3 warnings
+2025-06-28 12:26:51,485 - root - ERROR - Schedule validation failed with exception: 'gap'
+Traceback (most recent call last):
+  File "/home/runner/work/4/4/scheduler.py", line 1850, in verify_schedule_integrity
+    stats = self.stats.gather_statistics()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/4/4/statistics.py", line 123, in gather_statistics
+    'gap': sum(len(skips['gap']) for skips in self.constraint_skips.values()),
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/4/4/statistics.py", line 123, in <genexpr>
+    'gap': sum(len(skips['gap']) for skips in self.constraint_skips.values()),
+                   ~~~~~^^^^^^^
+KeyError: 'gap'
+2025-06-28 12:27:25,744 - root - INFO - Logging system configured successfully.
+2025-06-28 12:27:25,744 - root - INFO - Scheduler initialized
+2025-06-28 12:27:25,744 - root - INFO - DateTimeUtils initialized
+2025-06-28 12:27:25,744 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-06-28 12:27:25,744 - root - DEBUG - Worker W1 incompatible_with list: []
+2025-06-28 12:27:25,744 - root - DEBUG - Worker W2 incompatible_with list: []
+2025-06-28 12:27:25,744 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:27:25,744 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:27:25,744 - root - INFO - ConstraintChecker initialized
+2025-06-28 12:27:25,744 - root - INFO - DataManager initialized
+2025-06-28 12:27:25,745 - root - INFO - Calculating target shifts based on availability and percentage
+2025-06-28 12:27:25,745 - root - DEBUG - Worker W1: 14 available slots
+2025-06-28 12:27:25,745 - root - DEBUG - Worker W2: 14 available slots
+2025-06-28 12:27:25,745 - root - DEBUG - Worker W1: weight=14.00 (available=14, percentage=100.0%)
+2025-06-28 12:27:25,745 - root - DEBUG - Worker W2: weight=11.20 (available=14, percentage=80.0%)
+2025-06-28 12:27:25,745 - root - DEBUG - Worker W1: target=8, mandatory=0, adjusted=8
+2025-06-28 12:27:25,745 - root - DEBUG - Worker W2: target=6, mandatory=0, adjusted=6
+2025-06-28 12:27:25,745 - root - INFO - Target calculation complete. Total slots: 14, Assigned: 14
+2025-06-28 12:27:25,745 - root - INFO - Target calculation complete via WorkloadCalculator. Total slots: 14, Assigned: 14
+2025-06-28 12:27:25,745 - root - INFO - Scheduler initialized with:
+2025-06-28 12:27:25,745 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-06-28 12:27:25,745 - root - INFO - End date: 2024-01-07 00:00:00
+2025-06-28 12:27:25,745 - root - INFO - Number of shifts: 2
+2025-06-28 12:27:25,745 - root - INFO - Number of workers: 2
+2025-06-28 12:27:25,745 - root - INFO - Holidays: []
+2025-06-28 12:27:25,745 - root - INFO - Gap between shifts: 3
+2025-06-28 12:27:25,745 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-06-28 12:27:25,745 - root - INFO - Current datetime (Spain): 2025-06-28 12:27:25.744796
+2025-06-28 12:27:25,745 - root - INFO - Current user: saldo27
+2025-06-28 12:27:25,746 - root - INFO - Schedule validation completed: 1 errors, 3 warnings
+2025-06-28 12:27:25,746 - root - ERROR - Schedule validation failed with exception: 'StatisticsCalculator' object has no attribute '_get_post_counts'
+Traceback (most recent call last):
+  File "/home/runner/work/4/4/scheduler.py", line 1850, in verify_schedule_integrity
+    stats = self.stats.gather_statistics()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/4/4/statistics.py", line 150, in gather_statistics
+    'post_distribution': self._get_post_counts(worker_id),
+                         ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'StatisticsCalculator' object has no attribute '_get_post_counts'. Did you mean: 'get_post_counts'?
+2025-06-28 12:27:59,657 - root - INFO - Logging system configured successfully.
+2025-06-28 12:27:59,657 - root - INFO - Scheduler initialized
+2025-06-28 12:27:59,657 - root - INFO - DateTimeUtils initialized
+2025-06-28 12:27:59,657 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-06-28 12:27:59,657 - root - DEBUG - Worker W1 incompatible_with list: []
+2025-06-28 12:27:59,657 - root - DEBUG - Worker W2 incompatible_with list: []
+2025-06-28 12:27:59,657 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:27:59,657 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:27:59,657 - root - INFO - ConstraintChecker initialized
+2025-06-28 12:27:59,657 - root - INFO - DataManager initialized
+2025-06-28 12:27:59,657 - root - INFO - Calculating target shifts based on availability and percentage
+2025-06-28 12:27:59,657 - root - DEBUG - Worker W1: 14 available slots
+2025-06-28 12:27:59,657 - root - DEBUG - Worker W2: 14 available slots
+2025-06-28 12:27:59,658 - root - DEBUG - Worker W1: weight=14.00 (available=14, percentage=100.0%)
+2025-06-28 12:27:59,658 - root - DEBUG - Worker W2: weight=11.20 (available=14, percentage=80.0%)
+2025-06-28 12:27:59,658 - root - DEBUG - Worker W1: target=8, mandatory=0, adjusted=8
+2025-06-28 12:27:59,658 - root - DEBUG - Worker W2: target=6, mandatory=0, adjusted=6
+2025-06-28 12:27:59,658 - root - INFO - Target calculation complete. Total slots: 14, Assigned: 14
+2025-06-28 12:27:59,658 - root - INFO - Target calculation complete via WorkloadCalculator. Total slots: 14, Assigned: 14
+2025-06-28 12:27:59,658 - root - INFO - Scheduler initialized with:
+2025-06-28 12:27:59,658 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-06-28 12:27:59,658 - root - INFO - End date: 2024-01-07 00:00:00
+2025-06-28 12:27:59,658 - root - INFO - Number of shifts: 2
+2025-06-28 12:27:59,658 - root - INFO - Number of workers: 2
+2025-06-28 12:27:59,658 - root - INFO - Holidays: []
+2025-06-28 12:27:59,658 - root - INFO - Gap between shifts: 3
+2025-06-28 12:27:59,658 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-06-28 12:27:59,658 - root - INFO - Current datetime (Spain): 2025-06-28 12:27:59.657610
+2025-06-28 12:27:59,658 - root - INFO - Current user: saldo27
+2025-06-28 12:27:59,658 - root - INFO - Schedule validation completed: 1 errors, 2 warnings
+2025-06-28 12:27:59,658 - root - ERROR - Schedule validation failed with exception: 'gap'
+Traceback (most recent call last):
+  File "/home/runner/work/4/4/scheduler.py", line 1851, in verify_schedule_integrity
+    metrics = self.stats.get_schedule_metrics()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/4/4/statistics.py", line 381, in get_schedule_metrics
+    'constraint_violations': self._count_constraint_violations(),
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/4/4/statistics.py", line 282, in _count_constraint_violations
+    'gap_violations': sum(
+                      ^^^^
+  File "/home/runner/work/4/4/statistics.py", line 283, in <genexpr>
+    len(skips['gap']) for skips in self.constraint_skips.values()
+        ~~~~~^^^^^^^
+KeyError: 'gap'
+2025-06-28 12:28:29,898 - root - INFO - Logging system configured successfully.
+2025-06-28 12:28:29,898 - root - INFO - Scheduler initialized
+2025-06-28 12:28:29,898 - root - INFO - DateTimeUtils initialized
+2025-06-28 12:28:29,898 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-06-28 12:28:29,898 - root - DEBUG - Worker W1 incompatible_with list: []
+2025-06-28 12:28:29,898 - root - DEBUG - Worker W2 incompatible_with list: []
+2025-06-28 12:28:29,898 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:28:29,898 - root - INFO - StatisticsCalculator initialized
+2025-06-28 12:28:29,898 - root - INFO - ConstraintChecker initialized
+2025-06-28 12:28:29,898 - root - INFO - DataManager initialized
+2025-06-28 12:28:29,899 - root - INFO - Calculating target shifts based on availability and percentage
+2025-06-28 12:28:29,899 - root - DEBUG - Worker W1: 14 available slots
+2025-06-28 12:28:29,899 - root - DEBUG - Worker W2: 14 available slots
+2025-06-28 12:28:29,899 - root - DEBUG - Worker W1: weight=14.00 (available=14, percentage=100.0%)
+2025-06-28 12:28:29,899 - root - DEBUG - Worker W2: weight=11.20 (available=14, percentage=80.0%)
+2025-06-28 12:28:29,899 - root - DEBUG - Worker W1: target=8, mandatory=0, adjusted=8
+2025-06-28 12:28:29,899 - root - DEBUG - Worker W2: target=6, mandatory=0, adjusted=6
+2025-06-28 12:28:29,899 - root - INFO - Target calculation complete. Total slots: 14, Assigned: 14
+2025-06-28 12:28:29,899 - root - INFO - Target calculation complete via WorkloadCalculator. Total slots: 14, Assigned: 14
+2025-06-28 12:28:29,899 - root - INFO - Scheduler initialized with:
+2025-06-28 12:28:29,899 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-06-28 12:28:29,899 - root - INFO - End date: 2024-01-07 00:00:00
+2025-06-28 12:28:29,899 - root - INFO - Number of shifts: 2
+2025-06-28 12:28:29,899 - root - INFO - Number of workers: 2
+2025-06-28 12:28:29,899 - root - INFO - Holidays: []
+2025-06-28 12:28:29,899 - root - INFO - Gap between shifts: 3
+2025-06-28 12:28:29,899 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-06-28 12:28:29,899 - root - INFO - Current datetime (Spain): 2025-06-28 12:28:29.898812
+2025-06-28 12:28:29,899 - root - INFO - Current user: saldo27
+2025-06-28 12:28:29,900 - root - INFO - Schedule validation completed: 1 errors, 2 warnings
+2025-06-28 12:28:29,900 - root - INFO - Generated schedule metrics
+2025-06-28 12:28:29,900 - root - ERROR - Schedule validation failed with 1 errors

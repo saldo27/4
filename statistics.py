@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from exceptions import SchedulerError
+from scheduler_config import ConstraintType
 if TYPE_CHECKING:
     from scheduler import Schedulerr
 
@@ -26,7 +27,12 @@ class StatisticsCalculator:
         self.worker_weekends = scheduler.worker_weekends
         self.workers_data = scheduler.workers_data
         self.num_shifts = scheduler.num_shifts
-        self.holidays = scheduler.holidays  # Add this line to reference holidays
+        self.holidays = scheduler.holidays
+        self.start_date = scheduler.start_date
+        self.end_date = scheduler.end_date
+        self.constraint_skips = scheduler.constraint_skips
+        
+        logging.info("StatisticsCalculator initialized")
     
         logging.info("StatisticsCalculator initialized")
     
@@ -115,9 +121,9 @@ class StatisticsCalculator:
                 'total_days': (self.end_date - self.start_date).days + 1,
                 'total_shifts': sum(len(shifts) for shifts in self.schedule.values()),
                 'constraint_skips': {
-                    'gap': sum(len(skips['gap']) for skips in self.constraint_skips.values()),
-                    'incompatibility': sum(len(skips['incompatibility']) for skips in self.constraint_skips.values()),
-                    'reduced_gap': sum(len(skips['reduced_gap']) for skips in self.constraint_skips.values())
+                    'gap': sum(len(skips.get(ConstraintType.GAP_BETWEEN_SHIFTS.value, [])) for skips in self.constraint_skips.values()),
+                    'incompatibility': sum(len(skips.get(ConstraintType.INCOMPATIBILITY.value, [])) for skips in self.constraint_skips.values()),
+                    'reduced_gap': sum(len(skips.get(ConstraintType.REDUCED_GAP.value, [])) for skips in self.constraint_skips.values())
                 }
             },
             'workers': {}
@@ -141,7 +147,7 @@ class StatisticsCalculator:
                 'work_percentage': worker.get('work_percentage', 100),
                 'weekend_shifts': len(self.worker_weekends[worker_id]),
                 'weekday_distribution': self.worker_weekdays[worker_id],
-                'post_distribution': self._get_post_counts(worker_id),
+                'post_distribution': self.get_post_counts(worker_id),
                 'constraint_skips': self.constraint_skips[worker_id],
                 'monthly_stats': monthly_stats,
                 'gaps_analysis': self._analyze_gaps(worker_id)
@@ -205,7 +211,7 @@ class StatisticsCalculator:
     
         for worker in self.workers_data:
             worker_id = worker['id']
-            post_counts = self._get_post_counts(worker_id)
+            post_counts = self.get_post_counts(worker_id)
             total_assignments = sum(post_counts.values())
         
             if total_assignments == 0:
@@ -257,7 +263,7 @@ class StatisticsCalculator:
     
         # Post rotation balance
         for worker_id in self.worker_assignments:
-            post_counts = self._get_post_counts(worker_id)
+            post_counts = self.get_post_counts(worker_id)
             if post_counts.values():
                 post_imbalance = max(post_counts.values()) - min(post_counts.values())
                 scores.append(max(0, 100 - (post_imbalance * 20)))
@@ -274,13 +280,13 @@ class StatisticsCalculator:
         """Count total constraint violations"""
         return {
             'gap_violations': sum(
-                len(skips['gap']) for skips in self.constraint_skips.values()
+                len(skips.get(ConstraintType.GAP_BETWEEN_SHIFTS.value, [])) for skips in self.constraint_skips.values()
             ),
             'incompatibility_violations': sum(
-                len(skips['incompatibility']) for skips in self.constraint_skips.values()
+                len(skips.get(ConstraintType.INCOMPATIBILITY.value, [])) for skips in self.constraint_skips.values()
             ),
             'reduced_gap_violations': sum(
-                len(skips['reduced_gap']) for skips in self.constraint_skips.values()
+                len(skips.get(ConstraintType.REDUCED_GAP.value, [])) for skips in self.constraint_skips.values()
             )
         }
 
@@ -414,7 +420,7 @@ class StatisticsCalculator:
                     output += f" (Part-time: {work_percentage}%)"
                 
                 # Add post rotation info
-                post_counts = self._get_post_counts(worker_id)
+                post_counts = self.get_post_counts(worker_id)
                 output += f" [Post {i} count: {post_counts.get(i-1, 0)}]"
                 
                 output += "\n"
