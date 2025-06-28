@@ -12,9 +12,15 @@ from utilities import DateTimeUtils
 from statistics import StatisticsCalculator
 from exceptions import SchedulerError
 from worker_eligibility import WorkerEligibilityTracker
+from scheduler_config import (
+    SchedulerConfig, SchedulerDefaults, ValidationThresholds, 
+    ConstraintType, PerformanceMetrics, CacheConfig
+)
+from schedule_validator import ScheduleValidator
+from workload_calculator import WorkloadCalculator
 
 # Configure logging
-log_dir = "logs"
+log_dir = SchedulerDefaults.LOG_DIRECTORY
 if not os.path.exists(log_dir):
     try:
         os.makedirs(log_dir)
@@ -24,7 +30,7 @@ if not os.path.exists(log_dir):
         # Fallback to current directory if 'logs' can't be made
         log_dir = "." 
 
-log_file_path = os.path.join(log_dir, "scheduler.log")
+log_file_path = os.path.join(log_dir, SchedulerDefaults.LOG_FILENAME)
 print(f"Logging to: {os.path.abspath(log_file_path)}")
 
 # Configure root logger
@@ -81,20 +87,25 @@ class Scheduler:
         """Initialize the scheduler with configuration"""
         logging.info("Scheduler initialized")
         try:
+            # Convert dict config to SchedulerConfig if needed
+            if isinstance(config, dict):
+                self.config = SchedulerConfig.from_dict(config)
+            else:
+                self.config = config
+            
+            # Validate configuration
+            self.config.validate()
+            
             # Initialize date_utils FIRST, before calling any method that might need it
             self.date_utils = DateTimeUtils()
     
-            # Then validate the configuration
-            self._validate_config(config)
-    
             # Basic setup from config
-            self.config = config
-            self.start_date = config['start_date']
-            self.end_date = config['end_date']
-            self.num_shifts = config['num_shifts']
-            self.variable_shifts = config.get('variable_shifts', [])
-            self.workers_data = config['workers_data']
-            self.holidays = config.get('holidays', [])
+            self.start_date = self.config.start_date
+            self.end_date = self.config.end_date
+            self.num_shifts = self.config.num_shifts
+            self.variable_shifts = self.config.variable_shifts
+            self.workers_data = self.config.workers_data
+            self.holidays = self.config.holidays
 
             # --- START: Build incompatibility lists ---
             incompatible_worker_ids = {
@@ -112,51 +123,54 @@ class Scheduler:
                 logging.debug(f"Worker {worker_id} incompatible_with list: {worker['incompatible_with']}")
             # --- END: Build incompatibility lists ---
     
-            # Get the new configurable parameters with defaults
-            self.gap_between_shifts = config.get('gap_between_shifts', 3)
-            self.max_consecutive_weekends = config.get('max_consecutive_weekends', 3)
+            # Get configurable parameters with defaults
+            self.gap_between_shifts = self.config.gap_between_shifts
+            self.max_consecutive_weekends = self.config.max_consecutive_weekends
 
             # Initialize tracking dictionaries
             self.schedule = {}
             self.worker_assignments = {w['id']: set() for w in self.workers_data}
-            self.worker_posts = {w['id']: set() for w in self.workers_data} # CORRECTED: Initialize as a set
+            self.worker_posts = {w['id']: set() for w in self.workers_data}
             self.worker_weekdays = {w['id']: {i: 0 for i in range(7)} for w in self.workers_data}
-            self.worker_weekends = {w['id']: [] for w in self.workers_data} # This is a list of dates, which is fine
+            self.worker_weekends = {w['id']: [] for w in self.workers_data}
+            
             # Initialize the schedule structure with the appropriate number of shifts for each date
             self._initialize_schedule_with_variable_shifts() 
-            # Initialize tracking data structures (These seem to be for overall counts, distinct from worker_posts which tracks *which* posts)
+            
+            # Initialize tracking data structures
             self.worker_shift_counts = {w['id']: 0 for w in self.workers_data}
             self.worker_weekend_counts = {w['id']: 0 for w in self.workers_data} 
-            self.worker_post_counts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data} # This is for counting how many times each post is worked by a worker, distinct from self.worker_posts
+            self.worker_post_counts = {w['id']: {p: 0 for p in range(self.num_shifts)} for w in self.workers_data}
             self.worker_weekday_counts = {w['id']: {d: 0 for d in range(7)} for w in self.workers_data}
             self.worker_holiday_counts = {w['id']: 0 for w in self.workers_data}
-            self.last_assignment_date = {w['id']: None for w in self.workers_data} # Corrected attribute name
-            # Initialize consecutive_shifts
-            self.consecutive_shifts = {w['id']: 0 for w in self.workers_data} # <<< --- ADD THIS LINE
+            self.last_assignment_date = {w['id']: None for w in self.workers_data}
+            self.consecutive_shifts = {w['id']: 0 for w in self.workers_data}
                       
             # Initialize worker targets
             for worker in self.workers_data:
                 if 'target_shifts' not in worker:
-                    worker['target_shifts'] = 0
+                    worker['target_shifts'] = SchedulerDefaults.DEFAULT_TARGET_SHIFTS
 
             # Set current time and user
-            # self.date_utils = DateTimeUtils() # Already initialized above
             self.current_datetime = self.date_utils.get_spain_time()
-            self.current_user = 'saldo27'
+            self.current_user = SchedulerDefaults.DEFAULT_USER
         
             # Add max_shifts_per_worker calculation
             total_days = (self.end_date - self.start_date).days + 1
-            total_shifts_possible = total_days * self.num_shifts # Renamed for clarity
+            total_shifts_possible = total_days * self.num_shifts
             num_workers = len(self.workers_data)
             # Ensure num_workers is not zero to prevent DivisionByZeroError
-            self.max_shifts_per_worker = (total_shifts_possible // num_workers) + 2 if num_workers > 0 else total_shifts_possible 
+            self.max_shifts_per_worker = (
+                (total_shifts_possible // num_workers) + SchedulerDefaults.MAX_SHIFTS_BUFFER 
+                if num_workers > 0 else total_shifts_possible
+            )
 
             # Track constraint skips
             self.constraint_skips = {
                 w['id']: {
-                    'gap': [],
-                    'incompatibility': [],
-                    'reduced_gap': []  # For part-time workers
+                    ConstraintType.GAP_BETWEEN_SHIFTS.value: [],
+                    ConstraintType.INCOMPATIBILITY.value: [],
+                    ConstraintType.REDUCED_GAP.value: []  # For part-time workers
                 } for w in self.workers_data
             }
         
@@ -164,16 +178,19 @@ class Scheduler:
             self.stats = StatisticsCalculator(self)
             self.constraint_checker = ConstraintChecker(self)  
             self.data_manager = DataManager(self)
+            self.validator = ScheduleValidator(self)
+            self.workload_calculator = WorkloadCalculator(self)
+            
             # self.schedule_builder will be initialized later in generate_schedule
             self.eligibility_tracker = WorkerEligibilityTracker(
                 self.workers_data,
                 self.holidays,
                 self.gap_between_shifts,
                 self.max_consecutive_weekends,
-                start_date=self.start_date,  # Pass start_date
-                end_date=self.end_date,      # Pass end_date
-                date_utils=self.date_utils,  # Pass date_utils
-                scheduler=self              # Pass reference to scheduler
+                start_date=self.start_date,
+                end_date=self.end_date,
+                date_utils=self.date_utils,
+                scheduler=self
             )
 
             # Sort the variable shifts by start date for efficient lookup
@@ -184,95 +201,27 @@ class Scheduler:
 
             self._log_initialization()
 
-            # The ScheduleBuilder is now initialized within the generate_schedule method
-            # after the scheduler's own state for the run is fully prepared.
-            # self.schedule_builder = ScheduleBuilder(self) # This line is moved to generate_schedule
-
         except Exception as e:
-            logging.error(f"Initialization error: {str(e)}", exc_info=True) # Added exc_info=True
+            logging.error(f"Initialization error: {str(e)}", exc_info=True)
             raise SchedulerError(f"Failed to initialize scheduler: {str(e)}")
         
         
     def _validate_config(self, config):
         """
-        Validate configuration parameters
-    
+        Validate configuration parameters (legacy method - delegated to SchedulerConfig)
+        
         Args:
-            config: Dictionary containing schedule configuration
-        
-        Raises:
-            SchedulerError: If configuration is invalid
+            config: Configuration dictionary or SchedulerConfig object
         """
-        # Check required fields
-        required_fields = ['start_date', 'end_date', 'num_shifts', 'workers_data']
-        for field in required_fields:
-            if field not in config:
-                raise SchedulerError(f"Missing required configuration field: {field}")
-
-        # Validate date range
-        if not isinstance(config['start_date'], datetime) or not isinstance(config['end_date'], datetime):
-            raise SchedulerError("Start date and end date must be datetime objects")
-        
-        if config['start_date'] > config['end_date']:
-            raise SchedulerError("Start date must be before end date")
-
-        # Validate shifts
-        if not isinstance(config['num_shifts'], int) or config['num_shifts'] < 1:
-            raise SchedulerError("Number of shifts must be a positive integer")
-
-        # Validate workers data
-        if not config['workers_data'] or not isinstance(config['workers_data'], list):
-            raise SchedulerError("workers_data must be a non-empty list")
-
-        # Validate gap_between_shifts if present
-        if 'gap_between_shifts' in config:
-            if not isinstance(config['gap_between_shifts'], int) or config['gap_between_shifts'] < 0:
-                raise SchedulerError("gap_between_shifts must be a non-negative integer")
-    
-        # Validate max_consecutive_weekends if present
-        if 'max_consecutive_weekends' in config:
-            if not isinstance(config['max_consecutive_weekends'], int) or config['max_consecutive_weekends'] <= 0:
-                raise SchedulerError("max_consecutive_weekends must be a positive integer")
-            
-        # Validate each worker's data
-        for worker in config['workers_data']:
-            if not isinstance(worker, dict):
-                raise SchedulerError("Each worker must be a dictionary")
-            
-            if 'id' not in worker:
-                raise SchedulerError("Each worker must have an 'id' field")
-            
-            # Validate work percentage if present
-            if 'work_percentage' in worker:
-                try:
-                    work_percentage = float(str(worker['work_percentage']).strip())
-                    if work_percentage <= 0 or work_percentage > 100:
-                        raise SchedulerError(f"Invalid work percentage for worker {worker['id']}: {work_percentage}")
-                except ValueError:
-                    raise SchedulerError(f"Invalid work percentage format for worker {worker['id']}")
-
-            # Validate date formats in mandatory_days if present
-            if 'mandatory_days' in worker:
-                try:
-                    self.date_utils.parse_dates(worker['mandatory_days'])
-                except ValueError as e:
-                    raise SchedulerError(f"Invalid mandatory_days format for worker {worker['id']}: {str(e)}")
-
-            # Validate date formats in days_off if present
-            if 'days_off' in worker:
-                try:
-                    self.date_utils.parse_date_ranges(worker['days_off'])
-                except ValueError as e:
-                    raise SchedulerError(f"Invalid days_off format for worker {worker['id']}: {str(e)}")
-
-        # Validate holidays if present
-        if 'holidays' in config:
-            if not isinstance(config['holidays'], list):
-                raise SchedulerError("holidays must be a list")
-            
-            for holiday in config['holidays']:
-                if not isinstance(holiday, datetime):
-                    raise SchedulerError("Each holiday must be a datetime object")
+        # This method is kept for backward compatibility
+        # Actual validation is now handled by SchedulerConfig.validate()
+        if isinstance(config, dict):
+            temp_config = SchedulerConfig.from_dict(config)
+            temp_config.validate()
+        elif hasattr(config, 'validate'):
+            config.validate()
+        else:
+            raise SchedulerError("Invalid configuration object")
                 
     def _log_initialization(self):
         """Log initialization parameters"""
@@ -574,97 +523,20 @@ class Scheduler:
     # ========================================
     def _calculate_target_shifts(self):
         """
-        Recalculate each worker's target_shifts by:
-          1) Counting slots they can work (based on work_periods & days_off)
-          2) Weighting those slots by their work_percentage
-          3) Allocating all schedule slots proportionally (largest‐remainder rounding)
+        Calculate target shifts using the WorkloadCalculator.
+        
+        This method delegates to the WorkloadCalculator for improved separation of concerns.
         """
         try:
-            logging.info("Calculating target shifts based on availability and percentage")
-
-            # 1) Total open slots in the schedule (variable shifts considered)
-            total_slots = sum(len(slots) for slots in self.schedule.values())
-            if total_slots <= 0:
-                logging.warning("No slots in schedule; skipping allocation")
-                return False
-
-            # 2) Compute available_slots per worker
-            available_slots = {}
-            for w in self.workers_data:
-                wid = w['id']
-                wp = w.get('work_periods','').strip()
-                dp = w.get('days_off','').strip()
-                work_ranges = (self.date_utils.parse_date_ranges(wp) 
-                               if wp else [(self.start_date, self.end_date)])
-                off_ranges  = (self.date_utils.parse_date_ranges(dp) 
-                               if dp else [])
-                count = 0
-                for date, slots in self.schedule.items():
-                    in_work = any(s <= date <= e for s, e in work_ranges)
-                    in_off  = any(s <= date <= e for s, e in off_ranges)
-                    if in_work and not in_off:
-                        count += len(slots)
-                available_slots[wid] = count
-                logging.debug(f"Worker {wid}: available_slots={count}")
-
-            # 3) Build weight = available_slots * (work_percentage/100)
-            weights = []
-            for w in self.workers_data:
-                wid = w['id']
-                pct = 1.0
-                try:
-                    pct = float(str(w.get('work_percentage',100)).strip())/100.0
-                except Exception:
-                    logging.warning(f"Worker {wid} invalid work_percentage; defaulting to 100%")
-                pct = max(0.0, pct)
-                weights.append(available_slots.get(wid,0) * pct)
-
-            total_weight = sum(weights) or 1.0
-
-            # 4) Compute exact fractional targets
-            exact_targets = [wgt/total_weight*total_slots for wgt in weights]
-
-            # 5) Largest-remainder rounding
-            floors = [int(x) for x in exact_targets]
-            remainder = int(total_slots - sum(floors))
-            fracs = sorted(enumerate(exact_targets),
-                           key=lambda ix: exact_targets[ix[0]] - floors[ix[0]],
-                           reverse=True)
-            targets = floors[:]
-            for idx, _ in fracs[:remainder]:
-                targets[idx] += 1
-
-            # 6) Assign and log (subtract out mandatory days so they're not extra)
-            for i, w in enumerate(self.workers_data):
-                raw_target = targets[i]
-                mand_count = 0
-                mand_str = w.get('mandatory_days', '').strip()
-                if mand_str:
-                    try:
-                        mand_dates = self.date_utils.parse_dates(mand_str)
-                        mand_count = sum(1 for d in mand_dates
-                                         if self.start_date <= d <= self.end_date)
-                    except Exception as e:
-                        logging.error(f"Failed to parse mandatory_days for {w['id']}: {e}")
-                adjusted = max(0, raw_target - mand_count)
-                w['target_shifts'] = adjusted
-                logging.info(
-                    f"Worker {w['id']}: target_shifts={raw_target} → {adjusted}"
-                    f"{' (−'+str(mand_count)+' mandatory)' if mand_count else ''}"
-                )
-
-            for i,w in enumerate(self.workers_data):
-                raw = targets[i]
-                mand_count = 0
-                if w.get('mandatory_days','').strip():
-                    mand_count = sum(1 for d in self.date_utils.parse_dates(w['mandatory_days'])
-                                     if self.start_date <= d <= self.end_date)
-            w['_raw_target']      = raw
-            w['_mandatory_count'] = mand_count
-            w['target_shifts']    = max(0, raw - mand_count)
+            workload_distribution = self.workload_calculator.calculate_target_shifts()
+            
+            # Log results
+            logging.info(f"Target calculation complete via WorkloadCalculator. "
+                        f"Total slots: {workload_distribution.total_slots}, "
+                        f"Assigned: {workload_distribution.total_assigned_shifts}")
             
             return True
-        
+            
         except Exception as e:
             logging.error(f"Error in target calculation: {e}", exc_info=True)
             return False
@@ -1963,7 +1835,7 @@ class Scheduler:
         
     def verify_schedule_integrity(self):
         """
-        Verify schedule integrity and constraints
+        Verify schedule integrity and constraints using ScheduleValidator.
         
         Returns:
             tuple: (bool, dict) - (is_valid, results)
@@ -1971,38 +1843,39 @@ class Scheduler:
                 results: Dictionary containing validation results and metrics
         """
         try:
-            # Run comprehensive validation
-            self._validate_final_schedule()
+            # Use the new ScheduleValidator for comprehensive validation
+            validation_result = self.validator.validate_final_schedule()
             
-            # Gather statistics and metrics
+            # Gather additional statistics and metrics
             stats = self.gather_statistics()
             metrics = self.get_schedule_metrics()
             
-            # Calculate coverage
-            coverage = self._calculate_coverage()
-            if coverage < 95:  # Less than 95% coverage is considered problematic
-                logging.warning(f"Low schedule coverage: {coverage:.1f}%")
-            
-            # Check worker assignment balance
-            for worker_id, worker_stats in stats['workers'].items():
-                if abs(worker_stats['total_shifts'] - worker_stats['target_shifts']) > 2:
-                    logging.warning(
-                        f"Worker {worker_id} has significant deviation from target shifts: "
-                        f"Actual={worker_stats['total_shifts']}, "
-                        f"Target={worker_stats['target_shifts']}"
-                    )
-            
-            return True, {
+            # Prepare result dictionary
+            result_data = {
+                'validation': {
+                    'is_valid': validation_result.is_valid,
+                    'errors': validation_result.errors,
+                    'warnings': validation_result.warnings,
+                    'details': validation_result.details
+                },
                 'stats': stats,
                 'metrics': metrics,
-                'coverage': coverage,
+                'coverage': validation_result.details.get('coverage', 0),
                 'timestamp': datetime.now().strftime('%d-%m-%Y %H:%M:%S'),
                 'validator': self.current_user
             }
             
-        except SchedulerError as e:
-            logging.error(f"Schedule validation failed: {str(e)}")
-            return False, str(e)
+            # Log summary
+            if validation_result.is_valid:
+                logging.info(f"Schedule validation passed with {len(validation_result.warnings)} warnings")
+            else:
+                logging.error(f"Schedule validation failed with {len(validation_result.errors)} errors")
+            
+            return validation_result.is_valid, result_data
+            
+        except Exception as e:
+            logging.error(f"Schedule validation failed with exception: {str(e)}", exc_info=True)
+            return False, {'error': str(e)}
         
     # ========================================
     # 9. REPORTING AND EXPORT
