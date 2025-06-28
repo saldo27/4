@@ -239,26 +239,28 @@ class ScheduleBuilder:
     def _check_incompatibility_with_list(self, worker_id_to_check, assigned_workers_list):
         """Checks if worker_id_to_check is incompatible with anyone in the list."""
         worker_to_check_data = next((w for w in self.workers_data if w['id'] == worker_id_to_check), None)
-        if not worker_to_check_data: return True # Should not happen, but fail safe
+        if not worker_to_check_data: 
+            return True
 
+        # Convert to set for O(1) lookups instead of O(n)
         incompatible_with_candidate = set(worker_to_check_data.get('incompatible_with', []))
+        assigned_workers_set = set(str(w) for w in assigned_workers_list if w is not None)
 
-        # *** ADD TYPE LOGGING HERE ***
-        logging.debug(f"  CHECKING_INTERNAL: Worker={worker_id_to_check} (Type: {type(worker_id_to_check)}), AgainstList={assigned_workers_list}, IncompListForCheckWorker={incompatible_with_candidate}") # Corrected variable name
+        # Check if any assigned worker is incompatible
+        if incompatible_with_candidate & assigned_workers_set:
+            return False
 
+        # Bidirectional check - convert once and reuse
         for assigned_id in assigned_workers_list:
             if assigned_id is None or assigned_id == worker_id_to_check:
                 continue
-            if str(assigned_id) in incompatible_with_candidate: # Ensure type consistency if IDs might be mixed
-                return False # Candidate is incompatible with an already assigned worker
-
-            # Bidirectional check
             assigned_worker_data = next((w for w in self.workers_data if w['id'] == assigned_id), None)
             if assigned_worker_data:
-                if str(worker_id_to_check) in set(assigned_worker_data.get('incompatible_with', [])):
-                    return False # Assigned worker is incompatible with the ca
-        logging.debug(f"  CHECKING_INTERNAL: Worker={worker_id_to_check} vs List={assigned_workers_list} -> OK (No incompatibility detected)")
-        return True # No incompatibilities found
+                assigned_incompatible = set(assigned_worker_data.get('incompatible_with', []))
+                if str(worker_id_to_check) in assigned_incompatible:
+                    return False
+    
+        return True
 
     def _check_incompatibility(self, worker_id, date):
         # Placeholder using _check_incompatibility_with_list
