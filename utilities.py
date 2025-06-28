@@ -138,6 +138,35 @@ class DateTimeUtils:
             else:  # Friday-Sunday
                 return date - timedelta(days=weekday - 4)  # Move back to Friday
         
+    def is_holiday(self, date, holidays=None):
+        """
+        Check if a date is a holiday
+        
+        Args:
+            date: datetime object
+            holidays: optional list of holiday dates
+        Returns:
+            bool: True if the date is a holiday, False otherwise
+        """
+        if holidays is None:
+            holidays = []
+        return date in holidays
+
+    def is_pre_holiday(self, date, holidays=None):
+        """
+        Check if a date is the day before a holiday
+        
+        Args:
+            date: datetime object  
+            holidays: optional list of holiday dates
+        Returns:
+            bool: True if the next day is a holiday, False otherwise
+        """
+        if holidays is None:
+            holidays = []
+        next_day = date + timedelta(days=1)
+        return next_day in holidays
+
     def get_effective_weekday(self, date, holidays=None):
         """
         Get the effective weekday, treating holidays as Sundays and pre-holidays as Fridays
