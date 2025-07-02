@@ -4,21 +4,22 @@ import copy
 import logging
 import random
 import math
-from typing import TYPE_CHECKING
+from typing import Dict, List, Set, Optional, Tuple, Any, TYPE_CHECKING
 from exceptions import SchedulerError
 from adaptive_iterations import AdaptiveIterationManager
+
 if TYPE_CHECKING:
     from scheduler import Scheduler
 
 class ScheduleBuilder:
-    """Handles schedule generation and improvement"""
+    """Enhanced schedule generation and improvement with performance optimizations"""
     
     # ========================================
     # 1. INITIALIZATION AND SETUP
     # ========================================
-    def __init__(self, scheduler):
+    def __init__(self, scheduler: 'Scheduler'):
         """
-        Initialize the schedule builder
+        Initialize the schedule builder with performance optimizations
 
         Args:
             scheduler: The main Scheduler object
@@ -34,8 +35,8 @@ class ScheduleBuilder:
         self.num_shifts = scheduler.num_shifts
         self.holidays = scheduler.holidays
         self.constraint_checker = scheduler.constraint_checker
-        self.best_schedule_data = None # Initialize the attribute to store the best state found
-        self._locked_mandatory = set()
+        self.best_schedule_data: Optional[Dict[str, Any]] = None # Initialize the attribute to store the best state found
+        self._locked_mandatory: Set[Tuple[str, datetime]] = set()
         # Keep track of which (worker_id, date) pairs are truly mandatory
         self.start_date = scheduler.start_date
         self.end_date = scheduler.end_date
@@ -50,24 +51,65 @@ class ScheduleBuilder:
         self.constraint_skips = scheduler.constraint_skips
         self.last_assigned_date = scheduler.last_assignment_date # Used in calculate_score
         self.consecutive_shifts = scheduler.consecutive_shifts # Used in calculate_score
+        
+        # Performance optimization caches
+        self._worker_cache: Dict[str, Dict[str, Any]] = {}
+        self._date_cache: Dict[datetime, Dict[str, Any]] = {}
+        self._assignment_cache: Dict[str, Any] = {}
+        
         self.iteration_manager = AdaptiveIterationManager(scheduler)
         self.adaptive_config = self.iteration_manager.calculate_adaptive_iterations()
         logging.info(f"Adaptive config: {self.adaptive_config}")
+        
+        # Build performance caches
+        self._build_optimization_caches()
 
         logging.debug(f"[ScheduleBuilder.__init__] self.schedule object ID: {id(self.schedule)}, Initial keys: {list(self.schedule.keys())[:5]}")
-        logging.info("ScheduleBuilder initialized")
+        logging.info("Enhanced ScheduleBuilder initialized with caching")
+    
+    def _build_optimization_caches(self) -> None:
+        """Build caches for performance optimization"""
+        # Build worker cache
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            self._worker_cache[worker_id] = {
+                'data': worker,
+                'target_shifts': worker.get('target_shifts', 0),
+                'work_percentage': worker.get('work_percentage', 100),
+                'mandatory_days': worker.get('mandatory_days', ''),
+                'days_off': worker.get('days_off', ''),
+                'is_incompatible': worker.get('is_incompatible', False)
+            }
         
-    def _ensure_data_integrity(self):
+        # Build date cache for weekend/holiday status
+        current_date = self.start_date
+        holiday_set = set(self.holidays)
+        while current_date <= self.end_date:
+            self._date_cache[current_date] = {
+                'weekday': current_date.weekday(),
+                'is_weekend': current_date.weekday() >= 4,
+                'is_holiday': current_date in holiday_set,
+                'is_special': (current_date.weekday() >= 4 or 
+                             current_date in holiday_set or 
+                             (current_date + timedelta(days=1)) in holiday_set)
+            }
+            current_date += timedelta(days=1)
+        
+        logging.debug(f"Built optimization caches for {len(self._worker_cache)} workers and {len(self._date_cache)} dates")
+        
+    def _ensure_data_integrity(self) -> bool:
         """
         Ensure all data structures are consistent - delegates to scheduler
         """
         # Let the scheduler handle the data integrity check as it has the primary data
         return self.scheduler._ensure_data_integrity()    
 
-    def _verify_assignment_consistency(self):
+    def _verify_assignment_consistency(self) -> None:
         """
-        Verify and fix data consistency between schedule and tracking data
+        Optimized verification and fixing of data consistency between schedule and tracking data
         """
+        inconsistencies_fixed = 0
+        
         # Check schedule against worker_assignments and fix inconsistencies
         for date, shifts in self.schedule.items():
             for post, worker_id in enumerate(shifts):
@@ -75,8 +117,12 @@ class ScheduleBuilder:
                     continue
                 
                 # Ensure worker is tracked for this date
-                if date not in self.worker_assignments.get(worker_id, set()):
+                if worker_id not in self.worker_assignments:
+                    self.worker_assignments[worker_id] = set()
+                
+                if date not in self.worker_assignments[worker_id]:
                     self.worker_assignments[worker_id].add(date)
+                    inconsistencies_fixed += 1
     
         # Check worker_assignments against schedule
         for worker_id, assignments in self.worker_assignments.items():
@@ -85,7 +131,25 @@ class ScheduleBuilder:
                 if date not in self.schedule or worker_id not in self.schedule[date]:
                     # Remove this inconsistent assignment
                     self.worker_assignments[worker_id].remove(date)
+                    inconsistencies_fixed += 1
                     logging.warning(f"Fixed inconsistency: Worker {worker_id} was tracked for {date} but not in schedule")
+        
+        if inconsistencies_fixed > 0:
+            logging.info(f"Fixed {inconsistencies_fixed} data consistency issues")
+    
+    def _is_weekend_or_holiday_cached(self, date: datetime) -> bool:
+        """Get weekend/holiday status from cache"""
+        date_info = self._date_cache.get(date)
+        return date_info['is_special'] if date_info else False
+    
+    def _get_worker_cached(self, worker_id: str) -> Optional[Dict[str, Any]]:
+        """Get worker data from cache"""
+        return self._worker_cache.get(worker_id)
+    
+    def clear_optimization_caches(self) -> None:
+        """Clear optimization caches when data changes significantly"""
+        self._assignment_cache.clear()
+        logging.debug("ScheduleBuilder optimization caches cleared")
         
     # ========================================
     # 2. UTILITY AND HELPER METHODS

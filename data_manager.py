@@ -1,18 +1,18 @@
 # Imports
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING
+from typing import Dict, List, Set, Optional, Tuple, Any, TYPE_CHECKING
 from exceptions import SchedulerError
+
 if TYPE_CHECKING:
-    from scheduler import Schedulerr
+    from scheduler import Scheduler
 
 class DataManager:
-    """Handles data management and tracking for the scheduler"""
+    """Enhanced data management and tracking with performance optimizations"""
     
-    # Methods
     def __init__(self, scheduler: 'Scheduler'):
         """
-        Initialize the data manager
+        Initialize the data manager with caching support
         
         Args:
             scheduler: The main Scheduler object
@@ -27,6 +27,11 @@ class DataManager:
         self.worker_weekends = scheduler.worker_weekends
         self.num_shifts = scheduler.num_shifts
         self.workers_data = scheduler.workers_data
+        self.holidays = scheduler.holidays
+        
+        # Performance optimization caches
+        self._holiday_set: Set[datetime] = set(self.holidays)
+        self._worker_cache: Dict[str, Dict[str, Any]] = {}
         
         # Flag to track if data integrity has been verified
         self.data_integrity_verified = False
@@ -34,7 +39,19 @@ class DataManager:
         # Initialize monthly targets structure
         self.monthly_targets = {}
         
-        logging.info("DataManager initialized")
+        self._build_worker_cache()
+        
+        logging.info("Enhanced DataManager initialized with caching")
+    
+    def _build_worker_cache(self) -> None:
+        """Build worker cache for faster lookups"""
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            self._worker_cache[worker_id] = {
+                'data': worker,
+                'target_shifts': worker.get('target_shifts', 0),
+                'work_percentage': worker.get('work_percentage', 100)
+            }
         
     def ensure_data_integrity(self):
         """Check and fix data integrity between scheduler data structures"""
@@ -742,25 +759,36 @@ class DataManager:
                 f"Worker {worker_id} weekday imbalance: {weekday_counts}"
             )
 
-    def _validate_consecutive_weekends(self, worker_id, errors):
-        """Validate weekend assignments for a worker"""
+    def _validate_consecutive_weekends(self, worker_id: str, errors: List[str]) -> None:
+        """Optimized weekend validation with caching"""
         try:
             assignments = sorted(list(self.worker_assignments[worker_id]))
             if not assignments:
                 return
 
-            for date in assignments:
-                # Check 3-week window for each assignment
+            # Pre-calculate weekend/holiday status for all assignments
+            weekend_assignments = [
+                date for date in assignments
+                if (date.weekday() >= 4 or 
+                    date in self._holiday_set or 
+                    (date + timedelta(days=1)) in self._holiday_set)
+            ]
+            
+            if len(weekend_assignments) <= 3:
+                return  # Can't violate with 3 or fewer weekend assignments
+
+            # Check 3-week windows efficiently
+            for i, date in enumerate(weekend_assignments):
+                # Define 3-week window
                 window_start = date - timedelta(days=10)
                 window_end = date + timedelta(days=10)
-            
+                
+                # Count weekend assignments in window
                 weekend_count = sum(
-                    1 for d in assignments
-                    if window_start <= d <= window_end and
-                    (d.weekday() >= 4 or d in self.holidays or 
-                     (d + timedelta(days=1)) in self.holidays)
+                    1 for d in weekend_assignments[max(0, i-5):i+6]  # Optimize by checking nearby dates only
+                    if window_start <= d <= window_end
                 )
-            
+                
                 if weekend_count > 3:
                     errors.append(
                         f"Worker {worker_id} has {weekend_count} weekend/holiday "
@@ -772,17 +800,28 @@ class DataManager:
             logging.error(f"Error validating consecutive weekends: {str(e)}")
             errors.append(f"Error validating weekends for worker {worker_id}: {str(e)}")
 
-    def _validate_shift_targets(self, worker_id, warnings):
-        """Validate if worker has met their shift targets"""
-        worker = next(w for w in self.workers_data if w['id'] == worker_id)
+    def _validate_shift_targets(self, worker_id: str, warnings: List[str]) -> None:
+        """Optimized shift target validation using cache"""
+        worker_cache = self._worker_cache.get(worker_id)
+        if not worker_cache:
+            logging.warning(f"Worker {worker_id} not found in cache")
+            return
+            
         assignments = self.worker_assignments[worker_id]
+        target_shifts = worker_cache['target_shifts']
         
-        shift_difference = abs(len(assignments) - worker['target_shifts'])
+        shift_difference = abs(len(assignments) - target_shifts)
         if shift_difference > 1:  # Changed from 2 to 1
             warnings.append(
                 f"Worker {worker_id} has {len(assignments)} shifts "
-                f"(target: {worker['target_shifts']})"
+                f"(target: {target_shifts})"
             )
+    
+    def clear_caches(self) -> None:
+        """Clear all caches when data changes"""
+        self._worker_cache.clear()
+        self._build_worker_cache()
+        logging.debug("DataManager caches cleared and rebuilt")
 
     def verify_schedule_integrity(self):
         """
