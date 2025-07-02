@@ -1,0 +1,10 @@
+# Core dependencies for AI-Powered Workload Demand Forecasting System
+scikit-learn>=1.3.0
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+plotly>=5.15.0
+statsmodels>=0.14.0
+
+# Existing dependencies (if any)
+kivy>=2.1.0

@@ -27,6 +27,11 @@ class StatisticsCalculator:
         self.workers_data = scheduler.workers_data
         self.num_shifts = scheduler.num_shifts
         self.holidays = scheduler.holidays  # Add this line to reference holidays
+        self.start_date = scheduler.start_date  # Add start_date reference
+        self.end_date = scheduler.end_date      # Add end_date reference
+        
+        # Add constraint_skips reference
+        self.constraint_skips = scheduler.constraint_skips
     
         logging.info("StatisticsCalculator initialized")
     
@@ -141,7 +146,7 @@ class StatisticsCalculator:
                 'work_percentage': worker.get('work_percentage', 100),
                 'weekend_shifts': len(self.worker_weekends[worker_id]),
                 'weekday_distribution': self.worker_weekdays[worker_id],
-                'post_distribution': self._get_post_counts(worker_id),
+                'post_distribution': self.get_post_counts(worker_id),  # Use the existing method
                 'constraint_skips': self.constraint_skips[worker_id],
                 'monthly_stats': monthly_stats,
                 'gaps_analysis': self._analyze_gaps(worker_id)
