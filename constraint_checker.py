@@ -1,18 +1,18 @@
 # Imports
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING
+from typing import Dict, Set, Optional, Tuple, Any, TYPE_CHECKING
 from exceptions import SchedulerError
+
 if TYPE_CHECKING:
     from scheduler import Scheduler
 
 class ConstraintChecker:
-    """Handles all constraint checking logic for the scheduler"""
+    """Enhanced constraint checking logic with performance optimizations"""
     
-    # Methods
-    def __init__(self, scheduler):
+    def __init__(self, scheduler: 'Scheduler'):
         """
-        Initialize the constraint checker
+        Initialize the constraint checker with caching support
     
         Args:
             scheduler: The main Scheduler object
@@ -25,73 +25,121 @@ class ConstraintChecker:
         self.worker_assignments = scheduler.worker_assignments
         self.holidays = scheduler.holidays
         self.num_shifts = scheduler.num_shifts
-        self.date_utils = scheduler.date_utils  # Add reference to date_utils
+        self.date_utils = scheduler.date_utils
         self.gap_between_shifts = scheduler.gap_between_shifts
         self.max_consecutive_weekends = scheduler.max_consecutive_weekends
         self.max_shifts_per_worker = scheduler.max_shifts_per_worker
+        
+        # Performance optimization caches
+        self._incompatibility_cache: Dict[Tuple[str, str], bool] = {}
+        self._worker_lookup_cache: Dict[str, Dict[str, Any]] = {}
+        self._holiday_set: Set[datetime] = set(self.holidays)
+        
+        # Build worker lookup cache
+        self._build_worker_cache()
+        
+        logging.info("Enhanced ConstraintChecker initialized with caching")
     
-        logging.info("ConstraintChecker initialized")
+    def _build_worker_cache(self) -> None:
+        """Build a worker lookup cache for faster access"""
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            self._worker_lookup_cache[worker_id] = {
+                'data': worker,
+                'incompatible_with': set(worker.get('incompatible_with', [])),
+                'work_percentage': worker.get('work_percentage', 100)
+            }
     
-    def _are_workers_incompatible(self, worker1_id, worker2_id):
+    def _get_worker_data(self, worker_id: str) -> Optional[Dict[str, Any]]:
+        """Get worker data from cache"""
+        cached_worker = self._worker_lookup_cache.get(worker_id)
+        return cached_worker['data'] if cached_worker else None
+    
+    def _are_workers_incompatible(self, worker1_id: str, worker2_id: str) -> bool:
         """
-        Check if two workers are incompatible based SOLELY on the 'incompatible_with' list.
+        Optimized incompatibility check with caching
         """
+        if worker1_id == worker2_id:
+            return False
+        
+        # Create cache key (order-independent)
+        cache_key = tuple(sorted([worker1_id, worker2_id]))
+        
+        # Check cache first
+        if cache_key in self._incompatibility_cache:
+            return self._incompatibility_cache[cache_key]
+        
         try:
-            if worker1_id == worker2_id:
-                return False
+            worker1_cache = self._worker_lookup_cache.get(worker1_id)
+            worker2_cache = self._worker_lookup_cache.get(worker2_id)
 
-            worker1 = next((w for w in self.workers_data if w['id'] == worker1_id), None)
-            worker2 = next((w for w in self.workers_data if w['id'] == worker2_id), None)
-
-            if not worker1 or not worker2:
+            if not worker1_cache or not worker2_cache:
                 logging.warning(f"Could not find worker data for {worker1_id} or {worker2_id} during incompatibility check.")
-                return False # Cannot determine incompatibility
-
-            # Check 'incompatible_with' list in both directions
-            # Ensure the lists contain IDs (handle potential variations if needed)
-            incompatible_list1 = worker1.get('incompatible_with', [])
-            incompatible_list2 = worker2.get('incompatible_with', [])
-
-            # Perform the check - assuming IDs are stored directly in the list
-            is_incompatible = (worker2_id in incompatible_list1) or \
-                              (worker1_id in incompatible_list2)
-
-            # Optional: Add debug log if needed
-            if is_incompatible:
-                logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible ('incompatible_with').")
-
-            return is_incompatible
+                result = False
+            else:
+                # Check incompatibility using cached sets
+                result = (worker2_id in worker1_cache['incompatible_with'] or 
+                         worker1_id in worker2_cache['incompatible_with'])
+                
+                if result:
+                    logging.debug(f"Workers {worker1_id} and {worker2_id} are incompatible.")
+            
+            # Cache the result
+            self._incompatibility_cache[cache_key] = result
+            return result
 
         except Exception as e:
             logging.error(f"Error checking worker incompatibility between {worker1_id} and {worker2_id}: {str(e)}")
-            return False # Default to compatible on error
+            result = False
+            self._incompatibility_cache[cache_key] = result
+            return result
  
 
-    def _check_incompatibility(self, worker_id, date):
-        """Check if worker is incompatible with already assigned workers on a specific date"""
+    def _check_incompatibility(self, worker_id: str, date: datetime) -> bool:
+        """Optimized incompatibility check with early termination"""
         try:
             # Use the schedule reference from self.scheduler
             if date not in self.scheduler.schedule:
                 return True # No one assigned, compatible
 
-            # Get the list of workers already assigned
-            assigned_workers_list = self.scheduler.schedule.get(date, [])
-
-            # Check the target worker against each assigned worker
-            for assigned_id in assigned_workers_list:
-                if assigned_id is None or assigned_id == worker_id:
-                    continue
-
-                # Use the corrected core incompatibility check
-                if self._are_workers_incompatible(worker_id, assigned_id):
+            # Get the list of workers already assigned (filter out None values)
+            assigned_workers = [w_id for w_id in self.scheduler.schedule.get(date, []) if w_id is not None]
+            
+            if not assigned_workers:
+                return True # No workers assigned
+            
+            # Get worker's incompatible list from cache
+            worker_cache = self._worker_lookup_cache.get(worker_id)
+            if not worker_cache:
+                logging.warning(f"Worker {worker_id} not found in cache during incompatibility check")
+                return False
+            
+            incompatible_with = worker_cache['incompatible_with']
+            
+            # Quick check: if no incompatibilities defined, return True
+            if not incompatible_with:
+                return True
+            
+            # Check if any assigned worker is in the incompatible list
+            for assigned_id in assigned_workers:
+                if assigned_id == worker_id:
+                    continue # Skip self
+                if assigned_id in incompatible_with:
                     logging.debug(f"Incompatibility Violation: {worker_id} cannot work with {assigned_id} on {date}")
-                    return False # Found incompatibility
+                    return False
 
             return True # No incompatibilities found
 
         except Exception as e:
             logging.error(f"Error checking incompatibility for worker {worker_id} on {date}: {str(e)}")
             return False # Fail safe - assume incompatible on error
+    
+    def clear_caches(self) -> None:
+        """Clear all caches (call when worker data changes)"""
+        self._incompatibility_cache.clear()
+        self._worker_lookup_cache.clear()
+        self._build_worker_cache()
+        logging.debug("ConstraintChecker caches cleared and rebuilt")
 
 
     def _check_gap_constraint(self, worker_id, date): # Removed min_gap parameter

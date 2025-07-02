@@ -1,2 +1,31 @@
 2025-07-02 09:42:20,667 - root - INFO - Logging system configured successfully.
 2025-07-02 09:46:53,683 - root - INFO - Logging system configured successfully.
+2025-07-02 09:51:25,292 - root - INFO - Logging system configured successfully.
+2025-07-02 09:51:25,292 - root - INFO - Scheduler initialized
+2025-07-02 09:51:25,292 - root - INFO - DateTimeUtils initialized
+2025-07-02 09:51:25,292 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-07-02 09:51:25,292 - root - DEBUG - Worker w1 incompatible_with list: []
+2025-07-02 09:51:25,292 - root - DEBUG - Worker w2 incompatible_with list: []
+2025-07-02 09:51:25,292 - root - DEBUG - Worker w3 incompatible_with list: []
+2025-07-02 09:51:25,293 - urllib3.connectionpool - DEBUG - Starting new HTTP connection (1): worldtimeapi.org:80
+2025-07-02 09:51:25,297 - root - WARNING - Error getting time from API: HTTPConnectionPool(host='worldtimeapi.org', port=80): Max retries exceeded with url: /api/timezone/Europe/Madrid (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7fe421a7fd70>: Failed to resolve 'worldtimeapi.org' ([Errno -3] Temporary failure in name resolution)"))
+2025-07-02 09:51:25,306 - root - INFO - StatisticsCalculator initialized
+2025-07-02 09:51:25,306 - root - INFO - Enhanced ConstraintChecker initialized with caching
+2025-07-02 09:51:25,306 - root - INFO - Enhanced DataManager initialized with caching
+2025-07-02 09:51:25,306 - root - INFO - Calculating target shifts based on availability and percentage
+2025-07-02 09:51:25,306 - root - DEBUG - Worker w1: available_slots=21
+2025-07-02 09:51:25,307 - root - DEBUG - Worker w2: available_slots=21
+2025-07-02 09:51:25,307 - root - DEBUG - Worker w3: available_slots=21
+2025-07-02 09:51:25,307 - root - INFO - Worker w1: target_shifts=8 → 8
+2025-07-02 09:51:25,307 - root - INFO - Worker w2: target_shifts=6 → 6
+2025-07-02 09:51:25,307 - root - INFO - Worker w3: target_shifts=7 → 7
+2025-07-02 09:51:25,307 - root - INFO - Scheduler initialized with:
+2025-07-02 09:51:25,307 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-07-02 09:51:25,307 - root - INFO - End date: 2024-01-07 00:00:00
+2025-07-02 09:51:25,307 - root - INFO - Number of shifts: 3
+2025-07-02 09:51:25,307 - root - INFO - Number of workers: 3
+2025-07-02 09:51:25,307 - root - INFO - Holidays: []
+2025-07-02 09:51:25,307 - root - INFO - Gap between shifts: 3
+2025-07-02 09:51:25,307 - root - INFO - Max consecutive weekend/holiday shifts: 2
+2025-07-02 09:51:25,307 - root - INFO - Current datetime (Spain): 2025-07-02 11:51:25.306606
+2025-07-02 09:51:25,308 - root - INFO - Current user: saldo27
