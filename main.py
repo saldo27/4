@@ -927,7 +927,16 @@ class WorkerDetailsScreen(Screen):
         app = App.get_running_app()
         try:
             print("DEBUG: generate_schedule - Starting schedule generation...")
-            scheduler = Scheduler(app.schedule_config)
+            
+            # Enable real-time features in config
+            config = app.schedule_config.copy()
+            config['enable_real_time'] = True
+            
+            scheduler = Scheduler(config)
+            
+            # Store scheduler reference in app for real-time UI access
+            app.scheduler = scheduler
+            
             success = scheduler.generate_schedule()
 
             if not success:
@@ -949,7 +958,7 @@ class WorkerDetailsScreen(Screen):
                 # Don't fail the whole operation if PDF export fails
 
             popup = Popup(title='Success',
-                         content=Label(text='Schedule generated successfully!'),
+                         content=Label(text='Schedule generated successfully!\nReal-time features enabled.'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
             print("DEBUG: generate_schedule - Success popup opened.")
@@ -1053,14 +1062,30 @@ class CalendarViewScreen(Screen):
         super(CalendarViewScreen, self).__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical', padding=10, spacing=5)
 
+        # Try to import and initialize real-time UI components
+        self.real_time_components = None
+        try:
+            from real_time_ui import initialize_real_time_ui
+            self.real_time_components = initialize_real_time_ui()
+            logging.info("Real-time UI components loaded")
+        except ImportError:
+            logging.info("Real-time UI components not available")
+
         # Header with title and navigation
         header = BoxLayout(orientation='horizontal', size_hint_y=0.1)
-        self.month_label = Label(text='', size_hint_x=0.4)
-        prev_month = Button(text='<', size_hint_x=0.1) # Adjust sizes if needed
-        next_month = Button(text='>', size_hint_x=0.1)
-        today_btn = Button(text='Today', size_hint_x=0.2)
+        self.month_label = Label(text='', size_hint_x=0.3)  # Reduced to make room
+        prev_month = Button(text='<', size_hint_x=0.08)
+        next_month = Button(text='>', size_hint_x=0.08)
+        today_btn = Button(text='Today', size_hint_x=0.15)
         # RENAME the button text and UPDATE the binding
-        summary_btn = Button(text='Global Summary', size_hint_x=0.2) # Changed text
+        summary_btn = Button(text='Global Summary', size_hint_x=0.17) # Changed text
+        
+        # Add real-time button if available
+        if self.real_time_components:
+            rt_btn = Button(text='Real-Time', size_hint_x=0.15)
+            rt_btn.bind(on_press=self.show_real_time_panel)
+        else:
+            rt_btn = None
 
         prev_month.bind(on_press=self.previous_month)
         next_month.bind(on_press=self.next_month)
@@ -1073,6 +1098,8 @@ class CalendarViewScreen(Screen):
         header.add_widget(next_month)
         header.add_widget(today_btn)
         header.add_widget(summary_btn) # Add the summary button
+        if rt_btn:
+            header.add_widget(rt_btn)
         self.layout.add_widget(header)
 
         # Days of week header
@@ -1219,6 +1246,9 @@ class CalendarViewScreen(Screen):
             self.schedule = app.schedule_config.get('schedule', {})
             print(f"DEBUG: CalendarViewScreen.on_enter - Schedule loaded (is empty: {not self.schedule})") # <<< ADD
 
+            # Add real-time status widget if available and scheduler supports it
+            self._add_real_time_status_widget(app)
+
             if self.schedule:
                 print("DEBUG: CalendarViewScreen.on_enter - Finding min date...") # <<< ADD
                 self.current_date = min(self.schedule.keys())
@@ -1239,6 +1269,67 @@ class CalendarViewScreen(Screen):
             logging.error(f"Error during CalendarViewScreen.on_enter: {e}", exc_info=True) # Keep logging
             # Optionally show an error popup here too
             popup = Popup(title='Screen Load Error', content=Label(text=f'Failed to load calendar: {e}'), size_hint=(None, None), size=(400, 200))
+            popup.open()
+
+    def _add_real_time_status_widget(self, app):
+        """Add real-time status widget if available"""
+        try:
+            if (self.real_time_components and 
+                hasattr(app, 'scheduler') and 
+                hasattr(app.scheduler, 'is_real_time_enabled') and
+                app.scheduler.is_real_time_enabled()):
+                
+                # Add real-time status widget
+                status_widget = self.real_time_components['RealTimeStatusWidget'](app.scheduler)
+                self.layout.add_widget(status_widget, index=1)  # Add after header
+                logging.info("Real-time status widget added to calendar")
+                
+        except Exception as e:
+            logging.error(f"Error adding real-time status widget: {e}")
+
+    def show_real_time_panel(self, instance):
+        """Show real-time operations panel"""
+        try:
+            if not self.real_time_components:
+                popup = Popup(
+                    title='Real-Time Features',
+                    content=Label(text='Real-time features not available'),
+                    size_hint=(None, None),
+                    size=(300, 150)
+                )
+                popup.open()
+                return
+            
+            app = App.get_running_app()
+            if (not hasattr(app, 'scheduler') or 
+                not hasattr(app.scheduler, 'is_real_time_enabled') or
+                not app.scheduler.is_real_time_enabled()):
+                popup = Popup(
+                    title='Real-Time Features',
+                    content=Label(text='Real-time features not enabled in scheduler'),
+                    size_hint=(None, None),
+                    size=(300, 150)
+                )
+                popup.open()
+                return
+            
+            # Create real-time assignment widget
+            assignment_widget = self.real_time_components['RealTimeWorkerAssignmentWidget'](app.scheduler)
+            popup = Popup(
+                title='Real-Time Operations',
+                content=assignment_widget,
+                size_hint=(0.8, 0.7)
+            )
+            popup.open()
+            
+        except Exception as e:
+            logging.error(f"Error showing real-time panel: {e}")
+            popup = Popup(
+                title='Error',
+                content=Label(text=f'Error: {str(e)}'),
+                size_hint=(None, None),
+                size=(400, 200)
+            )
             popup.open()
 
     def display_month(self, date):

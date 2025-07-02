@@ -129,6 +129,16 @@ class Scheduler:
                 scheduler=self              # Pass reference to scheduler
             )
 
+            # Initialize real-time engine (optional, only if real-time features are enabled)
+            self.real_time_engine = None
+            if config.get('enable_real_time', False):
+                try:
+                    from real_time_engine import RealTimeEngine
+                    self.real_time_engine = RealTimeEngine(self)
+                    logging.info("Real-time engine initialized")
+                except ImportError:
+                    logging.warning("Real-time engine not available - real-time features disabled")
+
             # Sort the variable shifts by start date for efficient lookup
             self.variable_shifts.sort(key=lambda x: x['start_date'])
     
@@ -1921,5 +1931,299 @@ class Scheduler:
             worker = eligible_workers[i % len(eligible_workers)]
             worker['target_shifts'] += 1
             logging.info(f"Redistributed 1 shift to worker {worker['id']}")
+
+    # ========================================
+    # 11. REAL-TIME OPERATIONS
+    # ========================================
+    def is_real_time_enabled(self) -> bool:
+        """Check if real-time features are enabled"""
+        return self.real_time_engine is not None
+    
+    def assign_worker_real_time(self, worker_id: str, shift_date: datetime, post_index: int, 
+                               user_id: Optional[str] = None, validate: bool = True) -> Dict[str, Any]:
+        """
+        Assign worker to shift with real-time validation and feedback
+        
+        Args:
+            worker_id: ID of worker to assign
+            shift_date: Date of the shift
+            post_index: Post index (0-based)
+            user_id: ID of user making the change
+            validate: Whether to perform validation
+            
+        Returns:
+            Dictionary with operation result and feedback
+        """
+        if not self.is_real_time_enabled():
+            return {
+                'success': False,
+                'message': 'Real-time features not enabled',
+                'error': 'REAL_TIME_DISABLED'
+            }
+        
+        try:
+            result = self.real_time_engine.assign_worker_real_time(
+                worker_id, shift_date, post_index, user_id, validate
+            )
+            
+            return {
+                'success': result.success,
+                'message': result.message,
+                'operation_id': result.operation_id,
+                'validation_results': [v.__dict__ for v in result.validation_results],
+                'conflicts': [c.__dict__ for c in result.conflicts],
+                'suggestions': result.suggestions
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in real-time assignment: {e}")
+            return {
+                'success': False,
+                'message': f'Assignment failed: {str(e)}',
+                'error': 'OPERATION_FAILED'
+            }
+    
+    def unassign_worker_real_time(self, shift_date: datetime, post_index: int, 
+                                 user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Unassign worker from shift with real-time feedback
+        
+        Args:
+            shift_date: Date of the shift
+            post_index: Post index (0-based)
+            user_id: ID of user making the change
+            
+        Returns:
+            Dictionary with operation result and feedback
+        """
+        if not self.is_real_time_enabled():
+            return {
+                'success': False,
+                'message': 'Real-time features not enabled',
+                'error': 'REAL_TIME_DISABLED'
+            }
+        
+        try:
+            result = self.real_time_engine.unassign_worker_real_time(
+                shift_date, post_index, user_id
+            )
+            
+            return {
+                'success': result.success,
+                'message': result.message,
+                'operation_id': result.operation_id,
+                'suggestions': result.suggestions
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in real-time unassignment: {e}")
+            return {
+                'success': False,
+                'message': f'Unassignment failed: {str(e)}',
+                'error': 'OPERATION_FAILED'
+            }
+    
+    def swap_workers_real_time(self, shift_date1: datetime, post_index1: int,
+                              shift_date2: datetime, post_index2: int,
+                              user_id: Optional[str] = None, validate: bool = True) -> Dict[str, Any]:
+        """
+        Swap workers between shifts with real-time validation
+        
+        Args:
+            shift_date1: Date of first shift
+            post_index1: Post index of first shift
+            shift_date2: Date of second shift
+            post_index2: Post index of second shift
+            user_id: ID of user making the change
+            validate: Whether to perform validation
+            
+        Returns:
+            Dictionary with operation result and feedback
+        """
+        if not self.is_real_time_enabled():
+            return {
+                'success': False,
+                'message': 'Real-time features not enabled',
+                'error': 'REAL_TIME_DISABLED'
+            }
+        
+        try:
+            result = self.real_time_engine.swap_workers_real_time(
+                shift_date1, post_index1, shift_date2, post_index2, user_id, validate
+            )
+            
+            return {
+                'success': result.success,
+                'message': result.message,
+                'operation_id': result.operation_id,
+                'validation_results': [v.__dict__ for v in result.validation_results],
+                'conflicts': [c.__dict__ for c in result.conflicts]
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in real-time swap: {e}")
+            return {
+                'success': False,
+                'message': f'Swap failed: {str(e)}',
+                'error': 'OPERATION_FAILED'
+            }
+    
+    def validate_schedule_real_time(self, quick_check: bool = False) -> Dict[str, Any]:
+        """
+        Perform real-time schedule validation
+        
+        Args:
+            quick_check: If True, perform only essential validations
+            
+        Returns:
+            Dictionary with validation results
+        """
+        if not self.is_real_time_enabled():
+            return {
+                'success': False,
+                'message': 'Real-time features not enabled',
+                'error': 'REAL_TIME_DISABLED'
+            }
+        
+        try:
+            result = self.real_time_engine.validate_schedule_real_time(quick_check)
+            
+            return {
+                'success': result.success,
+                'message': result.message,
+                'operation_id': result.operation_id,
+                'validation_results': [v.__dict__ for v in result.validation_results],
+                'conflicts': [c.__dict__ for c in result.conflicts]
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in real-time validation: {e}")
+            return {
+                'success': False,
+                'message': f'Validation failed: {str(e)}',
+                'error': 'OPERATION_FAILED'
+            }
+    
+    def undo_last_change(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Undo the last schedule change
+        
+        Args:
+            user_id: ID of user performing the undo
+            
+        Returns:
+            Dictionary with undo result
+        """
+        if not self.is_real_time_enabled():
+            return {
+                'success': False,
+                'message': 'Real-time features not enabled',
+                'error': 'REAL_TIME_DISABLED'
+            }
+        
+        try:
+            result = self.real_time_engine.undo_last_change(user_id)
+            
+            return {
+                'success': result.success,
+                'message': result.message,
+                'operation_id': result.operation_id
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in undo operation: {e}")
+            return {
+                'success': False,
+                'message': f'Undo failed: {str(e)}',
+                'error': 'OPERATION_FAILED'
+            }
+    
+    def redo_last_change(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Redo the last undone change
+        
+        Args:
+            user_id: ID of user performing the redo
+            
+        Returns:
+            Dictionary with redo result
+        """
+        if not self.is_real_time_enabled():
+            return {
+                'success': False,
+                'message': 'Real-time features not enabled',
+                'error': 'REAL_TIME_DISABLED'
+            }
+        
+        try:
+            result = self.real_time_engine.redo_last_change(user_id)
+            
+            return {
+                'success': result.success,
+                'message': result.message,
+                'operation_id': result.operation_id
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in redo operation: {e}")
+            return {
+                'success': False,
+                'message': f'Redo failed: {str(e)}',
+                'error': 'OPERATION_FAILED'
+            }
+    
+    def get_real_time_analytics(self) -> Dict[str, Any]:
+        """
+        Get real-time analytics and metrics
+        
+        Returns:
+            Dictionary with analytics data
+        """
+        if not self.is_real_time_enabled():
+            return {
+                'error': 'Real-time features not enabled'
+            }
+        
+        try:
+            return self.real_time_engine.get_real_time_analytics()
+        except Exception as e:
+            logging.error(f"Error getting real-time analytics: {e}")
+            return {
+                'error': f'Analytics failed: {str(e)}'
+            }
+    
+    def get_change_history(self, limit: int = 20, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get recent schedule changes
+        
+        Args:
+            limit: Maximum number of changes to return
+            user_id: Filter by user ID
+            
+        Returns:
+            Dictionary with change history
+        """
+        if not self.is_real_time_enabled():
+            return {
+                'error': 'Real-time features not enabled'
+            }
+        
+        try:
+            changes = self.real_time_engine.change_tracker.get_change_history(
+                limit=limit, user_id=user_id
+            )
+            
+            return {
+                'changes': [change.to_dict() for change in changes],
+                'total_count': len(changes),
+                'can_undo': self.real_time_engine.change_tracker.can_undo(),
+                'can_redo': self.real_time_engine.change_tracker.can_redo()
+            }
+            
+        except Exception as e:
+            logging.error(f"Error getting change history: {e}")
+            return {
+                'error': f'History retrieval failed: {str(e)}'
+            }
 
 
