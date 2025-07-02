@@ -139,6 +139,28 @@ class Scheduler:
                 except ImportError:
                     logging.warning("Real-time engine not available - real-time features disabled")
 
+            # Initialize predictive analytics engine (optional, only if enabled)
+            self.predictive_analytics = None
+            self.predictive_optimizer = None
+            if config.get('enable_predictive_analytics', True):
+                try:
+                    from predictive_analytics import PredictiveAnalyticsEngine
+                    from predictive_optimizer import PredictiveOptimizer
+                    
+                    predictive_config = config.get('predictive_analytics_config', {})
+                    self.predictive_analytics = PredictiveAnalyticsEngine(self, predictive_config)
+                    self.predictive_optimizer = PredictiveOptimizer(self, self.predictive_analytics)
+                    logging.info("Predictive analytics engine initialized")
+                    
+                    # Auto-collect data if enabled
+                    if predictive_config.get('auto_collect_data', True):
+                        self.predictive_analytics.auto_collect_data_if_enabled()
+                        
+                except ImportError as e:
+                    logging.warning(f"Predictive analytics not available - predictive features disabled: {e}")
+                except Exception as e:
+                    logging.error(f"Error initializing predictive analytics: {e}")
+
             # Sort the variable shifts by start date for efficient lookup
             self.variable_shifts.sort(key=lambda x: x['start_date'])
     
@@ -2224,6 +2246,232 @@ class Scheduler:
             logging.error(f"Error getting change history: {e}")
             return {
                 'error': f'History retrieval failed: {str(e)}'
+            }
+    
+    # Predictive Analytics Integration Methods
+    
+    def is_predictive_analytics_enabled(self) -> bool:
+        """Check if predictive analytics features are enabled"""
+        return self.predictive_analytics is not None
+    
+    def generate_demand_forecasts(self, forecast_days: int = 30) -> Dict[str, Any]:
+        """
+        Generate demand forecasts using predictive analytics
+        
+        Args:
+            forecast_days: Number of days to forecast ahead
+            
+        Returns:
+            Dictionary containing forecast results and recommendations
+        """
+        if not self.is_predictive_analytics_enabled():
+            return {
+                'success': False,
+                'message': 'Predictive analytics not enabled',
+                'error': 'PREDICTIVE_ANALYTICS_DISABLED'
+            }
+        
+        try:
+            result = self.predictive_analytics.generate_demand_forecasts(forecast_days)
+            
+            # Auto-collect current data after generating forecasts for future improvements
+            if self.predictive_analytics.config.get('auto_collect_data', True):
+                self.predictive_analytics.auto_collect_data_if_enabled()
+            
+            return {
+                'success': True,
+                'forecasts': result.get('forecasts'),
+                'status': result.get('status'),
+                'message': f'Forecasts generated for {forecast_days} days'
+            }
+            
+        except Exception as e:
+            logging.error(f"Error generating demand forecasts: {e}")
+            return {
+                'success': False,
+                'message': f'Forecast generation failed: {str(e)}',
+                'error': 'FORECAST_FAILED'
+            }
+    
+    def get_predictive_insights(self) -> Dict[str, Any]:
+        """
+        Get comprehensive predictive insights and recommendations
+        
+        Returns:
+            Dictionary containing insights, recommendations, and analytics
+        """
+        if not self.is_predictive_analytics_enabled():
+            return {
+                'success': False,
+                'message': 'Predictive analytics not enabled',
+                'error': 'PREDICTIVE_ANALYTICS_DISABLED'
+            }
+        
+        try:
+            result = self.predictive_analytics.get_predictive_insights()
+            
+            return {
+                'success': True,
+                'insights': result.get('insights'),
+                'status': result.get('status'),
+                'message': 'Predictive insights generated successfully'
+            }
+            
+        except Exception as e:
+            logging.error(f"Error getting predictive insights: {e}")
+            return {
+                'success': False,
+                'message': f'Insights generation failed: {str(e)}',
+                'error': 'INSIGHTS_FAILED'
+            }
+    
+    def run_predictive_optimization(self) -> Dict[str, Any]:
+        """
+        Run predictive optimization analysis
+        
+        Returns:
+            Dictionary containing optimization results and recommendations
+        """
+        if not self.is_predictive_analytics_enabled() or not self.predictive_optimizer:
+            return {
+                'success': False,
+                'message': 'Predictive optimization not available',
+                'error': 'PREDICTIVE_OPTIMIZER_DISABLED'
+            }
+        
+        try:
+            # Get latest forecasts if available
+            forecast_data = None
+            if self.predictive_analytics.latest_forecasts:
+                forecast_data = self.predictive_analytics.latest_forecasts
+            
+            result = self.predictive_optimizer.predict_and_optimize(forecast_data)
+            
+            return {
+                'success': True,
+                'optimization_results': result,
+                'message': 'Predictive optimization completed successfully'
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in predictive optimization: {e}")
+            return {
+                'success': False,
+                'message': f'Predictive optimization failed: {str(e)}',
+                'error': 'OPTIMIZATION_FAILED'
+            }
+    
+    def collect_historical_data(self) -> Dict[str, Any]:
+        """
+        Collect and store current schedule data for historical analysis
+        
+        Returns:
+            Dictionary containing collection results
+        """
+        if not self.is_predictive_analytics_enabled():
+            return {
+                'success': False,
+                'message': 'Predictive analytics not enabled',
+                'error': 'PREDICTIVE_ANALYTICS_DISABLED'
+            }
+        
+        try:
+            result = self.predictive_analytics.collect_and_store_current_data()
+            
+            return {
+                'success': result.get('status') == 'success',
+                'message': result.get('message', 'Data collection completed'),
+                'data_summary': result.get('data_summary')
+            }
+            
+        except Exception as e:
+            logging.error(f"Error collecting historical data: {e}")
+            return {
+                'success': False,
+                'message': f'Data collection failed: {str(e)}',
+                'error': 'DATA_COLLECTION_FAILED'
+            }
+    
+    def get_optimization_suggestions(self) -> List[str]:
+        """
+        Get optimization suggestions based on predictive analytics
+        
+        Returns:
+            List of optimization suggestions
+        """
+        if not self.is_predictive_analytics_enabled():
+            return ["Predictive analytics not enabled - enable for optimization suggestions"]
+        
+        try:
+            return self.predictive_analytics.get_optimization_suggestions()
+        except Exception as e:
+            logging.error(f"Error getting optimization suggestions: {e}")
+            return [f"Error getting suggestions: {str(e)}"]
+    
+    def get_analytics_summary(self) -> Dict[str, Any]:
+        """
+        Get summary of predictive analytics status and capabilities
+        
+        Returns:
+            Dictionary with analytics summary
+        """
+        if not self.is_predictive_analytics_enabled():
+            return {
+                'enabled': False,
+                'message': 'Predictive analytics not enabled'
+            }
+        
+        try:
+            return self.predictive_analytics.get_analytics_summary()
+        except Exception as e:
+            logging.error(f"Error getting analytics summary: {e}")
+            return {
+                'enabled': True,
+                'error': str(e),
+                'message': 'Error getting analytics summary'
+            }
+    
+    def apply_predictive_adjustments(self, optimization_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Apply parameter adjustments recommended by predictive optimization
+        
+        Args:
+            optimization_result: Result from predictive optimization
+            
+        Returns:
+            Dictionary with application results
+        """
+        if not self.is_predictive_analytics_enabled() or not self.predictive_optimizer:
+            return {
+                'success': False,
+                'message': 'Predictive optimization not available',
+                'error': 'PREDICTIVE_OPTIMIZER_DISABLED'
+            }
+        
+        try:
+            parameter_adjustments = optimization_result.get('parameter_adjustments', {})
+            if not parameter_adjustments:
+                return {
+                    'success': False,
+                    'message': 'No parameter adjustments found in optimization result',
+                    'error': 'NO_ADJUSTMENTS'
+                }
+            
+            result = self.predictive_optimizer.apply_recommended_adjustments(parameter_adjustments)
+            
+            return {
+                'success': result.get('status') == 'success',
+                'application_results': result.get('results'),
+                'message': 'Parameter adjustments applied successfully' if result.get('status') == 'success' 
+                          else f"Application failed: {result.get('message', 'Unknown error')}"
+            }
+            
+        except Exception as e:
+            logging.error(f"Error applying predictive adjustments: {e}")
+            return {
+                'success': False,
+                'message': f'Adjustment application failed: {str(e)}',
+                'error': 'ADJUSTMENT_FAILED'
             }
 
 
