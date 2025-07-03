@@ -949,6 +949,15 @@ class WorkerDetailsScreen(Screen):
             app.schedule_config['schedule'] = schedule
             print("DEBUG: generate_schedule - Schedule generated and saved to config.")
 
+            # *** NEW: Enable real-time features after successful schedule generation ***
+            real_time_enabled = scheduler.enable_real_time_features()
+            if real_time_enabled:
+                print("DEBUG: generate_schedule - Real-time features successfully activated.")
+                logging.info("Smart swapping and AI-assisted features are now fully active")
+            else:
+                print("DEBUG: generate_schedule - Warning: Real-time features could not be fully activated.")
+                logging.warning("Real-time features activation failed - some functionality may be limited")
+
             # *** NEW: Automatically export PDF summary after successful generation ***
             try:
                 calendar_screen = self.manager.get_screen('calendar_view')
@@ -958,7 +967,7 @@ class WorkerDetailsScreen(Screen):
                 # Don't fail the whole operation if PDF export fails
 
             popup = Popup(title='Success',
-                         content=Label(text='Schedule generated successfully!\nReal-time features enabled.'),
+                         content=Label(text='Schedule generated successfully!\nSmart swapping AI-assisted features activated.'),
                          size_hint=(None, None), size=(400, 200))
             popup.open()
             print("DEBUG: generate_schedule - Success popup opened.")
