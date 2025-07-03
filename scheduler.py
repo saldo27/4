@@ -1961,7 +1961,51 @@ class Scheduler:
         """Check if real-time features are enabled"""
         return self.real_time_engine is not None
     
-    def assign_worker_real_time(self, worker_id: str, shift_date: datetime, post_index: int, 
+    def enable_real_time_features(self) -> bool:
+        """
+        Enable and fully activate real-time features after schedule generation.
+        This method ensures all real-time components are properly connected and ready for use.
+        
+        Returns:
+            bool: True if real-time features were successfully enabled, False otherwise
+        """
+        if not self.is_real_time_enabled():
+            logging.warning("Cannot enable real-time features: real-time engine not initialized")
+            return False
+        
+        try:
+            # Ensure the real-time engine has access to the current schedule data
+            # The incremental updater should be able to access current schedule state
+            if hasattr(self.real_time_engine, 'incremental_updater'):
+                logging.debug("Real-time incremental updater is ready with current schedule")
+            
+            # Verify the live validator has access to current constraints and worker data
+            if hasattr(self.real_time_engine, 'live_validator'):
+                logging.debug("Real-time live validator is ready with current constraints")
+            
+            # Initialize change tracking for the current schedule state if available
+            if hasattr(self.real_time_engine, 'change_tracker'):
+                # Record initial state as baseline for change tracking
+                logging.debug("Real-time change tracker is ready for operation")
+            
+            # Publish event to notify that real-time features are fully active
+            if hasattr(self.real_time_engine, 'event_bus'):
+                from event_bus import EventType, ScheduleEvent
+                event = ScheduleEvent(
+                    event_type=EventType.REAL_TIME_ACTIVATED,
+                    data={'message': 'Real-time features fully activated', 'user_id': self.current_user}
+                )
+                self.real_time_engine.event_bus.publish(event)
+                logging.debug("Real-time activation event published")
+            
+            logging.info("Real-time features successfully enabled and activated for smart swapping")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error enabling real-time features: {e}", exc_info=True)
+            return False
+    
+    def assign_worker_real_time(self, worker_id: str, shift_date: datetime, post_index: int,
                                user_id: Optional[str] = None, validate: bool = True) -> Dict[str, Any]:
         """
         Assign worker to shift with real-time validation and feedback

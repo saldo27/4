@@ -27,6 +27,7 @@ class EventType(Enum):
     USER_DISCONNECTED = "user_disconnected"
     SCHEDULE_LOCKED = "schedule_locked"
     SCHEDULE_UNLOCKED = "schedule_unlocked"
+    REAL_TIME_ACTIVATED = "real_time_activated"
 
 
 @dataclass
