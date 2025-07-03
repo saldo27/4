@@ -16725,3 +16725,1355 @@ scheduler.SchedulerError: max_consecutive_weekends must be positive
 2025-07-02 11:19:07,917 - root - INFO - Generating basic forecasts without historical data
 2025-07-02 11:19:07,918 - root - INFO - Demand forecasts generated for 14 days
 2025-07-02 11:19:07,918 - root - INFO - Predictive optimization completed: 0 conflicts, 10 recommendations
+2025-07-03 20:25:31,591 - root - INFO - Logging system configured successfully.
+2025-07-03 20:25:31,591 - root - INFO - Scheduler initialized
+2025-07-03 20:25:31,592 - root - INFO - DateTimeUtils initialized
+2025-07-03 20:25:31,592 - root - ERROR - Initialization error: max_consecutive_weekends must be positive
+Traceback (most recent call last):
+  File "/home/runner/work/4/4/scheduler.py", line 40, in __init__
+    self._validate_config(config)
+  File "/home/runner/work/4/4/scheduler.py", line 213, in _validate_config
+    raise SchedulerError(error_message)
+scheduler.SchedulerError: max_consecutive_weekends must be positive
+2025-07-03 20:26:15,573 - root - INFO - Logging system configured successfully.
+2025-07-03 20:26:15,574 - root - INFO - Scheduler initialized
+2025-07-03 20:26:15,574 - root - INFO - DateTimeUtils initialized
+2025-07-03 20:26:15,574 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-07-03 20:26:15,574 - root - DEBUG - Worker W001 incompatible_with list: []
+2025-07-03 20:26:15,575 - urllib3.connectionpool - DEBUG - Starting new HTTP connection (1): worldtimeapi.org:80
+2025-07-03 20:26:15,578 - root - WARNING - Error getting time from API: HTTPConnectionPool(host='worldtimeapi.org', port=80): Max retries exceeded with url: /api/timezone/Europe/Madrid (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7faa9424cb60>: Failed to resolve 'worldtimeapi.org' ([Errno -3] Temporary failure in name resolution)"))
+2025-07-03 20:26:15,584 - root - INFO - StatisticsCalculator initialized
+2025-07-03 20:26:15,584 - root - INFO - Enhanced ConstraintChecker initialized with caching
+2025-07-03 20:26:15,584 - root - INFO - Enhanced DataManager initialized with caching
+2025-07-03 20:26:15,608 - root - INFO - EventBus initialized
+2025-07-03 20:26:15,608 - root - INFO - IncrementalUpdater initialized
+2025-07-03 20:26:15,608 - root - DEBUG - Subscribed to shift_assigned
+2025-07-03 20:26:15,609 - root - DEBUG - Subscribed to shift_unassigned
+2025-07-03 20:26:15,609 - root - DEBUG - Subscribed to shift_swapped
+2025-07-03 20:26:15,609 - root - INFO - LiveValidator initialized
+2025-07-03 20:26:15,609 - root - DEBUG - Subscribed to shift_assigned
+2025-07-03 20:26:15,609 - root - DEBUG - Subscribed to shift_unassigned
+2025-07-03 20:26:15,609 - root - DEBUG - Subscribed to shift_swapped
+2025-07-03 20:26:15,609 - root - DEBUG - Subscribed to bulk_update
+2025-07-03 20:26:15,609 - root - DEBUG - Subscribed to schedule_generated
+2025-07-03 20:26:15,609 - root - INFO - ChangeTracker initialized
+2025-07-03 20:26:15,609 - root - DEBUG - Subscribed to constraint_violation
+2025-07-03 20:26:15,609 - root - DEBUG - Subscribed to validation_result
+2025-07-03 20:26:15,609 - root - INFO - RealTimeEngine initialized
+2025-07-03 20:26:15,609 - root - INFO - Real-time engine initialized
+2025-07-03 20:26:16,721 - root - WARNING - ML libraries not available: cannot import name '_lazywhere' from 'scipy._lib._util' (/home/runner/.local/lib/python3.12/site-packages/scipy/_lib/_util.py). Falling back to basic forecasting.
+2025-07-03 20:26:16,725 - root - INFO - HistoricalDataManager initialized with storage path: historical_data
+2025-07-03 20:26:16,725 - root - INFO - No existing historical data found
+2025-07-03 20:26:16,725 - root - INFO - DemandForecaster initialized
+2025-07-03 20:26:16,726 - root - WARNING - Running in fallback mode without ML libraries
+2025-07-03 20:26:16,726 - root - INFO - PredictiveAnalyticsEngine initialized
+2025-07-03 20:26:16,726 - root - INFO - PredictiveOptimizer initialized
+2025-07-03 20:26:16,726 - root - INFO - Predictive analytics engine initialized
+2025-07-03 20:26:16,726 - root - ERROR - Error collecting current schedule data: 'DateTimeUtils' object has no attribute 'is_holiday'
+2025-07-03 20:26:16,726 - root - ERROR - Error collecting and storing data: Failed to collect schedule data: 'DateTimeUtils' object has no attribute 'is_holiday'
+2025-07-03 20:26:16,726 - root - INFO - Calculating target shifts based on availability and percentage
+2025-07-03 20:26:16,726 - root - WARNING - Invalid date range format '1-31' - time data '1-31' does not match format '%d-%m-%Y'
+2025-07-03 20:26:16,726 - root - DEBUG - Worker W001: available_slots=0
+2025-07-03 20:26:16,726 - root - INFO - Worker W001: target_shifts=1 → 1
+2025-07-03 20:26:16,726 - root - INFO - Scheduler initialized with:
+2025-07-03 20:26:16,727 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-07-03 20:26:16,727 - root - INFO - End date: 2024-01-31 00:00:00
+2025-07-03 20:26:16,727 - root - INFO - Number of shifts: 3
+2025-07-03 20:26:16,727 - root - INFO - Number of workers: 1
+2025-07-03 20:26:16,727 - root - INFO - Holidays: []
+2025-07-03 20:26:16,727 - root - INFO - Gap between shifts: 3
+2025-07-03 20:26:16,727 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-07-03 20:26:16,727 - root - INFO - Current datetime (Spain): 2025-07-03 22:26:15.584155
+2025-07-03 20:26:16,727 - root - INFO - Current user: saldo27
+2025-07-03 20:27:26,180 - root - INFO - Logging system configured successfully.
+2025-07-03 20:27:26,180 - root - INFO - Scheduler initialized
+2025-07-03 20:27:26,181 - root - INFO - DateTimeUtils initialized
+2025-07-03 20:27:26,181 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-07-03 20:27:26,181 - root - DEBUG - Worker W001 incompatible_with list: []
+2025-07-03 20:27:26,181 - root - DEBUG - Worker W002 incompatible_with list: []
+2025-07-03 20:27:26,182 - urllib3.connectionpool - DEBUG - Starting new HTTP connection (1): worldtimeapi.org:80
+2025-07-03 20:27:26,185 - root - WARNING - Error getting time from API: HTTPConnectionPool(host='worldtimeapi.org', port=80): Max retries exceeded with url: /api/timezone/Europe/Madrid (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7f26729754f0>: Failed to resolve 'worldtimeapi.org' ([Errno -3] Temporary failure in name resolution)"))
+2025-07-03 20:27:26,185 - root - INFO - StatisticsCalculator initialized
+2025-07-03 20:27:26,185 - root - INFO - Enhanced ConstraintChecker initialized with caching
+2025-07-03 20:27:26,185 - root - INFO - Enhanced DataManager initialized with caching
+2025-07-03 20:27:26,196 - root - INFO - EventBus initialized
+2025-07-03 20:27:26,196 - root - INFO - IncrementalUpdater initialized
+2025-07-03 20:27:26,196 - root - DEBUG - Subscribed to shift_assigned
+2025-07-03 20:27:26,196 - root - DEBUG - Subscribed to shift_unassigned
+2025-07-03 20:27:26,196 - root - DEBUG - Subscribed to shift_swapped
+2025-07-03 20:27:26,196 - root - INFO - LiveValidator initialized
+2025-07-03 20:27:26,196 - root - DEBUG - Subscribed to shift_assigned
+2025-07-03 20:27:26,196 - root - DEBUG - Subscribed to shift_unassigned
+2025-07-03 20:27:26,196 - root - DEBUG - Subscribed to shift_swapped
+2025-07-03 20:27:26,196 - root - DEBUG - Subscribed to bulk_update
+2025-07-03 20:27:26,196 - root - DEBUG - Subscribed to schedule_generated
+2025-07-03 20:27:26,196 - root - INFO - ChangeTracker initialized
+2025-07-03 20:27:26,197 - root - DEBUG - Subscribed to constraint_violation
+2025-07-03 20:27:26,197 - root - DEBUG - Subscribed to validation_result
+2025-07-03 20:27:26,197 - root - INFO - RealTimeEngine initialized
+2025-07-03 20:27:26,197 - root - INFO - Real-time engine initialized
+2025-07-03 20:27:27,086 - root - WARNING - ML libraries not available: cannot import name '_lazywhere' from 'scipy._lib._util' (/home/runner/.local/lib/python3.12/site-packages/scipy/_lib/_util.py). Falling back to basic forecasting.
+2025-07-03 20:27:27,086 - root - INFO - HistoricalDataManager initialized with storage path: historical_data
+2025-07-03 20:27:27,087 - root - INFO - No existing historical data found
+2025-07-03 20:27:27,087 - root - INFO - DemandForecaster initialized
+2025-07-03 20:27:27,087 - root - WARNING - Running in fallback mode without ML libraries
+2025-07-03 20:27:27,087 - root - INFO - PredictiveAnalyticsEngine initialized
+2025-07-03 20:27:27,087 - root - INFO - PredictiveOptimizer initialized
+2025-07-03 20:27:27,087 - root - INFO - Predictive analytics engine initialized
+2025-07-03 20:27:27,087 - root - ERROR - Error collecting current schedule data: 'DateTimeUtils' object has no attribute 'is_holiday'
+2025-07-03 20:27:27,087 - root - ERROR - Error collecting and storing data: Failed to collect schedule data: 'DateTimeUtils' object has no attribute 'is_holiday'
+2025-07-03 20:27:27,087 - root - INFO - Calculating target shifts based on availability and percentage
+2025-07-03 20:27:27,087 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,087 - root - DEBUG - Worker W001: available_slots=0
+2025-07-03 20:27:27,087 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,087 - root - DEBUG - Worker W002: available_slots=0
+2025-07-03 20:27:27,088 - root - INFO - Worker W001: target_shifts=1 → 1
+2025-07-03 20:27:27,088 - root - INFO - Worker W002: target_shifts=1 → 1
+2025-07-03 20:27:27,088 - root - INFO - Scheduler initialized with:
+2025-07-03 20:27:27,088 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-07-03 20:27:27,088 - root - INFO - End date: 2024-01-07 00:00:00
+2025-07-03 20:27:27,088 - root - INFO - Number of shifts: 3
+2025-07-03 20:27:27,088 - root - INFO - Number of workers: 2
+2025-07-03 20:27:27,088 - root - INFO - Holidays: []
+2025-07-03 20:27:27,088 - root - INFO - Gap between shifts: 3
+2025-07-03 20:27:27,088 - root - INFO - Max consecutive weekend/holiday shifts: 3
+2025-07-03 20:27:27,088 - root - INFO - Current datetime (Spain): 2025-07-03 22:27:26.185446
+2025-07-03 20:27:27,088 - root - INFO - Current user: saldo27
+2025-07-03 20:27:27,090 - root - INFO - SchedulerCore initialized
+2025-07-03 20:27:27,090 - root - INFO - Starting schedule generation orchestration...
+2025-07-03 20:27:27,091 - root - INFO - Phase 1: Initializing schedule structure...
+2025-07-03 20:27:27,091 - root - DEBUG - [ScheduleBuilder.__init__] self.schedule object ID: 139802528979072, Initial keys: [datetime.datetime(2024, 1, 1, 0, 0), datetime.datetime(2024, 1, 2, 0, 0), datetime.datetime(2024, 1, 3, 0, 0), datetime.datetime(2024, 1, 4, 0, 0), datetime.datetime(2024, 1, 5, 0, 0), datetime.datetime(2024, 1, 6, 0, 0), datetime.datetime(2024, 1, 7, 0, 0)]
+2025-07-03 20:27:27,091 - root - INFO - Complexity calculation: base=42, constraint_factor=0.00, total=42
+2025-07-03 20:27:27,091 - root - INFO - Adaptive config: {'max_optimization_loops': 4, 'max_fill_attempts': 3, 'max_balance_iterations': 2, 'max_weekend_passes': 2, 'last_post_max_iterations': 3, 'convergence_threshold': 4}
+2025-07-03 20:27:27,091 - root - DEBUG - Built optimization caches for 2 workers and 7 dates
+2025-07-03 20:27:27,091 - root - DEBUG - [ScheduleBuilder.__init__] self.schedule object ID: 139802528979072, Initial keys: [datetime.datetime(2024, 1, 1, 0, 0), datetime.datetime(2024, 1, 2, 0, 0), datetime.datetime(2024, 1, 3, 0, 0), datetime.datetime(2024, 1, 4, 0, 0), datetime.datetime(2024, 1, 5, 0, 0)]
+2025-07-03 20:27:27,091 - root - INFO - Enhanced ScheduleBuilder initialized with caching
+2025-07-03 20:27:27,091 - root - INFO - Schedule structure initialized with 7 dates
+2025-07-03 20:27:27,091 - root - INFO - Phase 2: Assigning mandatory shifts...
+2025-07-03 20:27:27,091 - root - INFO - Starting mandatory guard assignment…
+2025-07-03 20:27:27,091 - root - INFO - Finished mandatory guard assignment. Assigned 0 shifts.
+2025-07-03 20:27:27,091 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:27,091 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:27,091 - root - DEBUG - Scheduler.calculate_score called (placeholder)
+2025-07-03 20:27:27,091 - root - DEBUG - Calculated score (placeholder): 0.0
+2025-07-03 20:27:27,091 - root - INFO - Initializing best schedule with score 0.00
+2025-07-03 20:27:27,091 - root - INFO - --- After Mandatory Assignment ---
+2025-07-03 20:27:27,091 - root - INFO - Total shifts assigned: 0
+2025-07-03 20:27:27,091 - root - INFO - Total slots: 21, Empty slots: 21
+2025-07-03 20:27:27,091 - root - INFO - Shift Counts per Worker:
+2025-07-03 20:27:27,091 - root - INFO -   Worker W001: 0 shifts
+2025-07-03 20:27:27,091 - root - INFO -   Worker W002: 0 shifts
+2025-07-03 20:27:27,091 - root - INFO - Weekend Shifts per Worker:
+2025-07-03 20:27:27,091 - root - INFO -   Worker W001: 0 weekend shifts
+2025-07-03 20:27:27,092 - root - INFO -   Worker W002: 0 weekend shifts
+2025-07-03 20:27:27,092 - root - INFO - Post Assignments per Worker:
+2025-07-03 20:27:27,092 - root - DEBUG - Scheduler.calculate_score called (placeholder)
+2025-07-03 20:27:27,092 - root - DEBUG - Calculated score (placeholder): 0.0
+2025-07-03 20:27:27,092 - root - INFO - Current Schedule Score: 0.0
+2025-07-03 20:27:27,092 - root - INFO - --- End After Mandatory Assignment ---
+2025-07-03 20:27:27,092 - root - INFO - Mandatory assignment phase completed
+2025-07-03 20:27:27,092 - root - INFO - Phase 3: Starting iterative improvement...
+2025-07-03 20:27:27,092 - root - INFO - --- Starting Improvement Loop 1 ---
+2025-07-03 20:27:27,092 - root - DEBUG - ENTERED _try_fill_empty_shifts. self.schedule ID: 139802528979072. Keys count: 7. Sample: {datetime.datetime(2024, 1, 1, 0, 0): [None, None, None], datetime.datetime(2024, 1, 2, 0, 0): [None, None, None]}
+2025-07-03 20:27:27,092 - root - DEBUG - [_try_fill_empty_shifts] Initial identified empty_slots count: 21
+2025-07-03 20:27:27,092 - root - INFO - Attempting to fill 21 empty shifts...
+2025-07-03 20:27:27,092 - root - INFO - --- Starting Pass 1: Direct Fill with Relaxation Iteration ---
+2025-07-03 20:27:27,092 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:27,092 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 0, Relax: 0
+2025-07-03 20:27:27,092 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,092 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,092 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 0, Relax: 0
+2025-07-03 20:27:27,092 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,092 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,092 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:27,092 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 0, Relax: 1
+2025-07-03 20:27:27,092 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,092 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,092 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 0, Relax: 1
+2025-07-03 20:27:27,092 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,092 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,093 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 0, Relaxation Level: 2
+2025-07-03 20:27:27,093 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 0, Relax: 2
+2025-07-03 20:27:27,093 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,093 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,093 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 0, Relax: 2
+2025-07-03 20:27:27,093 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,093 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,093 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-01 Post 0 after all relaxation attempts.
+2025-07-03 20:27:27,093 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:27,093 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 1, Relax: 0
+2025-07-03 20:27:27,093 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,093 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,093 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 1, Relax: 0
+2025-07-03 20:27:27,093 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,093 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,093 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:27,093 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 1, Relax: 1
+2025-07-03 20:27:27,093 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,093 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,093 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 1, Relax: 1
+2025-07-03 20:27:27,093 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,093 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,093 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 1, Relaxation Level: 2
+2025-07-03 20:27:27,093 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 1, Relax: 2
+2025-07-03 20:27:27,093 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,093 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,093 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 1, Relax: 2
+2025-07-03 20:27:27,093 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,094 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,094 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-01 Post 1 after all relaxation attempts.
+2025-07-03 20:27:27,094 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 2, Relaxation Level: 0
+2025-07-03 20:27:27,094 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 2, Relax: 0
+2025-07-03 20:27:27,094 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,094 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,094 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 2, Relax: 0
+2025-07-03 20:27:27,094 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,094 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,094 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 2, Relaxation Level: 1
+2025-07-03 20:27:27,094 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 2, Relax: 1
+2025-07-03 20:27:27,094 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,094 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,094 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 2, Relax: 1
+2025-07-03 20:27:27,094 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,094 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,094 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 2, Relaxation Level: 2
+2025-07-03 20:27:27,094 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 2, Relax: 2
+2025-07-03 20:27:27,094 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,094 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,094 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 2, Relax: 2
+2025-07-03 20:27:27,094 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,094 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,094 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-01 Post 2 after all relaxation attempts.
+2025-07-03 20:27:27,094 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:27,094 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 0, Relax: 0
+2025-07-03 20:27:27,094 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,095 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,095 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 0, Relax: 0
+2025-07-03 20:27:27,095 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,095 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,095 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:27,095 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 0, Relax: 1
+2025-07-03 20:27:27,095 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,095 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,095 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 0, Relax: 1
+2025-07-03 20:27:27,095 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,095 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,095 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 0, Relaxation Level: 2
+2025-07-03 20:27:27,095 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 0, Relax: 2
+2025-07-03 20:27:27,095 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,095 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,095 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 0, Relax: 2
+2025-07-03 20:27:27,095 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,095 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,095 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-02 Post 0 after all relaxation attempts.
+2025-07-03 20:27:27,095 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:27,095 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 1, Relax: 0
+2025-07-03 20:27:27,095 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,095 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,095 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 1, Relax: 0
+2025-07-03 20:27:27,095 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,095 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,095 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:27,096 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 1, Relax: 1
+2025-07-03 20:27:27,096 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,096 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,096 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 1, Relax: 1
+2025-07-03 20:27:27,096 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,096 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,096 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 1, Relaxation Level: 2
+2025-07-03 20:27:27,096 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 1, Relax: 2
+2025-07-03 20:27:27,096 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,096 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,096 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 1, Relax: 2
+2025-07-03 20:27:27,096 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,096 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,096 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-02 Post 1 after all relaxation attempts.
+2025-07-03 20:27:27,096 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 2, Relaxation Level: 0
+2025-07-03 20:27:27,096 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 2, Relax: 0
+2025-07-03 20:27:27,096 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,096 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,096 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 2, Relax: 0
+2025-07-03 20:27:27,096 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,096 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,096 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 2, Relaxation Level: 1
+2025-07-03 20:27:27,096 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 2, Relax: 1
+2025-07-03 20:27:27,096 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,096 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,096 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 2, Relax: 1
+2025-07-03 20:27:27,096 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,097 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,097 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 2, Relaxation Level: 2
+2025-07-03 20:27:27,097 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 2, Relax: 2
+2025-07-03 20:27:27,097 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,097 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,097 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 2, Relax: 2
+2025-07-03 20:27:27,097 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,097 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,097 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-02 Post 2 after all relaxation attempts.
+2025-07-03 20:27:27,097 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:27,097 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 0, Relax: 0
+2025-07-03 20:27:27,097 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,097 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,097 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 0, Relax: 0
+2025-07-03 20:27:27,097 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,097 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,097 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:27,097 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 0, Relax: 1
+2025-07-03 20:27:27,097 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,097 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,097 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 0, Relax: 1
+2025-07-03 20:27:27,097 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,097 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,097 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 0, Relaxation Level: 2
+2025-07-03 20:27:27,097 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 0, Relax: 2
+2025-07-03 20:27:27,097 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,097 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,097 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 0, Relax: 2
+2025-07-03 20:27:27,098 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,098 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,098 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-03 Post 0 after all relaxation attempts.
+2025-07-03 20:27:27,098 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:27,098 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 1, Relax: 0
+2025-07-03 20:27:27,098 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,098 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,098 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 1, Relax: 0
+2025-07-03 20:27:27,098 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,098 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,098 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:27,098 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 1, Relax: 1
+2025-07-03 20:27:27,098 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,098 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,098 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 1, Relax: 1
+2025-07-03 20:27:27,098 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,098 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,098 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 1, Relaxation Level: 2
+2025-07-03 20:27:27,098 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 1, Relax: 2
+2025-07-03 20:27:27,098 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,098 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,098 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 1, Relax: 2
+2025-07-03 20:27:27,098 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,098 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,098 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-03 Post 1 after all relaxation attempts.
+2025-07-03 20:27:27,098 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 2, Relaxation Level: 0
+2025-07-03 20:27:27,099 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 2, Relax: 0
+2025-07-03 20:27:27,099 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,099 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,099 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 2, Relax: 0
+2025-07-03 20:27:27,099 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,099 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,099 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 2, Relaxation Level: 1
+2025-07-03 20:27:27,099 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 2, Relax: 1
+2025-07-03 20:27:27,099 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,099 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,099 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 2, Relax: 1
+2025-07-03 20:27:27,099 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,099 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,099 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 2, Relaxation Level: 2
+2025-07-03 20:27:27,099 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 2, Relax: 2
+2025-07-03 20:27:27,099 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,099 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,099 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 2, Relax: 2
+2025-07-03 20:27:27,100 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,100 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,100 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-03 Post 2 after all relaxation attempts.
+2025-07-03 20:27:27,100 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:27,100 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 0, Relax: 0
+2025-07-03 20:27:27,100 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,100 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,100 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 0, Relax: 0
+2025-07-03 20:27:27,100 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,100 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,100 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:27,100 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 0, Relax: 1
+2025-07-03 20:27:27,100 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,100 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,100 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 0, Relax: 1
+2025-07-03 20:27:27,100 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,100 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,100 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 0, Relaxation Level: 2
+2025-07-03 20:27:27,100 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 0, Relax: 2
+2025-07-03 20:27:27,101 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,101 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,101 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 0, Relax: 2
+2025-07-03 20:27:27,101 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,101 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,101 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-04 Post 0 after all relaxation attempts.
+2025-07-03 20:27:27,101 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:27,101 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 1, Relax: 0
+2025-07-03 20:27:27,101 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,101 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,101 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 1, Relax: 0
+2025-07-03 20:27:27,101 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,101 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,101 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:27,101 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 1, Relax: 1
+2025-07-03 20:27:27,101 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,101 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,101 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 1, Relax: 1
+2025-07-03 20:27:27,101 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,102 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,102 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 1, Relaxation Level: 2
+2025-07-03 20:27:27,102 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 1, Relax: 2
+2025-07-03 20:27:27,102 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,102 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,102 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 1, Relax: 2
+2025-07-03 20:27:27,102 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,102 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,102 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-04 Post 1 after all relaxation attempts.
+2025-07-03 20:27:27,102 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 2, Relaxation Level: 0
+2025-07-03 20:27:27,102 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 2, Relax: 0
+2025-07-03 20:27:27,102 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,102 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,102 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 2, Relax: 0
+2025-07-03 20:27:27,102 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,102 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,102 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 2, Relaxation Level: 1
+2025-07-03 20:27:27,102 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 2, Relax: 1
+2025-07-03 20:27:27,102 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,103 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,103 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 2, Relax: 1
+2025-07-03 20:27:27,103 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,103 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,103 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 2, Relaxation Level: 2
+2025-07-03 20:27:27,103 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 2, Relax: 2
+2025-07-03 20:27:27,103 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,103 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,103 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 2, Relax: 2
+2025-07-03 20:27:27,103 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,103 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,103 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-04 Post 2 after all relaxation attempts.
+2025-07-03 20:27:27,103 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:27,103 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 0, Relax: 0
+2025-07-03 20:27:27,103 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,103 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,103 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 0, Relax: 0
+2025-07-03 20:27:27,103 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,103 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,104 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:27,104 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 0, Relax: 1
+2025-07-03 20:27:27,104 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,104 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,104 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 0, Relax: 1
+2025-07-03 20:27:27,104 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,104 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,104 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 0, Relaxation Level: 2
+2025-07-03 20:27:27,104 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 0, Relax: 2
+2025-07-03 20:27:27,104 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,104 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,104 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 0, Relax: 2
+2025-07-03 20:27:27,104 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,104 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,104 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-05 Post 0 after all relaxation attempts.
+2025-07-03 20:27:27,104 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:27,104 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 1, Relax: 0
+2025-07-03 20:27:27,104 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,104 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,105 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 1, Relax: 0
+2025-07-03 20:27:27,105 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,105 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,105 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:27,105 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 1, Relax: 1
+2025-07-03 20:27:27,105 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,105 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,105 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 1, Relax: 1
+2025-07-03 20:27:27,105 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,105 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,105 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 1, Relaxation Level: 2
+2025-07-03 20:27:27,105 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 1, Relax: 2
+2025-07-03 20:27:27,105 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,105 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,105 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 1, Relax: 2
+2025-07-03 20:27:27,105 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,105 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,105 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-05 Post 1 after all relaxation attempts.
+2025-07-03 20:27:27,105 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 2, Relaxation Level: 0
+2025-07-03 20:27:27,106 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 2, Relax: 0
+2025-07-03 20:27:27,106 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,106 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,106 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 2, Relax: 0
+2025-07-03 20:27:27,106 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,106 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,106 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 2, Relaxation Level: 1
+2025-07-03 20:27:27,106 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 2, Relax: 1
+2025-07-03 20:27:27,106 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,106 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,106 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 2, Relax: 1
+2025-07-03 20:27:27,106 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,106 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,106 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 2, Relaxation Level: 2
+2025-07-03 20:27:27,106 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 2, Relax: 2
+2025-07-03 20:27:27,106 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,106 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,106 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 2, Relax: 2
+2025-07-03 20:27:27,106 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,107 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,107 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-05 Post 2 after all relaxation attempts.
+2025-07-03 20:27:27,107 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:27,107 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 0, Relax: 0
+2025-07-03 20:27:27,107 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,107 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,107 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 0, Relax: 0
+2025-07-03 20:27:27,107 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,107 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,107 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:27,107 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 0, Relax: 1
+2025-07-03 20:27:27,107 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,107 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,107 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 0, Relax: 1
+2025-07-03 20:27:27,107 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,107 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,107 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 0, Relaxation Level: 2
+2025-07-03 20:27:27,107 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 0, Relax: 2
+2025-07-03 20:27:27,107 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,108 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,108 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 0, Relax: 2
+2025-07-03 20:27:27,108 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,108 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,108 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-06 Post 0 after all relaxation attempts.
+2025-07-03 20:27:27,108 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:27,108 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 1, Relax: 0
+2025-07-03 20:27:27,108 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,108 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,108 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 1, Relax: 0
+2025-07-03 20:27:27,108 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,108 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,108 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:27,108 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 1, Relax: 1
+2025-07-03 20:27:27,108 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,108 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,108 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 1, Relax: 1
+2025-07-03 20:27:27,108 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,108 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,109 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 1, Relaxation Level: 2
+2025-07-03 20:27:27,109 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 1, Relax: 2
+2025-07-03 20:27:27,109 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,109 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,109 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 1, Relax: 2
+2025-07-03 20:27:27,109 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,109 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,109 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-06 Post 1 after all relaxation attempts.
+2025-07-03 20:27:27,109 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 2, Relaxation Level: 0
+2025-07-03 20:27:27,109 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 2, Relax: 0
+2025-07-03 20:27:27,109 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,109 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,109 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 2, Relax: 0
+2025-07-03 20:27:27,109 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,109 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,109 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 2, Relaxation Level: 1
+2025-07-03 20:27:27,109 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 2, Relax: 1
+2025-07-03 20:27:27,109 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,109 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,110 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 2, Relax: 1
+2025-07-03 20:27:27,110 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,110 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,110 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 2, Relaxation Level: 2
+2025-07-03 20:27:27,110 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 2, Relax: 2
+2025-07-03 20:27:27,110 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,110 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,110 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 2, Relax: 2
+2025-07-03 20:27:27,110 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,110 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,110 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-06 Post 2 after all relaxation attempts.
+2025-07-03 20:27:27,110 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:27,110 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 0, Relax: 0
+2025-07-03 20:27:27,110 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,110 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,110 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 0, Relax: 0
+2025-07-03 20:27:27,110 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,110 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,111 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:27,111 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 0, Relax: 1
+2025-07-03 20:27:27,111 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,111 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,111 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 0, Relax: 1
+2025-07-03 20:27:27,111 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,111 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,111 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 0, Relaxation Level: 2
+2025-07-03 20:27:27,111 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 0, Relax: 2
+2025-07-03 20:27:27,111 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,111 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,111 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 0, Relax: 2
+2025-07-03 20:27:27,111 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,111 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,111 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-07 Post 0 after all relaxation attempts.
+2025-07-03 20:27:27,111 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:27,111 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 1, Relax: 0
+2025-07-03 20:27:27,111 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,111 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,111 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 1, Relax: 0
+2025-07-03 20:27:27,112 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,112 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,112 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:27,112 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 1, Relax: 1
+2025-07-03 20:27:27,112 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,112 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,112 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 1, Relax: 1
+2025-07-03 20:27:27,112 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,112 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,112 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 1, Relaxation Level: 2
+2025-07-03 20:27:27,112 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 1, Relax: 2
+2025-07-03 20:27:27,112 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,112 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,112 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 1, Relax: 2
+2025-07-03 20:27:27,112 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,112 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,112 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-07 Post 1 after all relaxation attempts.
+2025-07-03 20:27:27,112 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 2, Relaxation Level: 0
+2025-07-03 20:27:27,113 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 2, Relax: 0
+2025-07-03 20:27:27,113 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,113 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:27,113 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 2, Relax: 0
+2025-07-03 20:27:27,113 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,113 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:27,113 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 2, Relaxation Level: 1
+2025-07-03 20:27:27,113 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 2, Relax: 1
+2025-07-03 20:27:27,113 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,113 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:27,113 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 2, Relax: 1
+2025-07-03 20:27:27,113 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,113 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:27,113 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 2, Relaxation Level: 2
+2025-07-03 20:27:27,113 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 2, Relax: 2
+2025-07-03 20:27:27,113 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,113 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 2
+2025-07-03 20:27:27,113 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 2, Relax: 2
+2025-07-03 20:27:27,113 - root - WARNING - Invalid date range format '1-7' - time data '1-7' does not match format '%d-%m-%Y'
+2025-07-03 20:27:27,114 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 2
+2025-07-03 20:27:27,114 - root - DEBUG - Could not find compatible direct candidate in Pass 1 for 2024-01-07 Post 2 after all relaxation attempts.
+2025-07-03 20:27:27,114 - root - INFO - --- Finished Pass 1. Starting Pass 2: Attempting swaps for 21 empty shifts ---
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-01 P0
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-01 P1
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-01 P2
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-02 P0
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-02 P1
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-02 P2
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-03 P0
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-03 P1
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-03 P2
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-04 P0
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-04 P1
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-04 P2
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-05 P0
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-05 P1
+2025-07-03 20:27:27,114 - root - DEBUG - No swap for empty 2024-01-05 P2
+2025-07-03 20:27:27,115 - root - DEBUG - No swap for empty 2024-01-06 P0
+2025-07-03 20:27:27,115 - root - DEBUG - No swap for empty 2024-01-06 P1
+2025-07-03 20:27:27,115 - root - DEBUG - No swap for empty 2024-01-06 P2
+2025-07-03 20:27:27,115 - root - DEBUG - No swap for empty 2024-01-07 P0
+2025-07-03 20:27:27,115 - root - DEBUG - No swap for empty 2024-01-07 P1
+2025-07-03 20:27:27,115 - root - DEBUG - No swap for empty 2024-01-07 P2
+2025-07-03 20:27:27,115 - root - INFO - --- Finished _try_fill_empty_shifts. Total filled/swapped: 0 ---
+2025-07-03 20:27:27,115 - root - INFO - Attempting to balance worker workloads
+2025-07-03 20:27:27,115 - root - INFO - Ensuring data integrity...
+2025-07-03 20:27:27,115 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:27,115 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=3
+2025-07-03 20:27:27,115 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:27,115 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=3
+2025-07-03 20:27:27,115 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:27,115 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=3
+2025-07-03 20:27:27,115 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:27,115 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=3
+2025-07-03 20:27:27,115 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:27,115 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=3
+2025-07-03 20:27:27,116 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:27,116 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=3
+2025-07-03 20:27:27,116 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:27,116 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=3
+2025-07-03 20:27:27,116 - root - INFO - Data integrity check completed
+2025-07-03 20:27:27,116 - root - INFO - Workload balancing: made 0 changes
+2025-07-03 20:27:27,116 - root - INFO - Attempting to improve special day (weekend/holiday/eve) distribution
+2025-07-03 20:27:27,116 - root - INFO - Ensuring data integrity...
+2025-07-03 20:27:27,116 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:27,116 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=3
+2025-07-03 20:27:27,116 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:27,116 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=3
+2025-07-03 20:27:27,116 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:27,116 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=3
+2025-07-03 20:27:27,116 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:27,116 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=3
+2025-07-03 20:27:27,116 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:27,116 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=3
+2025-07-03 20:27:27,116 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:27,116 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=3
+2025-07-03 20:27:27,117 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:27,117 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=3
+2025-07-03 20:27:27,117 - root - INFO - Data integrity check completed
+2025-07-03 20:27:27,117 - root - INFO - Special day (weekend/holiday/eve) distribution improvement: made 0 changes
+2025-07-03 20:27:27,117 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:27,117 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:27,117 - root - INFO - Attempting to improve special day (weekend/holiday/eve) distribution
+2025-07-03 20:27:27,117 - root - INFO - Ensuring data integrity...
+2025-07-03 20:27:27,117 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:27,117 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=3
+2025-07-03 20:27:27,117 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:27,117 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=3
+2025-07-03 20:27:27,117 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:27,117 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=3
+2025-07-03 20:27:27,117 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:27,117 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=3
+2025-07-03 20:27:27,117 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:27,117 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=3
+2025-07-03 20:27:27,117 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:27,117 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=3
+2025-07-03 20:27:27,118 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:27,118 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=3
+2025-07-03 20:27:27,118 - root - INFO - Data integrity check completed
+2025-07-03 20:27:27,118 - root - INFO - Special day (weekend/holiday/eve) distribution improvement: made 0 changes
+2025-07-03 20:27:27,118 - root - INFO - Starting iterative last post distribution adjustment (max_iterations=10, tolerance=1.0).
+2025-07-03 20:27:27,118 - root - INFO - This will only apply to days NOT within a variable shift period.
+2025-07-03 20:27:27,118 - root - INFO - --- Last Post Adjustment Iteration: 1/10 ---
+2025-07-03 20:27:27,118 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:27,118 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:27,118 - root - INFO - [AdjustLastPost Iter 1] No last posts assigned in non-variable shift periods. Nothing to balance.
+2025-07-03 20:27:27,118 - root - INFO - No last post adjustments made after 1 iteration(s).
+2025-07-03 20:27:27,118 - root - INFO - --- Improvement Loop 1 completed in 0.03s. Changes made: False ---
+2025-07-03 20:27:27,118 - root - INFO - No further improvements detected. Exiting improvement phase.
+2025-07-03 20:27:27,118 - root - INFO - Phase 4: Finalizing schedule...
+2025-07-03 20:27:27,118 - root - INFO - Performing final last post distribution adjustment...
+2025-07-03 20:27:27,118 - root - INFO - Starting iterative last post distribution adjustment (max_iterations=5, tolerance=1.0).
+2025-07-03 20:27:27,118 - root - INFO - This will only apply to days NOT within a variable shift period.
+2025-07-03 20:27:27,118 - root - INFO - --- Last Post Adjustment Iteration: 1/5 ---
+2025-07-03 20:27:27,118 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:27,119 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:27,119 - root - INFO - [AdjustLastPost Iter 1] No last posts assigned in non-variable shift periods. Nothing to balance.
+2025-07-03 20:27:27,119 - root - INFO - No last post adjustments made after 1 iteration(s).
+2025-07-03 20:27:27,119 - root - INFO - Returning saved best schedule with score: 0.0
+2025-07-03 20:27:27,119 - root - INFO - Applying final schedule data to scheduler state...
+2025-07-03 20:27:27,119 - root - INFO - Final schedule applied with score: 0.00
+2025-07-03 20:27:27,119 - root - WARNING - Final schedule has 21 slots but contains ZERO assignments.
+2025-07-03 20:27:27,119 - root - WARNING - Final schedule has 21 empty shifts (100.0%) out of 21 total slots.
+2025-07-03 20:27:27,119 - root - INFO - --- Final Generated Schedule ---
+2025-07-03 20:27:27,119 - root - INFO - Total shifts assigned: 0
+2025-07-03 20:27:27,119 - root - INFO - Total slots: 21, Empty slots: 21
+2025-07-03 20:27:27,119 - root - INFO - Shift Counts per Worker:
+2025-07-03 20:27:27,119 - root - INFO -   Worker W001: 0 shifts
+2025-07-03 20:27:27,119 - root - INFO -   Worker W002: 0 shifts
+2025-07-03 20:27:27,119 - root - INFO - Weekend Shifts per Worker:
+2025-07-03 20:27:27,119 - root - INFO -   Worker W001: 0 weekend shifts
+2025-07-03 20:27:27,119 - root - INFO -   Worker W002: 0 weekend shifts
+2025-07-03 20:27:27,119 - root - INFO - Post Assignments per Worker:
+2025-07-03 20:27:27,119 - root - DEBUG - Scheduler.calculate_score called (placeholder)
+2025-07-03 20:27:27,119 - root - DEBUG - Calculated score (placeholder): 0.0
+2025-07-03 20:27:27,120 - root - INFO - Current Schedule Score: 0.0
+2025-07-03 20:27:27,120 - root - INFO - --- End Final Generated Schedule ---
+2025-07-03 20:27:27,120 - root - INFO - Schedule finalization phase completed successfully.
+2025-07-03 20:27:27,120 - root - INFO - Schedule generation orchestration completed successfully in 0.03 seconds.
+2025-07-03 20:27:35,864 - root - INFO - Logging system configured successfully.
+2025-07-03 20:27:35,870 - root - INFO - EventBus initialized
+2025-07-03 20:27:35,870 - root - DEBUG - Subscribed to shift_assigned
+2025-07-03 20:27:35,871 - root - DEBUG - Published event: shift_assigned
+2025-07-03 20:27:35,871 - root - INFO - Scheduler initialized
+2025-07-03 20:27:35,871 - root - INFO - DateTimeUtils initialized
+2025-07-03 20:27:35,872 - root - DEBUG - Identified incompatible worker IDs: set()
+2025-07-03 20:27:35,872 - root - DEBUG - Worker W001 incompatible_with list: []
+2025-07-03 20:27:35,872 - root - DEBUG - Worker W002 incompatible_with list: []
+2025-07-03 20:27:35,872 - root - DEBUG - Worker W003 incompatible_with list: []
+2025-07-03 20:27:35,872 - root - DEBUG - Worker W004 incompatible_with list: []
+2025-07-03 20:27:35,873 - urllib3.connectionpool - DEBUG - Starting new HTTP connection (1): worldtimeapi.org:80
+2025-07-03 20:27:35,876 - root - WARNING - Error getting time from API: HTTPConnectionPool(host='worldtimeapi.org', port=80): Max retries exceeded with url: /api/timezone/Europe/Madrid (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7f1728cce120>: Failed to resolve 'worldtimeapi.org' ([Errno -3] Temporary failure in name resolution)"))
+2025-07-03 20:27:35,876 - root - INFO - StatisticsCalculator initialized
+2025-07-03 20:27:35,876 - root - INFO - Enhanced ConstraintChecker initialized with caching
+2025-07-03 20:27:35,876 - root - INFO - Enhanced DataManager initialized with caching
+2025-07-03 20:27:35,880 - root - INFO - IncrementalUpdater initialized
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to shift_assigned
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to shift_unassigned
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to shift_swapped
+2025-07-03 20:27:35,881 - root - INFO - LiveValidator initialized
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to shift_assigned
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to shift_unassigned
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to shift_swapped
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to bulk_update
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to schedule_generated
+2025-07-03 20:27:35,881 - root - INFO - ChangeTracker initialized
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to constraint_violation
+2025-07-03 20:27:35,881 - root - DEBUG - Subscribed to validation_result
+2025-07-03 20:27:35,881 - root - INFO - RealTimeEngine initialized
+2025-07-03 20:27:35,881 - root - INFO - Real-time engine initialized
+2025-07-03 20:27:36,791 - root - WARNING - ML libraries not available: cannot import name '_lazywhere' from 'scipy._lib._util' (/home/runner/.local/lib/python3.12/site-packages/scipy/_lib/_util.py). Falling back to basic forecasting.
+2025-07-03 20:27:36,792 - root - INFO - HistoricalDataManager initialized with storage path: historical_data
+2025-07-03 20:27:36,792 - root - INFO - No existing historical data found
+2025-07-03 20:27:36,792 - root - INFO - DemandForecaster initialized
+2025-07-03 20:27:36,792 - root - WARNING - Running in fallback mode without ML libraries
+2025-07-03 20:27:36,792 - root - INFO - PredictiveAnalyticsEngine initialized
+2025-07-03 20:27:36,792 - root - INFO - PredictiveOptimizer initialized
+2025-07-03 20:27:36,792 - root - INFO - Predictive analytics engine initialized
+2025-07-03 20:27:36,792 - root - ERROR - Error collecting current schedule data: 'DateTimeUtils' object has no attribute 'is_holiday'
+2025-07-03 20:27:36,792 - root - ERROR - Error collecting and storing data: Failed to collect schedule data: 'DateTimeUtils' object has no attribute 'is_holiday'
+2025-07-03 20:27:36,792 - root - INFO - Calculating target shifts based on availability and percentage
+2025-07-03 20:27:36,792 - root - DEBUG - Worker W001: available_slots=14
+2025-07-03 20:27:36,792 - root - DEBUG - Worker W002: available_slots=14
+2025-07-03 20:27:36,793 - root - DEBUG - Worker W003: available_slots=14
+2025-07-03 20:27:36,793 - root - DEBUG - Worker W004: available_slots=14
+2025-07-03 20:27:36,793 - root - INFO - Worker W001: target_shifts=4 → 4
+2025-07-03 20:27:36,793 - root - INFO - Worker W002: target_shifts=4 → 4
+2025-07-03 20:27:36,793 - root - INFO - Worker W003: target_shifts=3 → 3
+2025-07-03 20:27:36,793 - root - INFO - Worker W004: target_shifts=3 → 3
+2025-07-03 20:27:36,793 - root - INFO - Scheduler initialized with:
+2025-07-03 20:27:36,793 - root - INFO - Start date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,793 - root - INFO - End date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,793 - root - INFO - Number of shifts: 2
+2025-07-03 20:27:36,793 - root - INFO - Number of workers: 4
+2025-07-03 20:27:36,793 - root - INFO - Holidays: []
+2025-07-03 20:27:36,793 - root - INFO - Gap between shifts: 1
+2025-07-03 20:27:36,793 - root - INFO - Max consecutive weekend/holiday shifts: 2
+2025-07-03 20:27:36,793 - root - INFO - Current datetime (Spain): 2025-07-03 22:27:35.876727
+2025-07-03 20:27:36,793 - root - INFO - Current user: saldo27
+2025-07-03 20:27:36,793 - root - INFO - SchedulerCore initialized
+2025-07-03 20:27:36,793 - root - INFO - Starting schedule generation orchestration...
+2025-07-03 20:27:36,793 - root - INFO - Phase 1: Initializing schedule structure...
+2025-07-03 20:27:36,794 - root - DEBUG - [ScheduleBuilder.__init__] self.schedule object ID: 139736866230336, Initial keys: [datetime.datetime(2024, 1, 1, 0, 0), datetime.datetime(2024, 1, 2, 0, 0), datetime.datetime(2024, 1, 3, 0, 0), datetime.datetime(2024, 1, 4, 0, 0), datetime.datetime(2024, 1, 5, 0, 0), datetime.datetime(2024, 1, 6, 0, 0), datetime.datetime(2024, 1, 7, 0, 0)]
+2025-07-03 20:27:36,794 - root - INFO - Complexity calculation: base=56, constraint_factor=0.00, total=56
+2025-07-03 20:27:36,794 - root - INFO - Adaptive config: {'max_optimization_loops': 4, 'max_fill_attempts': 3, 'max_balance_iterations': 2, 'max_weekend_passes': 2, 'last_post_max_iterations': 3, 'convergence_threshold': 4}
+2025-07-03 20:27:36,794 - root - DEBUG - Built optimization caches for 4 workers and 7 dates
+2025-07-03 20:27:36,794 - root - DEBUG - [ScheduleBuilder.__init__] self.schedule object ID: 139736866230336, Initial keys: [datetime.datetime(2024, 1, 1, 0, 0), datetime.datetime(2024, 1, 2, 0, 0), datetime.datetime(2024, 1, 3, 0, 0), datetime.datetime(2024, 1, 4, 0, 0), datetime.datetime(2024, 1, 5, 0, 0)]
+2025-07-03 20:27:36,794 - root - INFO - Enhanced ScheduleBuilder initialized with caching
+2025-07-03 20:27:36,794 - root - INFO - Schedule structure initialized with 7 dates
+2025-07-03 20:27:36,794 - root - INFO - Phase 2: Assigning mandatory shifts...
+2025-07-03 20:27:36,794 - root - INFO - Starting mandatory guard assignment…
+2025-07-03 20:27:36,794 - root - INFO - Finished mandatory guard assignment. Assigned 0 shifts.
+2025-07-03 20:27:36,794 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:36,794 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:36,794 - root - DEBUG - Scheduler.calculate_score called (placeholder)
+2025-07-03 20:27:36,794 - root - DEBUG - Calculated score (placeholder): 0.0
+2025-07-03 20:27:36,794 - root - INFO - Initializing best schedule with score 0.00
+2025-07-03 20:27:36,794 - root - INFO - --- After Mandatory Assignment ---
+2025-07-03 20:27:36,794 - root - INFO - Total shifts assigned: 0
+2025-07-03 20:27:36,794 - root - INFO - Total slots: 14, Empty slots: 14
+2025-07-03 20:27:36,794 - root - INFO - Shift Counts per Worker:
+2025-07-03 20:27:36,794 - root - INFO -   Worker W001: 0 shifts
+2025-07-03 20:27:36,794 - root - INFO -   Worker W002: 0 shifts
+2025-07-03 20:27:36,794 - root - INFO -   Worker W003: 0 shifts
+2025-07-03 20:27:36,794 - root - INFO -   Worker W004: 0 shifts
+2025-07-03 20:27:36,795 - root - INFO - Weekend Shifts per Worker:
+2025-07-03 20:27:36,795 - root - INFO -   Worker W001: 0 weekend shifts
+2025-07-03 20:27:36,795 - root - INFO -   Worker W002: 0 weekend shifts
+2025-07-03 20:27:36,795 - root - INFO -   Worker W003: 0 weekend shifts
+2025-07-03 20:27:36,795 - root - INFO -   Worker W004: 0 weekend shifts
+2025-07-03 20:27:36,795 - root - INFO - Post Assignments per Worker:
+2025-07-03 20:27:36,795 - root - DEBUG - Scheduler.calculate_score called (placeholder)
+2025-07-03 20:27:36,795 - root - DEBUG - Calculated score (placeholder): 0.0
+2025-07-03 20:27:36,795 - root - INFO - Current Schedule Score: 0.0
+2025-07-03 20:27:36,795 - root - INFO - --- End After Mandatory Assignment ---
+2025-07-03 20:27:36,795 - root - INFO - Mandatory assignment phase completed
+2025-07-03 20:27:36,795 - root - INFO - Phase 3: Starting iterative improvement...
+2025-07-03 20:27:36,795 - root - INFO - --- Starting Improvement Loop 1 ---
+2025-07-03 20:27:36,795 - root - DEBUG - ENTERED _try_fill_empty_shifts. self.schedule ID: 139736866230336. Keys count: 7. Sample: {datetime.datetime(2024, 1, 1, 0, 0): [None, None], datetime.datetime(2024, 1, 2, 0, 0): [None, None]}
+2025-07-03 20:27:36,795 - root - DEBUG - [_try_fill_empty_shifts] Initial identified empty_slots count: 14
+2025-07-03 20:27:36,795 - root - INFO - Attempting to fill 14 empty shifts...
+2025-07-03 20:27:36,795 - root - INFO - --- Starting Pass 1: Direct Fill with Relaxation Iteration ---
+2025-07-03 20:27:36,795 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:36,795 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 0, Relax: 0
+2025-07-03 20:27:36,796 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W001 with score 11833.333333333334 at relax 0
+2025-07-03 20:27:36,796 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 0, Relax: 0
+2025-07-03 20:27:36,796 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W002 with score 11833.333333333334 at relax 0
+2025-07-03 20:27:36,796 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-01, Post: 0, Relax: 0
+2025-07-03 20:27:36,796 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W003 with score 8750.0 at relax 0
+2025-07-03 20:27:36,796 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-01, Post: 0, Relax: 0
+2025-07-03 20:27:36,796 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W004 with score 8750.0 at relax 0
+2025-07-03 20:27:36,796 - root - DEBUG -     [Pass 1] Candidates for 2024-01-01 Post 0 (Relax 0): [('W001', 11833.333333333334), ('W002', 11833.333333333334), ('W003', 8750.0), ('W004', 8750.0)]
+2025-07-03 20:27:36,796 - root - DEBUG - Added assignment and updated tracking for worker W001 on 2024-01-01, post 0
+2025-07-03 20:27:36,796 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-01 Post 0 with W:W001 (Score: 11833.33, Relax: 0)
+2025-07-03 20:27:36,796 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-01, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:36,796 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-01, Post: 1, Relax: 0
+2025-07-03 20:27:36,796 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,796 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-01, Post: 1, Relax: 0
+2025-07-03 20:27:36,797 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W002 with score 11833.333333333334 at relax 0
+2025-07-03 20:27:36,797 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-01, Post: 1, Relax: 0
+2025-07-03 20:27:36,797 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W003 with score 8750.0 at relax 0
+2025-07-03 20:27:36,797 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-01, Post: 1, Relax: 0
+2025-07-03 20:27:36,797 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W004 with score 8750.0 at relax 0
+2025-07-03 20:27:36,797 - root - DEBUG -     [Pass 1] Candidates for 2024-01-01 Post 1 (Relax 0): [('W002', 11833.333333333334), ('W003', 8750.0), ('W004', 8750.0)]
+2025-07-03 20:27:36,797 - root - DEBUG - Added assignment and updated tracking for worker W002 on 2024-01-01, post 1
+2025-07-03 20:27:36,797 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-01 Post 1 with W:W002 (Score: 11833.33, Relax: 0)
+2025-07-03 20:27:36,797 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:36,797 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 0, Relax: 0
+2025-07-03 20:27:36,797 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,797 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 0, Relax: 0
+2025-07-03 20:27:36,797 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,797 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-02, Post: 0, Relax: 0
+2025-07-03 20:27:36,797 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W003 with score 8750.0 at relax 0
+2025-07-03 20:27:36,797 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-02, Post: 0, Relax: 0
+2025-07-03 20:27:36,798 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W004 with score 8750.0 at relax 0
+2025-07-03 20:27:36,798 - root - DEBUG -     [Pass 1] Candidates for 2024-01-02 Post 0 (Relax 0): [('W003', 8750.0), ('W004', 8750.0)]
+2025-07-03 20:27:36,798 - root - DEBUG - Added assignment and updated tracking for worker W003 on 2024-01-02, post 0
+2025-07-03 20:27:36,798 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-02 Post 0 with W:W003 (Score: 8750.00, Relax: 0)
+2025-07-03 20:27:36,798 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-02, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:36,798 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-02, Post: 1, Relax: 0
+2025-07-03 20:27:36,798 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,798 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-02, Post: 1, Relax: 0
+2025-07-03 20:27:36,798 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,798 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-02, Post: 1, Relax: 0
+2025-07-03 20:27:36,798 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,798 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-02, Post: 1, Relax: 0
+2025-07-03 20:27:36,798 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W004 with score 8750.0 at relax 0
+2025-07-03 20:27:36,798 - root - DEBUG -     [Pass 1] Candidates for 2024-01-02 Post 1 (Relax 0): [('W004', 8750.0)]
+2025-07-03 20:27:36,798 - root - DEBUG - Added assignment and updated tracking for worker W004 on 2024-01-02, post 1
+2025-07-03 20:27:36,798 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-02 Post 1 with W:W004 (Score: 8750.00, Relax: 0)
+2025-07-03 20:27:36,798 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:36,799 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 0, Relax: 0
+2025-07-03 20:27:36,799 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,799 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 0, Relax: 0
+2025-07-03 20:27:36,799 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,799 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-03, Post: 0, Relax: 0
+2025-07-03 20:27:36,799 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,799 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-03, Post: 0, Relax: 0
+2025-07-03 20:27:36,799 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,799 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:36,799 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 0, Relax: 1
+2025-07-03 20:27:36,799 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W001 with score 8750.0 at relax 1
+2025-07-03 20:27:36,799 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 0, Relax: 1
+2025-07-03 20:27:36,799 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W002 with score 8750.0 at relax 1
+2025-07-03 20:27:36,799 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-03, Post: 0, Relax: 1
+2025-07-03 20:27:36,799 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 1
+2025-07-03 20:27:36,799 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-03, Post: 0, Relax: 1
+2025-07-03 20:27:36,800 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 1
+2025-07-03 20:27:36,800 - root - DEBUG -     [Pass 1] Candidates for 2024-01-03 Post 0 (Relax 1): [('W001', 8750.0), ('W002', 8750.0)]
+2025-07-03 20:27:36,800 - root - DEBUG - Added assignment and updated tracking for worker W001 on 2024-01-03, post 0
+2025-07-03 20:27:36,800 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-03 Post 0 with W:W001 (Score: 8750.00, Relax: 1)
+2025-07-03 20:27:36,800 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:36,800 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 1, Relax: 0
+2025-07-03 20:27:36,800 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,800 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 1, Relax: 0
+2025-07-03 20:27:36,800 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,800 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-03, Post: 1, Relax: 0
+2025-07-03 20:27:36,800 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,800 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-03, Post: 1, Relax: 0
+2025-07-03 20:27:36,800 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,800 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-03, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:36,800 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-03, Post: 1, Relax: 1
+2025-07-03 20:27:36,800 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:36,800 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-03, Post: 1, Relax: 1
+2025-07-03 20:27:36,800 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W002 with score 8750.0 at relax 1
+2025-07-03 20:27:36,801 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-03, Post: 1, Relax: 1
+2025-07-03 20:27:36,801 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 1
+2025-07-03 20:27:36,801 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-03, Post: 1, Relax: 1
+2025-07-03 20:27:36,801 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 1
+2025-07-03 20:27:36,801 - root - DEBUG -     [Pass 1] Candidates for 2024-01-03 Post 1 (Relax 1): [('W002', 8750.0)]
+2025-07-03 20:27:36,801 - root - DEBUG - Added assignment and updated tracking for worker W002 on 2024-01-03, post 1
+2025-07-03 20:27:36,801 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-03 Post 1 with W:W002 (Score: 8750.00, Relax: 1)
+2025-07-03 20:27:36,801 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:36,801 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 0, Relax: 0
+2025-07-03 20:27:36,801 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,801 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 0, Relax: 0
+2025-07-03 20:27:36,801 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,801 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-04, Post: 0, Relax: 0
+2025-07-03 20:27:36,801 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,801 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-04, Post: 0, Relax: 0
+2025-07-03 20:27:36,801 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,801 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:36,802 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 0, Relax: 1
+2025-07-03 20:27:36,802 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:36,802 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 0, Relax: 1
+2025-07-03 20:27:36,802 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:36,802 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-04, Post: 0, Relax: 1
+2025-07-03 20:27:36,802 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W003 with score 5666.666666666667 at relax 1
+2025-07-03 20:27:36,802 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-04, Post: 0, Relax: 1
+2025-07-03 20:27:36,802 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W004 with score 5666.666666666667 at relax 1
+2025-07-03 20:27:36,802 - root - DEBUG -     [Pass 1] Candidates for 2024-01-04 Post 0 (Relax 1): [('W003', 5666.666666666667), ('W004', 5666.666666666667)]
+2025-07-03 20:27:36,802 - root - DEBUG - Added assignment and updated tracking for worker W003 on 2024-01-04, post 0
+2025-07-03 20:27:36,802 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-04 Post 0 with W:W003 (Score: 5666.67, Relax: 1)
+2025-07-03 20:27:36,802 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:36,802 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 1, Relax: 0
+2025-07-03 20:27:36,802 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,802 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 1, Relax: 0
+2025-07-03 20:27:36,802 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,803 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-04, Post: 1, Relax: 0
+2025-07-03 20:27:36,803 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,803 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-04, Post: 1, Relax: 0
+2025-07-03 20:27:36,803 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,803 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-04, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:36,803 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-04, Post: 1, Relax: 1
+2025-07-03 20:27:36,803 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:36,803 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-04, Post: 1, Relax: 1
+2025-07-03 20:27:36,803 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:36,803 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-04, Post: 1, Relax: 1
+2025-07-03 20:27:36,803 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 1
+2025-07-03 20:27:36,803 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-04, Post: 1, Relax: 1
+2025-07-03 20:27:36,803 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W004 with score 5666.666666666667 at relax 1
+2025-07-03 20:27:36,803 - root - DEBUG -     [Pass 1] Candidates for 2024-01-04 Post 1 (Relax 1): [('W004', 5666.666666666667)]
+2025-07-03 20:27:36,803 - root - DEBUG - Added assignment and updated tracking for worker W004 on 2024-01-04, post 1
+2025-07-03 20:27:36,803 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-04 Post 1 with W:W004 (Score: 5666.67, Relax: 1)
+2025-07-03 20:27:36,803 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:36,804 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 0, Relax: 0
+2025-07-03 20:27:36,804 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,804 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 0, Relax: 0
+2025-07-03 20:27:36,804 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,804 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-05, Post: 0, Relax: 0
+2025-07-03 20:27:36,804 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,804 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-05, Post: 0, Relax: 0
+2025-07-03 20:27:36,804 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,804 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:36,804 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 0, Relax: 1
+2025-07-03 20:27:36,804 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W001 with score 5666.666666666667 at relax 1
+2025-07-03 20:27:36,804 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 0, Relax: 1
+2025-07-03 20:27:36,804 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W002 with score 5666.666666666667 at relax 1
+2025-07-03 20:27:36,804 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-05, Post: 0, Relax: 1
+2025-07-03 20:27:36,804 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 1
+2025-07-03 20:27:36,804 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-05, Post: 0, Relax: 1
+2025-07-03 20:27:36,805 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 1
+2025-07-03 20:27:36,805 - root - DEBUG -     [Pass 1] Candidates for 2024-01-05 Post 0 (Relax 1): [('W001', 5666.666666666667), ('W002', 5666.666666666667)]
+2025-07-03 20:27:36,805 - root - DEBUG - Added assignment and updated tracking for worker W001 on 2024-01-05, post 0
+2025-07-03 20:27:36,805 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-05 Post 0 with W:W001 (Score: 5666.67, Relax: 1)
+2025-07-03 20:27:36,805 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:36,805 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 1, Relax: 0
+2025-07-03 20:27:36,805 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,805 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 1, Relax: 0
+2025-07-03 20:27:36,805 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,805 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-05, Post: 1, Relax: 0
+2025-07-03 20:27:36,805 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,805 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-05, Post: 1, Relax: 0
+2025-07-03 20:27:36,805 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,805 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-05, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:36,805 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-05, Post: 1, Relax: 1
+2025-07-03 20:27:36,805 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:36,805 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-05, Post: 1, Relax: 1
+2025-07-03 20:27:36,805 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W002 with score 5666.666666666667 at relax 1
+2025-07-03 20:27:36,806 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-05, Post: 1, Relax: 1
+2025-07-03 20:27:36,806 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 1
+2025-07-03 20:27:36,806 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-05, Post: 1, Relax: 1
+2025-07-03 20:27:36,806 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 1
+2025-07-03 20:27:36,806 - root - DEBUG -     [Pass 1] Candidates for 2024-01-05 Post 1 (Relax 1): [('W002', 5666.666666666667)]
+2025-07-03 20:27:36,806 - root - DEBUG - Added assignment and updated tracking for worker W002 on 2024-01-05, post 1
+2025-07-03 20:27:36,806 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-05 Post 1 with W:W002 (Score: 5666.67, Relax: 1)
+2025-07-03 20:27:36,806 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:36,806 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 0, Relax: 0
+2025-07-03 20:27:36,806 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,806 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 0, Relax: 0
+2025-07-03 20:27:36,806 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,806 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-06, Post: 0, Relax: 0
+2025-07-03 20:27:36,806 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,806 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-06, Post: 0, Relax: 0
+2025-07-03 20:27:36,806 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,806 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:36,807 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 0, Relax: 1
+2025-07-03 20:27:36,807 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:36,807 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 0, Relax: 1
+2025-07-03 20:27:36,807 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:36,807 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-06, Post: 0, Relax: 1
+2025-07-03 20:27:36,807 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W003 with score 2583.3333333333335 at relax 1
+2025-07-03 20:27:36,807 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-06, Post: 0, Relax: 1
+2025-07-03 20:27:36,807 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W004 with score 2583.3333333333335 at relax 1
+2025-07-03 20:27:36,807 - root - DEBUG -     [Pass 1] Candidates for 2024-01-06 Post 0 (Relax 1): [('W003', 2583.3333333333335), ('W004', 2583.3333333333335)]
+2025-07-03 20:27:36,807 - root - DEBUG - Added assignment and updated tracking for worker W003 on 2024-01-06, post 0
+2025-07-03 20:27:36,807 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-06 Post 0 with W:W003 (Score: 2583.33, Relax: 1)
+2025-07-03 20:27:36,807 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:36,807 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 1, Relax: 0
+2025-07-03 20:27:36,807 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,807 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 1, Relax: 0
+2025-07-03 20:27:36,807 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,808 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-06, Post: 1, Relax: 0
+2025-07-03 20:27:36,808 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,808 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-06, Post: 1, Relax: 0
+2025-07-03 20:27:36,808 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,808 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-06, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:36,808 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-06, Post: 1, Relax: 1
+2025-07-03 20:27:36,808 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:36,808 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-06, Post: 1, Relax: 1
+2025-07-03 20:27:36,808 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 1
+2025-07-03 20:27:36,808 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-06, Post: 1, Relax: 1
+2025-07-03 20:27:36,808 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 1
+2025-07-03 20:27:36,808 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-06, Post: 1, Relax: 1
+2025-07-03 20:27:36,808 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W004 with score 2583.3333333333335 at relax 1
+2025-07-03 20:27:36,808 - root - DEBUG -     [Pass 1] Candidates for 2024-01-06 Post 1 (Relax 1): [('W004', 2583.3333333333335)]
+2025-07-03 20:27:36,808 - root - DEBUG - Added assignment and updated tracking for worker W004 on 2024-01-06, post 1
+2025-07-03 20:27:36,808 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-06 Post 1 with W:W004 (Score: 2583.33, Relax: 1)
+2025-07-03 20:27:36,808 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 0, Relaxation Level: 0
+2025-07-03 20:27:36,809 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 0, Relax: 0
+2025-07-03 20:27:36,809 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,809 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 0, Relax: 0
+2025-07-03 20:27:36,809 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,809 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-07, Post: 0, Relax: 0
+2025-07-03 20:27:36,809 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,809 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-07, Post: 0, Relax: 0
+2025-07-03 20:27:36,809 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,809 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 0, Relaxation Level: 1
+2025-07-03 20:27:36,809 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 0, Relax: 1
+2025-07-03 20:27:36,809 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W001 with score 2283.3333333333335 at relax 1
+2025-07-03 20:27:36,809 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 0, Relax: 1
+2025-07-03 20:27:36,809 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W002 with score 2283.3333333333335 at relax 1
+2025-07-03 20:27:36,809 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-07, Post: 0, Relax: 1
+2025-07-03 20:27:36,809 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 1
+2025-07-03 20:27:36,809 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-07, Post: 0, Relax: 1
+2025-07-03 20:27:36,809 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 1
+2025-07-03 20:27:36,810 - root - DEBUG -     [Pass 1] Candidates for 2024-01-07 Post 0 (Relax 1): [('W001', 2283.3333333333335), ('W002', 2283.3333333333335)]
+2025-07-03 20:27:36,810 - root - DEBUG - Added assignment and updated tracking for worker W001 on 2024-01-07, post 0
+2025-07-03 20:27:36,810 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-07 Post 0 with W:W001 (Score: 2283.33, Relax: 1)
+2025-07-03 20:27:36,810 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 1, Relaxation Level: 0
+2025-07-03 20:27:36,810 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 1, Relax: 0
+2025-07-03 20:27:36,810 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 0
+2025-07-03 20:27:36,810 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 1, Relax: 0
+2025-07-03 20:27:36,810 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W002 at relax 0
+2025-07-03 20:27:36,810 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-07, Post: 1, Relax: 0
+2025-07-03 20:27:36,810 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 0
+2025-07-03 20:27:36,810 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-07, Post: 1, Relax: 0
+2025-07-03 20:27:36,810 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 0
+2025-07-03 20:27:36,810 - root - DEBUG -   [Pass 1 Attempt] Date: 2024-01-07, Post: 1, Relaxation Level: 1
+2025-07-03 20:27:36,810 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W001 for Date: 2024-01-07, Post: 1, Relax: 1
+2025-07-03 20:27:36,810 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W001 at relax 1
+2025-07-03 20:27:36,810 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W002 for Date: 2024-01-07, Post: 1, Relax: 1
+2025-07-03 20:27:36,810 - root - DEBUG -       -> Pass1 ACCEPTED as candidate: Worker W002 with score 2283.3333333333335 at relax 1
+2025-07-03 20:27:36,811 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W003 for Date: 2024-01-07, Post: 1, Relax: 1
+2025-07-03 20:27:36,811 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W003 at relax 1
+2025-07-03 20:27:36,811 - root - DEBUG -     [Pass 1 Candidate Check] Worker: W004 for Date: 2024-01-07, Post: 1, Relax: 1
+2025-07-03 20:27:36,811 - root - DEBUG -       -> Pass1 REJECTED (Score Check): Worker W004 at relax 1
+2025-07-03 20:27:36,811 - root - DEBUG -     [Pass 1] Candidates for 2024-01-07 Post 1 (Relax 1): [('W002', 2283.3333333333335)]
+2025-07-03 20:27:36,811 - root - DEBUG - Added assignment and updated tracking for worker W002 on 2024-01-07, post 1
+2025-07-03 20:27:36,811 - root - INFO - [Pass 1 Direct Fill] Filled empty shift on 2024-01-07 Post 1 with W:W002 (Score: 2283.33, Relax: 1)
+2025-07-03 20:27:36,811 - root - INFO - --- Finished Pass 1. No remaining empty shifts for Pass 2. ---
+2025-07-03 20:27:36,811 - root - INFO - --- Finished _try_fill_empty_shifts. Total filled/swapped: 14 ---
+2025-07-03 20:27:36,811 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:36,811 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:36,811 - root - DEBUG - Scheduler.calculate_score called (placeholder)
+2025-07-03 20:27:36,811 - root - DEBUG - Calculated score (placeholder): 100.0
+2025-07-03 20:27:36,811 - root - INFO - Saving new best schedule: score 100.00 (previous: 0.00)
+2025-07-03 20:27:36,811 - root - INFO - Improvement Loop: fill_empty_shifts made improvements.
+2025-07-03 20:27:36,811 - root - INFO - Attempting to balance worker workloads
+2025-07-03 20:27:36,811 - root - INFO - Ensuring data integrity...
+2025-07-03 20:27:36,812 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,812 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,812 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,812 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,812 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,812 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,812 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,812 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,812 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,812 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,812 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,812 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,812 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,812 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,812 - root - INFO - Data integrity check completed
+2025-07-03 20:27:36,812 - root - INFO - Workload balancing: made 0 changes
+2025-07-03 20:27:36,812 - root - INFO - Attempting to improve special day (weekend/holiday/eve) distribution
+2025-07-03 20:27:36,813 - root - INFO - Ensuring data integrity...
+2025-07-03 20:27:36,813 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,813 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,813 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,813 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,813 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,813 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,813 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,813 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,813 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,813 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,813 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,813 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,813 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,813 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,813 - root - INFO - Data integrity check completed
+2025-07-03 20:27:36,813 - root - INFO - Special day (weekend/holiday/eve) distribution improvement: made 0 changes
+2025-07-03 20:27:36,813 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:36,814 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:36,814 - root - INFO - Attempting to improve special day (weekend/holiday/eve) distribution
+2025-07-03 20:27:36,814 - root - INFO - Ensuring data integrity...
+2025-07-03 20:27:36,814 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,814 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,814 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,814 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,814 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,814 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,814 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,814 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,814 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,814 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,814 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,814 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,814 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,814 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,814 - root - INFO - Data integrity check completed
+2025-07-03 20:27:36,814 - root - INFO - Special day (weekend/holiday/eve) distribution improvement: made 0 changes
+2025-07-03 20:27:36,814 - root - INFO - Starting iterative last post distribution adjustment (max_iterations=10, tolerance=1.0).
+2025-07-03 20:27:36,815 - root - INFO - This will only apply to days NOT within a variable shift period.
+2025-07-03 20:27:36,815 - root - INFO - --- Last Post Adjustment Iteration: 1/10 ---
+2025-07-03 20:27:36,815 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:36,815 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:36,815 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,815 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,815 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,815 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,815 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,815 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,815 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,815 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,815 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,815 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,815 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,815 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,815 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,815 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,815 - root - DEBUG - [AdjustLastPost Iter 1] Total Last Post Counts (Non-Variable Periods): {'W001': 0, 'W002': 4, 'W003': 0, 'W004': 3}
+2025-07-03 20:27:36,815 - root - DEBUG -   Total Last Slots (Non-Variable): 7, Avg Last Posts/Worker: 1.75
+2025-07-03 20:27:36,816 - root - DEBUG -   Attempting to rebalance: Worker W002 (LPs: 4) has > avg (1.75) + tolerance on 2024-01-05
+2025-07-03 20:27:36,816 - root - INFO -   [AdjustLastPost Iter 1] Swapping on 2024-01-05: Worker W002 (P1 -> P0) with Worker W001 (P0 -> P1)
+2025-07-03 20:27:36,816 - root - DEBUG -   Attempting to rebalance: Worker W002 (LPs: 3) has > avg (1.75) + tolerance on 2024-01-07
+2025-07-03 20:27:36,816 - root - INFO -   [AdjustLastPost Iter 1] Swapping on 2024-01-07: Worker W002 (P1 -> P0) with Worker W001 (P0 -> P1)
+2025-07-03 20:27:36,816 - root - DEBUG -   Attempting to rebalance: Worker W004 (LPs: 3) has > avg (1.75) + tolerance on 2024-01-06
+2025-07-03 20:27:36,816 - root - INFO -   [AdjustLastPost Iter 1] Swapping on 2024-01-06: Worker W004 (P1 -> P0) with Worker W003 (P0 -> P1)
+2025-07-03 20:27:36,816 - root - INFO - --- Last Post Adjustment Iteration: 2/10 ---
+2025-07-03 20:27:36,816 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:36,816 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:36,816 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,816 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,816 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,816 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,816 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,816 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,816 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,816 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,817 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,817 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,817 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,817 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,817 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,817 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,817 - root - DEBUG - [AdjustLastPost Iter 2] Total Last Post Counts (Non-Variable Periods): {'W001': 2, 'W002': 2, 'W003': 1, 'W004': 2}
+2025-07-03 20:27:36,817 - root - DEBUG -   Total Last Slots (Non-Variable): 7, Avg Last Posts/Worker: 1.75
+2025-07-03 20:27:36,817 - root - INFO - [AdjustLastPost Iter 2/10] No beneficial last post swaps found in this full pass over days.
+2025-07-03 20:27:36,817 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:36,817 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:36,817 - root - DEBUG - Scheduler.calculate_score called (placeholder)
+2025-07-03 20:27:36,817 - root - DEBUG - Calculated score (placeholder): 100.0
+2025-07-03 20:27:36,817 - root - DEBUG - Current score 100.00 not better than best 100.00
+2025-07-03 20:27:36,817 - root - INFO - Finished last post adjustments. Total iterations run: 2. Overall swaps made: True.
+2025-07-03 20:27:36,817 - root - INFO - Improvement Loop: adjust_last_post_distribution made improvements.
+2025-07-03 20:27:36,817 - root - INFO - --- Improvement Loop 1 completed in 0.02s. Changes made: True ---
+2025-07-03 20:27:36,817 - root - INFO - --- Starting Improvement Loop 2 ---
+2025-07-03 20:27:36,817 - root - DEBUG - ENTERED _try_fill_empty_shifts. self.schedule ID: 139736866230336. Keys count: 7. Sample: {datetime.datetime(2024, 1, 1, 0, 0): ['W001', 'W002'], datetime.datetime(2024, 1, 2, 0, 0): ['W003', 'W004']}
+2025-07-03 20:27:36,818 - root - DEBUG - [_try_fill_empty_shifts] Initial identified empty_slots count: 0
+2025-07-03 20:27:36,818 - root - INFO - --- No initial empty shifts to fill. ---
+2025-07-03 20:27:36,818 - root - INFO - Attempting to balance worker workloads
+2025-07-03 20:27:36,818 - root - INFO - Ensuring data integrity...
+2025-07-03 20:27:36,818 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,818 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,818 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,818 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,818 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,818 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,818 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,818 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,818 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,818 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,818 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,818 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,818 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,818 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,818 - root - INFO - Data integrity check completed
+2025-07-03 20:27:36,819 - root - INFO - Workload balancing: made 0 changes
+2025-07-03 20:27:36,819 - root - INFO - Attempting to improve special day (weekend/holiday/eve) distribution
+2025-07-03 20:27:36,819 - root - INFO - Ensuring data integrity...
+2025-07-03 20:27:36,819 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,819 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,819 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,819 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,819 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,819 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,819 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,819 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,819 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,819 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,819 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,819 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,819 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,819 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,819 - root - INFO - Data integrity check completed
+2025-07-03 20:27:36,820 - root - INFO - Special day (weekend/holiday/eve) distribution improvement: made 0 changes
+2025-07-03 20:27:36,820 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:36,820 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:36,820 - root - INFO - Attempting to improve special day (weekend/holiday/eve) distribution
+2025-07-03 20:27:36,820 - root - INFO - Ensuring data integrity...
+2025-07-03 20:27:36,820 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,820 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,820 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,820 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,820 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,820 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,820 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,820 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,820 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,820 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,820 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,820 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,820 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,820 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,820 - root - INFO - Data integrity check completed
+2025-07-03 20:27:36,821 - root - INFO - Special day (weekend/holiday/eve) distribution improvement: made 0 changes
+2025-07-03 20:27:36,821 - root - INFO - Starting iterative last post distribution adjustment (max_iterations=10, tolerance=1.0).
+2025-07-03 20:27:36,821 - root - INFO - This will only apply to days NOT within a variable shift period.
+2025-07-03 20:27:36,821 - root - INFO - --- Last Post Adjustment Iteration: 1/10 ---
+2025-07-03 20:27:36,821 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:36,821 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:36,821 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,821 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,821 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,821 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,821 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,821 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,821 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,821 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,821 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,821 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,821 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,821 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,822 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,822 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,822 - root - DEBUG - [AdjustLastPost Iter 1] Total Last Post Counts (Non-Variable Periods): {'W001': 2, 'W002': 2, 'W003': 1, 'W004': 2}
+2025-07-03 20:27:36,822 - root - DEBUG -   Total Last Slots (Non-Variable): 7, Avg Last Posts/Worker: 1.75
+2025-07-03 20:27:36,822 - root - INFO - [AdjustLastPost Iter 1/10] No beneficial last post swaps found in this full pass over days.
+2025-07-03 20:27:36,822 - root - INFO - No last post adjustments made after 1 iteration(s).
+2025-07-03 20:27:36,822 - root - INFO - --- Improvement Loop 2 completed in 0.00s. Changes made: False ---
+2025-07-03 20:27:36,822 - root - INFO - No further improvements detected. Exiting improvement phase.
+2025-07-03 20:27:36,822 - root - INFO - Phase 4: Finalizing schedule...
+2025-07-03 20:27:36,822 - root - INFO - Performing final last post distribution adjustment...
+2025-07-03 20:27:36,822 - root - INFO - Starting iterative last post distribution adjustment (max_iterations=5, tolerance=1.0).
+2025-07-03 20:27:36,822 - root - INFO - This will only apply to days NOT within a variable shift period.
+2025-07-03 20:27:36,822 - root - INFO - --- Last Post Adjustment Iteration: 1/5 ---
+2025-07-03 20:27:36,822 - root - INFO - Synchronizing tracking data structures...
+2025-07-03 20:27:36,822 - root - INFO - Tracking data synchronization complete.
+2025-07-03 20:27:36,822 - root - DEBUG - Checking variable shifts for date: 2024-01-01 00:00:00
+2025-07-03 20:27:36,822 - root - DEBUG - No variable shift override for 2024-01-01 00:00:00, default=2
+2025-07-03 20:27:36,822 - root - DEBUG - Checking variable shifts for date: 2024-01-02 00:00:00
+2025-07-03 20:27:36,822 - root - DEBUG - No variable shift override for 2024-01-02 00:00:00, default=2
+2025-07-03 20:27:36,823 - root - DEBUG - Checking variable shifts for date: 2024-01-03 00:00:00
+2025-07-03 20:27:36,823 - root - DEBUG - No variable shift override for 2024-01-03 00:00:00, default=2
+2025-07-03 20:27:36,823 - root - DEBUG - Checking variable shifts for date: 2024-01-04 00:00:00
+2025-07-03 20:27:36,823 - root - DEBUG - No variable shift override for 2024-01-04 00:00:00, default=2
+2025-07-03 20:27:36,823 - root - DEBUG - Checking variable shifts for date: 2024-01-05 00:00:00
+2025-07-03 20:27:36,823 - root - DEBUG - No variable shift override for 2024-01-05 00:00:00, default=2
+2025-07-03 20:27:36,823 - root - DEBUG - Checking variable shifts for date: 2024-01-06 00:00:00
+2025-07-03 20:27:36,823 - root - DEBUG - No variable shift override for 2024-01-06 00:00:00, default=2
+2025-07-03 20:27:36,823 - root - DEBUG - Checking variable shifts for date: 2024-01-07 00:00:00
+2025-07-03 20:27:36,823 - root - DEBUG - No variable shift override for 2024-01-07 00:00:00, default=2
+2025-07-03 20:27:36,823 - root - DEBUG - [AdjustLastPost Iter 1] Total Last Post Counts (Non-Variable Periods): {'W001': 2, 'W002': 2, 'W003': 1, 'W004': 2}
+2025-07-03 20:27:36,823 - root - DEBUG -   Total Last Slots (Non-Variable): 7, Avg Last Posts/Worker: 1.75
+2025-07-03 20:27:36,823 - root - INFO - [AdjustLastPost Iter 1/5] No beneficial last post swaps found in this full pass over days.
+2025-07-03 20:27:36,823 - root - INFO - No last post adjustments made after 1 iteration(s).
+2025-07-03 20:27:36,823 - root - INFO - Returning saved best schedule with score: 100.0
+2025-07-03 20:27:36,823 - root - INFO - Applying final schedule data to scheduler state...
+2025-07-03 20:27:36,823 - root - INFO - Final schedule applied with score: 100.00
+2025-07-03 20:27:36,823 - root - INFO - --- Final Generated Schedule ---
+2025-07-03 20:27:36,823 - root - INFO - Total shifts assigned: 14
+2025-07-03 20:27:36,823 - root - INFO - Total slots: 14, Empty slots: 0
+2025-07-03 20:27:36,824 - root - INFO - Shift Counts per Worker:
+2025-07-03 20:27:36,824 - root - INFO -   Worker W001: 4 shifts
+2025-07-03 20:27:36,824 - root - INFO -   Worker W002: 4 shifts
+2025-07-03 20:27:36,824 - root - INFO -   Worker W003: 3 shifts
+2025-07-03 20:27:36,824 - root - INFO -   Worker W004: 3 shifts
+2025-07-03 20:27:36,824 - root - INFO - Weekend Shifts per Worker:
+2025-07-03 20:27:36,824 - root - INFO -   Worker W001: 2 weekend shifts
+2025-07-03 20:27:36,824 - root - INFO -   Worker W002: 2 weekend shifts
+2025-07-03 20:27:36,824 - root - INFO -   Worker W003: 1 weekend shifts
+2025-07-03 20:27:36,824 - root - INFO -   Worker W004: 1 weekend shifts
+2025-07-03 20:27:36,824 - root - INFO - Post Assignments per Worker:
+2025-07-03 20:27:36,824 - root - INFO -   Worker W001: P0(4), P1(0)
+2025-07-03 20:27:36,824 - root - INFO -   Worker W002: P0(0), P1(4)
+2025-07-03 20:27:36,824 - root - INFO -   Worker W003: P0(3), P1(0)
+2025-07-03 20:27:36,824 - root - INFO -   Worker W004: P0(0), P1(3)
+2025-07-03 20:27:36,824 - root - DEBUG - Scheduler.calculate_score called (placeholder)
+2025-07-03 20:27:36,824 - root - DEBUG - Calculated score (placeholder): 100.0
+2025-07-03 20:27:36,824 - root - INFO - Current Schedule Score: 100.0
+2025-07-03 20:27:36,824 - root - INFO - --- End Final Generated Schedule ---
+2025-07-03 20:27:36,824 - root - INFO - Schedule finalization phase completed successfully.
+2025-07-03 20:27:36,824 - root - INFO - Schedule generation orchestration completed successfully in 0.03 seconds.
+2025-07-03 20:27:36,825 - root - INFO - Validation completed: 14 errors, 0 warnings
+2025-07-03 20:27:36,825 - root - DEBUG - Published event: validation_result
