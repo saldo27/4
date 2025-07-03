@@ -44,9 +44,9 @@ def test_predictive_analytics_system():
         'enable_predictive_analytics': True,
         'predictive_analytics_config': {
             'enabled': True,
-            'auto_collect_data': False,
-            'storage_path': test_storage,
-            'forecast_horizon': 14
+            'auto_collect_data': True,
+            'storage_path': 'analytics_data',
+            'forecast_horizon': 30
         }
     }
     
