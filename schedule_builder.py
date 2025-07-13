@@ -1154,6 +1154,11 @@ class ScheduleBuilder:
                             logging.debug(f"Mandatory shift for {worker_id} on {date.strftime('%Y-%m-%d')} post {post} incompatible. Trying next post.")
                             continue
                         
+                        # CRITICAL FIX: Add comprehensive constraint check for mandatory assignments
+                        if not self._can_assign_worker(worker_id, date, post):
+                            logging.debug(f"Mandatory shift for {worker_id} on {date.strftime('%Y-%m-%d')} post {post} violates constraints. Trying next post.")
+                            continue
+                        
                         self.schedule[date][post] = worker_id
                         self.worker_assignments.setdefault(worker_id, set()).add(date) # Use self.worker_assignments
                         self.scheduler._update_tracking_data(worker_id, date, post, removing=False) # Call scheduler's central update
