@@ -1259,6 +1259,11 @@ class ScheduleBuilder:
 
                         # Double check slot is still None before assigning (paranoid check)
                         if self.schedule[date][post] is None:
+                            # CRITICAL FIX: Add comprehensive constraint check before assignment
+                            if not self._can_assign_worker(worker_id, date, post):
+                                logging.debug(f"  Assignment REJECTED (Constraint Check): W:{worker_id} for {date.strftime('%Y-%m-%d')} P:{post}")
+                                continue  # Try next candidate
+                            
                             self.schedule[date][post] = worker_id # Assign to the correct post index
                             self.worker_assignments.setdefault(worker_id, set()).add(date)
                             self.scheduler._update_tracking_data(worker_id, date, post)
@@ -1383,6 +1388,9 @@ class ScheduleBuilder:
                         others_now = [w for i, w in enumerate(self.schedule.get(date_val, [])) if i != post_val and w is not None]
                         if not self._check_incompatibility_with_list(worker_id_to_assign, others_now):
                             logging.debug(f"      -> Pass1 Assignment REJECTED (Last Minute Incompat): W:{worker_id_to_assign} for {date_val.strftime('%Y-%m-%d')} P:{post_val} at Relax {relax_lvl_attempt}")
+                        # CRITICAL FIX: Add comprehensive constraint check before assignment
+                        elif not self._can_assign_worker(worker_id_to_assign, date_val, post_val):
+                            logging.debug(f"      -> Pass1 Assignment REJECTED (Constraint Check): W:{worker_id_to_assign} for {date_val.strftime('%Y-%m-%d')} P:{post_val} at Relax {relax_lvl_attempt}")
                         else:
                             self.schedule[date_val][post_val] = worker_id_to_assign
                             self.worker_assignments.setdefault(worker_id_to_assign, set()).add(date_val)
