@@ -162,35 +162,25 @@ def test_weekend_limit_enforcement():
     # Initialize scheduler
     scheduler = Scheduler(config)
     
-    # Weekend/Holiday dates
-    friday1 = datetime(2024, 1, 5)    # Friday week 1
+    # Weekend/Holiday dates  
     saturday1 = datetime(2024, 1, 6)  # Saturday week 1
-    sunday1 = datetime(2024, 1, 7)    # Sunday week 1
-    friday2 = datetime(2024, 1, 12)   # Friday week 2
-    saturday2 = datetime(2024, 1, 13) # Saturday week 2
-    sunday2 = datetime(2024, 1, 14)   # Sunday week 2
-    holiday = datetime(2024, 1, 15)   # Holiday Monday week 3
-    friday3 = datetime(2024, 1, 19)   # Friday week 3
+    saturday2 = datetime(2024, 1, 13) # Saturday week 2 (consecutive weekend)
+    saturday3 = datetime(2024, 1, 20) # Saturday week 3 (would be 3rd consecutive)
     
-    weekend_dates = [friday1, saturday1, sunday1, friday2, saturday2, sunday2, holiday, friday3]
+    weekend_dates = [saturday1, saturday2, saturday3]
     
-    print(f"Testing weekend/holiday dates:")
-    for date in weekend_dates:
-        day_type = "Holiday" if date in scheduler.holidays else f"{date.strftime('%A')}"
+    print(f"Testing consecutive weekend scenario:")
+    for i, date in enumerate(weekend_dates[:2], 1):
+        day_type = f"{date.strftime('%A')} week {i}"
         print(f"  {date.strftime('%Y-%m-%d')} ({day_type})")
+    print(f"  {saturday3.strftime('%Y-%m-%d')} (Saturday week 3 - should fail)")
     
-    # Assign worker to first weekend (2 consecutive days)
-    scheduler.real_time_engine.incremental_updater.assign_worker_to_shift('W001', friday1, 0, force=True)
+    # Assign worker to first two consecutive Saturdays
     scheduler.real_time_engine.incremental_updater.assign_worker_to_shift('W001', saturday1, 0, force=True)
-    print(f"✓ Assigned W001 to first weekend: {friday1.strftime('%Y-%m-%d')}, {saturday1.strftime('%Y-%m-%d')}")
-    
-    # Assign worker to second weekend (should hit the limit)
-    scheduler.real_time_engine.incremental_updater.assign_worker_to_shift('W001', friday2, 0, force=True)
     scheduler.real_time_engine.incremental_updater.assign_worker_to_shift('W001', saturday2, 0, force=True)
-    print(f"✓ Assigned W001 to second weekend: {friday2.strftime('%Y-%m-%d')}, {saturday2.strftime('%Y-%m-%d')}")
+    print(f"✓ Assigned W001 to consecutive Saturdays: {saturday1.strftime('%Y-%m-%d')}, {saturday2.strftime('%Y-%m-%d')}")
     
-    # Test 1: Try to assign to third weekend - Saturday (should fail - exceeds consecutive limit)
-    saturday3 = datetime(2024, 1, 20)   # Saturday week 3 (different weekday than previous assignments)
+    # Test 1: Try to assign to third consecutive Saturday (should fail - exceeds consecutive limit)
     print(f"\nTest 1: Trying to assign W001 to {saturday3.strftime('%Y-%m-%d')} (would exceed consecutive weekend limit)")
     
     # Test constraint checker directly
@@ -205,7 +195,8 @@ def test_weekend_limit_enforcement():
     update_result = scheduler.real_time_engine.incremental_updater.assign_worker_to_shift('W001', saturday3, 0)
     print(f"  Incremental Updater result: {update_result.success} - {update_result.message}")
     
-    # Test 2: Try to assign to holiday (should also fail)
+    # Test 2: Try to assign to holiday (separate test)
+    holiday = datetime(2024, 1, 15)   # Holiday Monday week 3
     print(f"\nTest 2: Trying to assign W001 to {holiday.strftime('%Y-%m-%d')} (holiday)")
     
     can_assign_cc_holiday = not scheduler.constraint_checker._would_exceed_weekend_limit('W001', holiday)
