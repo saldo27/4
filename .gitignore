@@ -35,4 +35,7 @@ MANIFEST
 
 # OS files
 .DS_Store
-Thumbs.db
+Thumbs.db/tmp/
+__pycache__/
+*.pyc
+logs/
