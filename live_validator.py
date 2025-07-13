@@ -81,7 +81,7 @@ class LiveValidator:
     
     def validate_assignment(self, worker_id: str, shift_date: datetime, post_index: int) -> ValidationResult:
         """
-        Validate a potential worker assignment
+        Validate a potential worker assignment with data synchronization checks.
         
         Args:
             worker_id: ID of worker to validate
@@ -92,6 +92,17 @@ class LiveValidator:
             ValidationResult with validation details
         """
         try:
+            # ENHANCED: Ensure data synchronization before validation
+            if hasattr(self.scheduler, '_ensure_data_synchronization'):
+                if not self.scheduler._ensure_data_synchronization():
+                    return ValidationResult(
+                        is_valid=False,
+                        severity=ValidationSeverity.ERROR,
+                        message="Data synchronization issues detected before validation",
+                        constraint_type="data_synchronization",
+                        suggestions=["Run schedule rebuild to fix synchronization issues"]
+                    )
+            
             # Check basic availability
             availability_result = self._check_worker_availability(worker_id, shift_date)
             if not availability_result.is_valid:
@@ -135,7 +146,7 @@ class LiveValidator:
     
     def validate_schedule_integrity(self, check_partial: bool = False) -> List[ValidationResult]:
         """
-        Validate the entire schedule for integrity
+        Validate the entire schedule for integrity including data synchronization
         
         Args:
             check_partial: If True, validate even partially filled schedules
@@ -146,6 +157,10 @@ class LiveValidator:
         results = []
         
         try:
+            # ENHANCED: First check data synchronization
+            sync_result = self._check_data_synchronization()
+            results.append(sync_result)
+            
             # Check for constraint violations
             constraint_violations = self._find_all_constraint_violations()
             results.extend(constraint_violations)
@@ -181,6 +196,58 @@ class LiveValidator:
                 message=f"Schedule validation failed: {str(e)}",
                 constraint_type="system_error"
             )]
+    
+    def _check_data_synchronization(self) -> ValidationResult:
+        """
+        Check data synchronization between worker_assignments and schedule
+        
+        Returns:
+            ValidationResult with synchronization status
+        """
+        try:
+            if hasattr(self.scheduler, '_validate_data_synchronization'):
+                is_synchronized, validation_report = self.scheduler._validate_data_synchronization()
+                
+                if is_synchronized:
+                    return ValidationResult(
+                        is_valid=True,
+                        severity=ValidationSeverity.INFO,
+                        message="Data structures are properly synchronized",
+                        constraint_type="data_synchronization"
+                    )
+                else:
+                    # Count issues
+                    summary = validation_report.get('summary', {})
+                    workers_with_issues = summary.get('workers_with_issues', 0)
+                    missing_count = summary.get('missing_from_tracking', 0)
+                    extra_count = summary.get('extra_in_tracking', 0)
+                    
+                    return ValidationResult(
+                        is_valid=False,
+                        severity=ValidationSeverity.ERROR,
+                        message=f"Data synchronization issues: {workers_with_issues} workers affected, {missing_count} missing, {extra_count} extra assignments",
+                        constraint_type="data_synchronization",
+                        suggestions=[
+                            "Run schedule rebuild to fix synchronization",
+                            "Check for assignment/unassignment operations that might not update both structures"
+                        ]
+                    )
+            else:
+                return ValidationResult(
+                    is_valid=True,
+                    severity=ValidationSeverity.WARNING,
+                    message="Data synchronization validation not available",
+                    constraint_type="data_synchronization"
+                )
+                
+        except Exception as e:
+            logging.error(f"Error checking data synchronization: {e}")
+            return ValidationResult(
+                is_valid=False,
+                severity=ValidationSeverity.ERROR,
+                message=f"Synchronization check failed: {str(e)}",
+                constraint_type="data_synchronization"
+            )
     
     def detect_conflicts(self, date_range: Optional[Tuple[datetime, datetime]] = None) -> List[ConflictInfo]:
         """

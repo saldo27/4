@@ -52,16 +52,21 @@ class Scheduler:
             incompatible_worker_ids = {
                 worker['id'] for worker in self.workers_data if worker.get('is_incompatible', False)
             }
-            logging.debug(f"Identified incompatible worker IDs: {incompatible_worker_ids}")
+            logging.debug(f"Identified incompatible worker IDs (from is_incompatible flag): {incompatible_worker_ids}")
 
             for worker in self.workers_data:
                 worker_id = worker['id']
-                # Initialize the list
-                worker['incompatible_with'] = []
-                if worker.get('is_incompatible', False):
-                    # If this worker is incompatible, add all *other* incompatible workers to its list
-                    worker['incompatible_with'] = list(incompatible_worker_ids - {worker_id}) # Exclude self
-                logging.debug(f"Worker {worker_id} incompatible_with list: {worker['incompatible_with']}")
+                # Check if incompatible_with is already defined
+                if 'incompatible_with' not in worker or not worker['incompatible_with']:
+                    # Initialize the list if not already set
+                    worker['incompatible_with'] = []
+                    if worker.get('is_incompatible', False):
+                        # If this worker is incompatible, add all *other* incompatible workers to its list
+                        worker['incompatible_with'] = list(incompatible_worker_ids - {worker_id}) # Exclude self
+                else:
+                    # Respect existing incompatible_with list
+                    logging.debug(f"Worker {worker_id} has predefined incompatible_with list: {worker['incompatible_with']}")
+                logging.debug(f"Worker {worker_id} final incompatible_with list: {worker['incompatible_with']}")
             # --- END: Build incompatibility lists ---
     
             # Get the new configurable parameters with defaults from config
@@ -437,6 +442,156 @@ class Scheduler:
             logging.error(f"Error synchronizing tracking data: {str(e)}", exc_info=True)
             return False
         
+    def _validate_data_synchronization(self) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Validate that worker_assignments and schedule are perfectly synchronized.
+        
+        Returns:
+            Tuple[bool, Dict]: (is_synchronized, validation_report)
+        """
+        logging.debug("Validating data synchronization between worker_assignments and schedule...")
+        
+        try:
+            validation_report = {
+                'is_synchronized': True,
+                'discrepancies': [],
+                'summary': {
+                    'total_workers': len(self.workers_data),
+                    'workers_with_issues': 0,
+                    'total_assignments_schedule': 0,
+                    'total_assignments_tracking': 0,
+                    'missing_from_tracking': 0,
+                    'extra_in_tracking': 0
+                }
+            }
+            
+            # Build assignments from schedule for comparison
+            schedule_assignments = {}
+            for worker in self.workers_data:
+                schedule_assignments[worker['id']] = set()
+            
+            for date, shifts in self.schedule.items():
+                validation_report['summary']['total_assignments_schedule'] += len([s for s in shifts if s is not None])
+                for shift_idx, worker_id in enumerate(shifts):
+                    if worker_id is not None:
+                        if worker_id not in schedule_assignments:
+                            schedule_assignments[worker_id] = set()
+                        schedule_assignments[worker_id].add(date)
+            
+            # Count total assignments in tracking
+            for worker_id, assignments in self.worker_assignments.items():
+                validation_report['summary']['total_assignments_tracking'] += len(assignments)
+            
+            # Compare each worker's assignments
+            for worker_id in set(list(self.worker_assignments.keys()) + list(schedule_assignments.keys())):
+                tracking_assignments = self.worker_assignments.get(worker_id, set())
+                schedule_worker_assignments = schedule_assignments.get(worker_id, set())
+                
+                missing_from_tracking = schedule_worker_assignments - tracking_assignments
+                extra_in_tracking = tracking_assignments - schedule_worker_assignments
+                
+                if missing_from_tracking or extra_in_tracking:
+                    validation_report['is_synchronized'] = False
+                    validation_report['summary']['workers_with_issues'] += 1
+                    validation_report['summary']['missing_from_tracking'] += len(missing_from_tracking)
+                    validation_report['summary']['extra_in_tracking'] += len(extra_in_tracking)
+                    
+                    discrepancy = {
+                        'worker_id': worker_id,
+                        'missing_from_tracking': sorted([d.strftime('%Y-%m-%d') for d in missing_from_tracking]),
+                        'extra_in_tracking': sorted([d.strftime('%Y-%m-%d') for d in extra_in_tracking]),
+                        'tracking_count': len(tracking_assignments),
+                        'schedule_count': len(schedule_worker_assignments)
+                    }
+                    validation_report['discrepancies'].append(discrepancy)
+            
+            # Log summary
+            if validation_report['is_synchronized']:
+                logging.debug("✓ Data synchronization validation passed: worker_assignments and schedule are synchronized")
+            else:
+                logging.warning(f"✗ Data synchronization issues detected: {len(validation_report['discrepancies'])} workers affected")
+                for discrepancy in validation_report['discrepancies'][:3]:  # Log first 3 issues
+                    worker_id = discrepancy['worker_id']
+                    logging.warning(f"  Worker {worker_id}: {len(discrepancy['missing_from_tracking'])} missing, {len(discrepancy['extra_in_tracking'])} extra")
+            
+            return validation_report['is_synchronized'], validation_report
+            
+        except Exception as e:
+            logging.error(f"Error validating data synchronization: {str(e)}", exc_info=True)
+            return False, {'error': str(e), 'is_synchronized': False}
+    
+    def _repair_data_synchronization(self, validation_report: Dict[str, Any] = None) -> bool:
+        """
+        Repair synchronization issues between worker_assignments and schedule.
+        Uses schedule as the source of truth.
+        
+        Args:
+            validation_report: Optional validation report from _validate_data_synchronization
+            
+        Returns:
+            bool: True if repair was successful
+        """
+        logging.info("Repairing data synchronization issues...")
+        
+        try:
+            # Get current validation report if not provided
+            if validation_report is None:
+                is_synchronized, validation_report = self._validate_data_synchronization()
+                if is_synchronized:
+                    logging.info("No repair needed: data is already synchronized")
+                    return True
+            
+            # Build correct worker_assignments from schedule (schedule is source of truth)
+            corrected_assignments = {}
+            for worker in self.workers_data:
+                corrected_assignments[worker['id']] = set()
+            
+            for date, shifts in self.schedule.items():
+                for shift_idx, worker_id in enumerate(shifts):
+                    if worker_id is not None:
+                        if worker_id not in corrected_assignments:
+                            corrected_assignments[worker_id] = set()
+                        corrected_assignments[worker_id].add(date)
+            
+            # Replace worker_assignments with corrected version
+            self.worker_assignments = corrected_assignments
+            
+            # Verify the repair
+            is_synchronized_after, validation_after = self._validate_data_synchronization()
+            
+            if is_synchronized_after:
+                total_fixes = validation_report.get('summary', {}).get('missing_from_tracking', 0) + \
+                             validation_report.get('summary', {}).get('extra_in_tracking', 0)
+                logging.info(f"✓ Data synchronization repair successful: Fixed {total_fixes} inconsistencies")
+                return True
+            else:
+                logging.error("✗ Data synchronization repair failed: Issues still persist")
+                return False
+                
+        except Exception as e:
+            logging.error(f"Error repairing data synchronization: {str(e)}", exc_info=True)
+            return False
+    
+    def _ensure_data_synchronization(self) -> bool:
+        """
+        Ensure data synchronization by validating and repairing if necessary.
+        
+        Returns:
+            bool: True if data is synchronized after this call
+        """
+        try:
+            is_synchronized, validation_report = self._validate_data_synchronization()
+            
+            if not is_synchronized:
+                logging.warning("Data synchronization issues detected, attempting repair...")
+                return self._repair_data_synchronization(validation_report)
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error ensuring data synchronization: {str(e)}", exc_info=True)
+            return False
+
     def _reconcile_schedule_tracking(self):
         """
         Reconciles worker_assignments tracking with the actual schedule
@@ -445,41 +600,16 @@ class Scheduler:
         logging.info("Reconciling worker assignments tracking with schedule...")
     
         try:
-            # Build tracking from scratch based on current schedule
-            new_worker_assignments = {}
-            for worker in self.workers_data:
-                new_worker_assignments[worker['id']] = set()
+            # Use the new synchronization validation and repair methods
+            is_synchronized = self._ensure_data_synchronization()
             
-            # Go through the schedule and rebuild tracking
-            for date, shifts in self.schedule.items():
-                for shift_idx, worker_id in enumerate(shifts):
-                    if worker_id is not None:
-                        if worker_id not in new_worker_assignments:
-                            new_worker_assignments[worker_id] = set()
-                        new_worker_assignments[worker_id].add(date)
-        
-            # Find and log discrepancies
-            total_discrepancies = 0
-            for worker_id, assignments in self.worker_assignments.items():
-                if worker_id not in new_worker_assignments:
-                    new_worker_assignments[worker_id] = set()
+            if is_synchronized:
+                logging.info("Reconciliation complete: Data structures are synchronized")
+                return True
+            else:
+                logging.error("Reconciliation failed: Unable to synchronize data structures")
+                return False
                 
-                extra_dates = assignments - new_worker_assignments[worker_id]
-                missing_dates = new_worker_assignments[worker_id] - assignments
-            
-                if extra_dates:
-                    logging.debug(f"Worker {worker_id} has {len(extra_dates)} tracked dates not in schedule")
-                    total_discrepancies += len(extra_dates)
-                
-                if missing_dates:
-                    logging.debug(f"Worker {worker_id} has {len(missing_dates)} schedule dates not tracked")
-                    total_discrepancies += len(missing_dates)
-        
-            # Replace with corrected tracking
-            self.worker_assignments = new_worker_assignments
-        
-            logging.info(f"Reconciliation complete: Fixed {total_discrepancies} tracking discrepancies")
-            return True
         except Exception as e:
             logging.error(f"Error reconciling schedule tracking: {str(e)}", exc_info=True)
             return False
@@ -489,6 +619,8 @@ class Scheduler:
         Update all relevant tracking data structures when a worker is assigned or unassigned.
         This includes worker_assignments, worker_posts, worker_weekdays, and worker_weekends.
         It also calls the eligibility tracker if it exists.
+        
+        Enhanced to ensure data synchronization between schedule and worker_assignments.
         """
         try:
             # Ensure basic data structures exist for the worker
@@ -561,12 +693,59 @@ class Scheduler:
                     self.eligibility_tracker.remove_worker_assignment(worker_id, date)
                 else:
                     self.eligibility_tracker.update_worker_status(worker_id, date)
+            
+            # ENHANCED: Validate synchronization after update
+            # This is a critical addition to catch synchronization issues immediately
+            if hasattr(self, '_validate_assignment_consistency'):
+                if not self._validate_assignment_consistency(worker_id, date, removing):
+                    logging.error(f"SYNC ERROR: Data synchronization issue detected after {'removing' if removing else 'adding'} worker {worker_id} on {date.strftime('%Y-%m-%d')}")
+                    # Attempt automatic repair
+                    if hasattr(self, '_ensure_data_synchronization'):
+                        self._ensure_data_synchronization()
 
             logging.debug(f"{'Removed' if removing else 'Added'} assignment and updated tracking for worker {worker_id} on {date.strftime('%Y-%m-%d')}, post {post}")
 
         except Exception as e:
             logging.error(f"Error in _update_tracking_data for worker {worker_id}, date {date}, post {post}, removing={removing}: {str(e)}", exc_info=True)
             raise
+    
+    def _validate_assignment_consistency(self, worker_id: str, date: datetime, removing: bool = False) -> bool:
+        """
+        Validate that a specific assignment is consistent between schedule and worker_assignments.
+        
+        Args:
+            worker_id: ID of the worker
+            date: Date of the assignment
+            removing: Whether this is checking after a removal operation
+            
+        Returns:
+            bool: True if consistent, False if inconsistent
+        """
+        try:
+            # Check if worker is in schedule for this date
+            is_in_schedule = (date in self.schedule and 
+                             worker_id in self.schedule.get(date, []))
+            
+            # Check if worker is in tracking for this date
+            is_in_tracking = (worker_id in self.worker_assignments and 
+                             date in self.worker_assignments.get(worker_id, set()))
+            
+            if removing:
+                # After removal, worker should not be in either structure
+                if is_in_schedule or is_in_tracking:
+                    logging.debug(f"Inconsistency after removal: worker {worker_id} still found in {'schedule' if is_in_schedule else 'tracking'} for {date.strftime('%Y-%m-%d')}")
+                    return False
+            else:
+                # After addition, worker should be in both structures
+                if is_in_schedule != is_in_tracking:
+                    logging.debug(f"Inconsistency after addition: worker {worker_id} found in {'schedule' if is_in_schedule else 'tracking'} but not {'tracking' if is_in_schedule else 'schedule'} for {date.strftime('%Y-%m-%d')}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error validating assignment consistency: {str(e)}", exc_info=True)
+            return False
         
     # ========================================
     # 3. TARGET AND CALCULATION METHODS
