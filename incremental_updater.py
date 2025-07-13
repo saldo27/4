@@ -379,54 +379,39 @@ class IncrementalUpdater:
         
         # Check worker1 constraints for shift2
         if worker1:
-            # For swap operations, temporarily simulate the worker being removed from shift1
-            # so the constraint check doesn't consider the current assignment
-            original_assignments = self.scheduler.worker_assignments.get(worker1, set()).copy()
-            if shift_date1 in original_assignments:
-                self.scheduler.worker_assignments[worker1].discard(shift_date1)
+            # For 7/14 day pattern and gap constraints, we need to keep the original assignments
+            # but for incompatibility, we need to consider the swap
+            can_assign, reason = self.scheduler.constraint_checker._check_constraints(worker1, shift_date2)
+            if not can_assign:
+                constraints_ok = False
+                conflicts.append(f"Worker {worker1} cannot take shift 2: {reason}")
             
-            try:
-                can_assign, reason = self.scheduler.constraint_checker._check_constraints(worker1, shift_date2)
-                if not can_assign:
-                    constraints_ok = False
-                    conflicts.append(f"Worker {worker1} cannot take shift 2: {reason}")
-                
-                # Also check incompatibility with workers already on shift2 (excluding worker2 who will be swapped)
-                if shift_date2 in self.scheduler.schedule:
-                    assigned_workers_shift2 = [w for i, w in enumerate(self.scheduler.schedule[shift_date2]) 
-                                             if w is not None and i != post_index2]
-                    for assigned_worker in assigned_workers_shift2:
-                        if self.scheduler.constraint_checker._are_workers_incompatible(worker1, assigned_worker):
-                            constraints_ok = False
-                            conflicts.append(f"Worker {worker1} is incompatible with {assigned_worker} on shift 2")
-            finally:
-                # Restore original assignments
-                self.scheduler.worker_assignments[worker1] = original_assignments
+            # For incompatibility check, consider workers on shift2 excluding worker2 who will be swapped
+            if shift_date2 in self.scheduler.schedule:
+                assigned_workers_shift2 = [w for i, w in enumerate(self.scheduler.schedule[shift_date2]) 
+                                         if w is not None and i != post_index2]
+                for assigned_worker in assigned_workers_shift2:
+                    if self.scheduler.constraint_checker._are_workers_incompatible(worker1, assigned_worker):
+                        constraints_ok = False
+                        conflicts.append(f"Worker {worker1} is incompatible with {assigned_worker} on shift 2")
         
         # Check worker2 constraints for shift1
         if worker2:
-            # For swap operations, temporarily simulate the worker being removed from shift2
-            original_assignments = self.scheduler.worker_assignments.get(worker2, set()).copy()
-            if shift_date2 in original_assignments:
-                self.scheduler.worker_assignments[worker2].discard(shift_date2)
+            # For 7/14 day pattern and gap constraints, we need to keep the original assignments
+            # but for incompatibility, we need to consider the swap
+            can_assign, reason = self.scheduler.constraint_checker._check_constraints(worker2, shift_date1)
+            if not can_assign:
+                constraints_ok = False
+                conflicts.append(f"Worker {worker2} cannot take shift 1: {reason}")
             
-            try:
-                can_assign, reason = self.scheduler.constraint_checker._check_constraints(worker2, shift_date1)
-                if not can_assign:
-                    constraints_ok = False
-                    conflicts.append(f"Worker {worker2} cannot take shift 1: {reason}")
-                
-                # Also check incompatibility with workers already on shift1 (excluding worker1 who will be swapped)
-                if shift_date1 in self.scheduler.schedule:
-                    assigned_workers_shift1 = [w for i, w in enumerate(self.scheduler.schedule[shift_date1]) 
-                                             if w is not None and i != post_index1]
-                    for assigned_worker in assigned_workers_shift1:
-                        if self.scheduler.constraint_checker._are_workers_incompatible(worker2, assigned_worker):
-                            constraints_ok = False
-                            conflicts.append(f"Worker {worker2} is incompatible with {assigned_worker} on shift 1")
-            finally:
-                # Restore original assignments
-                self.scheduler.worker_assignments[worker2] = original_assignments
+            # For incompatibility check, consider workers on shift1 excluding worker1 who will be swapped
+            if shift_date1 in self.scheduler.schedule:
+                assigned_workers_shift1 = [w for i, w in enumerate(self.scheduler.schedule[shift_date1]) 
+                                         if w is not None and i != post_index1]
+                for assigned_worker in assigned_workers_shift1:
+                    if self.scheduler.constraint_checker._are_workers_incompatible(worker2, assigned_worker):
+                        constraints_ok = False
+                        conflicts.append(f"Worker {worker2} is incompatible with {assigned_worker} on shift 1")
         
         if not constraints_ok:
             return UpdateResult(False, "Swap would violate constraints", conflicts=conflicts)
