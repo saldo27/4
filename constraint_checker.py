@@ -180,7 +180,12 @@ class ConstraintChecker:
                         return False
         
             # Prevent same day of week in consecutive weeks (7 or 14 day pattern)
+            # IMPORTANT: This constraint only applies to regular weekdays (Mon-Thu), 
+            # NOT to weekend days (Fri-Sun) where consecutive assignments are normal
             if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
+                # Allow weekend days to be assigned on same weekday 7/14 days apart
+                if date.weekday() >= 4 or prev_date.weekday() >= 4:  # Fri, Sat, Sun
+                    continue  # Skip this constraint for weekend days
                 logging.debug(f"Constraint Check: Worker {worker_id} on {date.strftime('%Y-%m-%d')} fails 7/14 day pattern with {prev_date.strftime('%Y-%m-%d')}")
                 return False
         
@@ -364,7 +369,7 @@ class ConstraintChecker:
             if is_special_day_for_unavailability_check:
                 if self._would_exceed_weekend_limit(worker_id, date): # This now calls the consistently defined limit
                     logging.debug(f"Worker {worker_id} would exceed weekend limit if assigned on {date}")
-                return True
+                    return True
 
             return False
 

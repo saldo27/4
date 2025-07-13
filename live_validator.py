@@ -335,17 +335,65 @@ class LiveValidator:
         )
     
     def _check_gap_constraints(self, worker_id: str, shift_date: datetime) -> ValidationResult:
-        """Check minimum gap between shifts"""
+        """Check minimum gap between shifts including 7/14 day pattern and Friday-Monday rules"""
         worker_assignments = self.scheduler.worker_assignments.get(worker_id, set())
-        gap_days = self.scheduler.gap_between_shifts
+        
+        # Get worker data for part-time adjustments
+        worker_data = next((w for w in self.scheduler.workers_data if w['id'] == worker_id), None)
+        if not worker_data:
+            return ValidationResult(
+                is_valid=False,
+                severity=ValidationSeverity.ERROR,
+                message=f"Worker {worker_id} not found",
+                constraint_type="gap_constraint"
+            )
+        
+        work_percentage = worker_data.get('work_percentage', 100)
+        
+        # Determine minimum days required between shifts
+        min_required_days_between = self.scheduler.gap_between_shifts + 1
+        
+        # Part-time workers might need a larger gap
+        if work_percentage < 70:
+            min_required_days_between = max(min_required_days_between, self.scheduler.gap_between_shifts + 2)
         
         for assigned_date in worker_assignments:
-            days_diff = abs((shift_date - assigned_date).days)
-            if 0 < days_diff < gap_days:
+            days_between = abs((shift_date - assigned_date).days)
+            
+            # Basic gap check
+            if days_between < min_required_days_between:
                 return ValidationResult(
                     is_valid=False,
                     severity=ValidationSeverity.ERROR,
-                    message=f"Gap constraint violated: {days_diff} days from {assigned_date.strftime('%Y-%m-%d')} (minimum: {gap_days})",
+                    message=f"Gap constraint violated: {days_between} days from {assigned_date.strftime('%Y-%m-%d')} (minimum: {min_required_days_between})",
+                    constraint_type="gap_constraint",
+                    affected_items=[assigned_date.strftime('%Y-%m-%d')]
+                )
+            
+            # Friday-Monday rule: only apply if base gap allows for 3-day difference
+            if self.scheduler.gap_between_shifts <= 1:
+                if days_between == 3:
+                    if ((assigned_date.weekday() == 4 and shift_date.weekday() == 0) or 
+                        (shift_date.weekday() == 4 and assigned_date.weekday() == 0)):
+                        return ValidationResult(
+                            is_valid=False,
+                            severity=ValidationSeverity.ERROR,
+                            message=f"Friday-Monday rule violated: {days_between} days from {assigned_date.strftime('%Y-%m-%d')} (Friday-Monday not allowed)",
+                            constraint_type="gap_constraint",
+                            affected_items=[assigned_date.strftime('%Y-%m-%d')]
+                        )
+            
+            # 7/14 day pattern check: prevent same weekday assignments exactly 7 or 14 days apart
+            # IMPORTANT: This constraint only applies to regular weekdays (Mon-Thu), 
+            # NOT to weekend days (Fri-Sun) where consecutive assignments are normal
+            if (days_between == 7 or days_between == 14) and shift_date.weekday() == assigned_date.weekday():
+                # Allow weekend days to be assigned on same weekday 7/14 days apart
+                if shift_date.weekday() >= 4 or assigned_date.weekday() >= 4:  # Fri, Sat, Sun
+                    continue  # Skip this constraint for weekend days
+                return ValidationResult(
+                    is_valid=False,
+                    severity=ValidationSeverity.ERROR,
+                    message=f"7/14 day pattern violated: {days_between} days from {assigned_date.strftime('%Y-%m-%d')} (same weekday not allowed)",
                     constraint_type="gap_constraint",
                     affected_items=[assigned_date.strftime('%Y-%m-%d')]
                 )
@@ -358,10 +406,12 @@ class LiveValidator:
         )
     
     def _check_weekend_limits(self, worker_id: str, shift_date: datetime) -> ValidationResult:
-        """Check weekend/holiday shift limits"""
+        """Check weekend/holiday shift limits using comprehensive constraint checker logic"""
+        # Check if this is a weekend/holiday day using the same logic as constraint checker
         is_weekend_or_holiday = (
-            shift_date.weekday() >= 4 or  # Saturday/Sunday
-            shift_date in self.scheduler.holidays
+            shift_date.weekday() >= 4 or  # Friday, Saturday, Sunday
+            shift_date in self.scheduler.holidays or
+            (shift_date + timedelta(days=1)) in self.scheduler.holidays  # Day before holiday
         )
         
         if not is_weekend_or_holiday:
@@ -372,13 +422,13 @@ class LiveValidator:
                 constraint_type="weekend_limit"
             )
         
-        # Use existing constraint checker logic
+        # Use the comprehensive constraint checker logic
         if hasattr(self.scheduler, 'constraint_checker'):
             if self.scheduler.constraint_checker._would_exceed_weekend_limit(worker_id, shift_date):
                 return ValidationResult(
                     is_valid=False,
                     severity=ValidationSeverity.ERROR,
-                    message=f"Weekend/holiday limit would be exceeded",
+                    message=f"Weekend/holiday limit would be exceeded for worker {worker_id}",
                     constraint_type="weekend_limit"
                 )
         
