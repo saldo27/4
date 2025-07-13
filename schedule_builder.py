@@ -359,7 +359,8 @@ class ScheduleBuilder:
 
     def _would_exceed_weekend_limit(self, worker_id, date):
         """
-        Check if adding this date would exceed the worker's weekend limit
+        Check if adding this date would exceed the worker's weekend limit.
+        Use the constraint_checker's logic for consistency.
 
         Args:
             worker_id: ID of the worker to check
@@ -368,60 +369,8 @@ class ScheduleBuilder:
         Returns:
             bool: True if weekend limit would be exceeded, False otherwise
         """
-
-        is_special_day = (date.weekday() >= 4 or # Friday, Saturday, Sunday
-                  date in self.holidays or 
-                  (date + timedelta(days=1)) in self.holidays)
-        if not is_special_day:
-            return False # Not a day relevant for this constraint
-        
-        # Skip if not a weekend
-        if not self.date_utils.is_weekend_day(date) and date not in self.holidays:
-            return False
-
-        # Get worker data
-        worker = next((w for w in self.workers_data if w['id'] == worker_id), None)
-        if not worker:
-            return True
-
-        # Get weekend assignments for this worker
-        current_worker_assignments = self.scheduler.worker_assignments.get(worker_id, set())
-        weekend_dates = []
-        for assignment_date in current_worker_assignments:
-            if self._is_weekend_or_holiday(assignment_date):
-                weekend_dates.append(assignment_date)
-
-        # When checking the target 'date' itself:
-        if (date.weekday() >= 4 or 
-            date in self.holidays or 
-            (date + timedelta(days=1)) in self.holidays):
-            if date not in weekend_dates: # if it's a special day being added
-                weekend_dates.append(date)
-
-        # Calculate the maximum allowed weekend shifts based on work percentage
-        work_percentage = worker.get('work_percentage', 100)
-        max_weekend_shifts = self.max_consecutive_weekends  # Use the configurable parameter
-        if work_percentage < 100:
-            # For part-time workers, adjust max consecutive weekends proportionally
-            max_weekend_shifts = max(1, int(self.max_consecutive_weekends * work_percentage / 100))
-
-        # Check if adding this date would exceed the limit for any 3-week period
-        if date in weekend_dates:
-            return False  # Already counted
-
-        # Add the date temporarily
-        test_dates = weekend_dates + [date]
-        test_dates.sort()
-
-        # Check for any 3-week period with too many weekend shifts
-        three_weeks = timedelta(days=21)
-        for i, start_date in enumerate(test_dates):
-            end_date = start_date + three_weeks
-            count = sum(1 for d in test_dates[i:] if d <= end_date)
-            if count > max_weekend_shifts:
-                return True
-
-        return False
+        # Use the constraint_checker's method for consistency
+        return self.constraint_checker._would_exceed_weekend_limit(worker_id, date)
     
     def _can_assign_worker(self, worker_id, date, post):
         try:
@@ -453,7 +402,12 @@ class ScheduleBuilder:
                         return False
                 
                     # Check for 7-14 day pattern (same weekday in consecutive weeks)
+                    # IMPORTANT: This constraint only applies to regular weekdays (Mon-Thu), 
+                    # NOT to weekend days (Fri-Sun) where consecutive assignments are normal
                     if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
+                        # Allow weekend days to be assigned on same weekday 7/14 days apart
+                        if date.weekday() >= 4 or prev_date.weekday() >= 4:  # Fri, Sat, Sun
+                            continue  # Skip this constraint for weekend days
                         return False
             
             # Special case: Friday-Monday check if gap is only 1 day
@@ -628,7 +582,12 @@ class ScheduleBuilder:
                     continue
                 days_between = abs((date - prev_date).days)
                 # Check for exactly 7 or 14 days pattern AND same weekday
+                # IMPORTANT: This constraint only applies to regular weekdays (Mon-Thu), 
+                # NOT to weekend days (Fri-Sun) where consecutive assignments are normal
                 if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
+                    # Allow weekend days to be assigned on same weekday 7/14 days apart
+                    if date.weekday() >= 4 or prev_date.weekday() >= 4:  # Fri, Sat, Sun
+                        continue  # Skip this constraint for weekend days
                     logging.debug(f"Sim Check Fail: {days_between} day pattern conflict for {worker_id} between {prev_date} and {date}")
                     return False
                 
@@ -691,8 +650,13 @@ class ScheduleBuilder:
                     if ((prev_date.weekday() == 4 and date.weekday() == 0) or \
                         (date.weekday() == 4 and prev_date.weekday() == 0)):
                         return False
-            # Add check for weekly pattern (7/14 day)
+            # Add check for weekly pattern (7/14 day) - weekdays only
+            # IMPORTANT: This constraint only applies to regular weekdays (Mon-Thu), 
+            # NOT to weekend days (Fri-Sun) where consecutive assignments are normal
             if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
+                # Allow weekend days to be assigned on same weekday 7/14 days apart
+                if date.weekday() >= 4 or prev_date.weekday() >= 4:  # Fri, Sat, Sun
+                    continue  # Skip this constraint for weekend days
                 return False
         return True
     
@@ -901,6 +865,16 @@ class ScheduleBuilder:
                     (date.weekday() == 4 and prev_date.weekday() == 0)):
                     if days_between == 3:
                         return False
+            
+            # CRITICAL FIX: Add 7/14 day pattern check (same weekday constraint)
+            # IMPORTANT: This constraint only applies to regular weekdays (Mon-Thu), 
+            # NOT to weekend days (Fri-Sun) where consecutive assignments are normal
+            if (days_between == 7 or days_between == 14) and date.weekday() == prev_date.weekday():
+                # Allow weekend days to be assigned on same weekday 7/14 days apart
+                if date.weekday() >= 4 or prev_date.weekday() >= 4:  # Fri, Sat, Sun
+                    continue  # Skip this constraint for weekend days
+                logging.debug(f"ScheduleBuilder: Worker {worker_id} on {date.strftime('%Y-%m-%d')} fails 7/14 day pattern with {prev_date.strftime('%Y-%m-%d')}")
+                return False
         
         return True
 
@@ -2560,9 +2534,15 @@ class ScheduleBuilder:
                     return False
         
             # NEW: Check for 7/14 day pattern (same day of week in consecutive weeks)
+            # IMPORTANT: This constraint only applies to regular weekdays (Mon-Thu), 
+            # NOT to weekend days (Fri-Sun) where consecutive assignments are normal
             if (days_between == 7 or days_between == 14) and date2.weekday() == assigned_date_val.weekday():
-                logging.debug(f"Swap rejected: Worker {worker1_id} would have {days_between} day pattern")
-                return False
+                # Allow weekend days to be assigned on same weekday 7/14 days apart
+                if date2.weekday() >= 4 or assigned_date_val.weekday() >= 4:  # Fri, Sat, Sun
+                    pass  # Skip this constraint for weekend days
+                else:
+                    logging.debug(f"Swap rejected: Worker {worker1_id} would have {days_between} day pattern")
+                    return False
     
         # 4. Check minimum gap constraints for worker2
         worker2_dates = sorted(list(assignments_copy[worker2_id]))
@@ -2584,9 +2564,15 @@ class ScheduleBuilder:
                     return False
         
             # NEW: Check for 7/14 day pattern (same day of week in consecutive weeks)
+            # IMPORTANT: This constraint only applies to regular weekdays (Mon-Thu), 
+            # NOT to weekend days (Fri-Sun) where consecutive assignments are normal
             if (days_between == 7 or days_between == 14) and date1.weekday() == assigned_date_val.weekday():
-                logging.debug(f"Swap rejected: Worker {worker2_id} would have {days_between} day pattern")
-                return False
+                # Allow weekend days to be assigned on same weekday 7/14 days apart
+                if date1.weekday() >= 4 or assigned_date_val.weekday() >= 4:  # Fri, Sat, Sun
+                    pass  # Skip this constraint for weekend days
+                else:
+                    logging.debug(f"Swap rejected: Worker {worker2_id} would have {days_between} day pattern")
+                    return False
         
         # 5. Check weekend constraints for worker1
         worker1_data_val = next((w for w in self.workers_data if w['id'] == worker1_id), None) # Renamed worker1 to worker1_data_val

@@ -384,7 +384,12 @@ class LiveValidator:
                         )
             
             # 7/14 day pattern check: prevent same weekday assignments exactly 7 or 14 days apart
+            # IMPORTANT: This constraint only applies to regular weekdays (Mon-Thu), 
+            # NOT to weekend days (Fri-Sun) where consecutive assignments are normal
             if (days_between == 7 or days_between == 14) and shift_date.weekday() == assigned_date.weekday():
+                # Allow weekend days to be assigned on same weekday 7/14 days apart
+                if shift_date.weekday() >= 4 or assigned_date.weekday() >= 4:  # Fri, Sat, Sun
+                    continue  # Skip this constraint for weekend days
                 return ValidationResult(
                     is_valid=False,
                     severity=ValidationSeverity.ERROR,
