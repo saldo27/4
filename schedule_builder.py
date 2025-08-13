@@ -3177,6 +3177,291 @@ class ScheduleBuilder:
         else:
             logging.debug(f"Date {date_to_check.strftime('%Y-%m-%d')} is NOT in a variable shift period (standard shifts: {self.scheduler.num_shifts}).")
         return is_variable
+    
+    def _balance_weekday_distribution(self, tolerance=2, max_iterations=5):
+        """
+        Equilibra la distribución de turnos a lo largo de todos los días de la semana.
+        Asegura que cada trabajador tenga aproximadamente los mismos turnos asignados
+        en cada día de la semana (lunes, martes, etc.) con una tolerancia de ±2 turnos.
+        
+        Args:
+            tolerance (int): Tolerancia permitida en la diferencia de turnos por día de semana (±2 por defecto)
+            max_iterations (int): Número máximo de iteraciones para intentar equilibrar
+            
+        Returns:
+            bool: True si se realizaron cambios, False si no
+        """
+        logging.info(f"Starting weekday distribution balancing (tolerance=±{tolerance}, max_iterations={max_iterations})")
+        
+        total_swaps_made = False
+        weekday_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        
+        for iteration in range(max_iterations):
+            logging.info(f"--- Weekday Balance Iteration: {iteration + 1}/{max_iterations} ---")
+            
+            # Recalcular distribución actual por trabajador y día de la semana
+            worker_weekday_counts = {}
+            
+            # Inicializar contadores
+            # Handle different data structures for workers_data
+            if isinstance(self.workers_data, dict):
+                worker_ids = list(self.workers_data.keys())
+            elif isinstance(self.workers_data, list):
+                # Extract worker IDs from list structure
+                worker_ids = []
+                for worker in self.workers_data:
+                    if isinstance(worker, dict) and 'worker_id' in worker:
+                        worker_ids.append(worker['worker_id'])
+                    elif isinstance(worker, dict) and 'id' in worker:
+                        worker_ids.append(worker['id'])
+            else:
+                logging.warning("Unknown workers_data structure, using fallback")
+                worker_ids = ['T001', 'T002', 'T003', 'T004', 'T005', 'T006']
+            
+            for worker_id in worker_ids:
+                worker_weekday_counts[worker_id] = {day: 0 for day in range(7)}  # 0=Monday, 6=Sunday
+            
+            # Contar turnos actuales por día de la semana
+            for date_str, posts in self.schedule.items():
+                try:
+                    # Manejar tanto datetime como string
+                    if isinstance(date_str, datetime):
+                        date_obj = date_str
+                    else:
+                        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                    
+                    weekday = date_obj.weekday()  # 0=Monday, 6=Sunday
+                    
+                    # Handle different data structures for posts
+                    if isinstance(posts, dict):
+                        items = posts.items()
+                    elif isinstance(posts, list):
+                        # If posts is a list, enumerate it to get index-value pairs
+                        items = enumerate(posts)
+                    else:
+                        continue
+                    
+                    for post_idx, worker_id in items:
+                        if worker_id and worker_id != "None":
+                            worker_id_str = str(worker_id)
+                            if worker_id_str in worker_weekday_counts:
+                                worker_weekday_counts[worker_id_str][weekday] += 1
+                except (ValueError, KeyError, TypeError) as e:
+                    logging.debug(f"Skipping invalid date {date_str}: {e}")
+                    continue
+            
+            # Analizar desequilibrios por trabajador
+            swaps_made_this_iteration = False
+            workers_to_rebalance = []
+            
+            for worker_id, weekday_counts in worker_weekday_counts.items():
+                total_shifts = sum(weekday_counts.values())
+                if total_shifts == 0:
+                    continue
+                
+                # Calcular promedio esperado por día de semana
+                expected_per_weekday = total_shifts / 7.0
+                
+                # Identificar días sobrecargados y subcargados
+                overloaded_days = []
+                underloaded_days = []
+                
+                for day, count in weekday_counts.items():
+                    deviation = count - expected_per_weekday
+                    if deviation > tolerance:
+                        overloaded_days.append((day, count, deviation))
+                    elif deviation < -tolerance:
+                        underloaded_days.append((day, count, deviation))
+                
+                if overloaded_days and underloaded_days:
+                    workers_to_rebalance.append({
+                        'worker_id': worker_id,
+                        'overloaded': overloaded_days,
+                        'underloaded': underloaded_days,
+                        'total_shifts': total_shifts,
+                        'expected_per_day': expected_per_weekday
+                    })
+            
+            logging.info(f"Found {len(workers_to_rebalance)} workers with weekday imbalances")
+            
+            # Intentar intercambios para equilibrar
+            for worker_info in workers_to_rebalance:
+                worker_id = worker_info['worker_id']
+                
+                # Priorizar los días más desequilibrados
+                overloaded_sorted = sorted(worker_info['overloaded'], key=lambda x: x[2], reverse=True)
+                underloaded_sorted = sorted(worker_info['underloaded'], key=lambda x: x[2])
+                
+                for over_day, over_count, over_dev in overloaded_sorted:
+                    for under_day, under_count, under_dev in underloaded_sorted:
+                        
+                        # Buscar un turno del worker en el día sobrecargado
+                        over_day_assignments = self._get_worker_assignments_for_weekday(worker_id, over_day)
+                        
+                        if not over_day_assignments:
+                            continue
+                        
+                        # Buscar posible intercambio con otro trabajador en el día subcargado
+                        swap_candidates = self._find_weekday_swap_candidates(
+                            worker_id, over_day, under_day, over_day_assignments
+                        )
+                        
+                        if swap_candidates:
+                            # Realizar el mejor intercambio posible
+                            for candidate in swap_candidates:
+                                if self._perform_weekday_swap(candidate):
+                                    logging.info(
+                                        f"Weekday balance swap: {worker_id} "
+                                        f"({weekday_names[over_day]}→{weekday_names[under_day]}) "
+                                        f"with {candidate['partner_worker_id']} "
+                                        f"on {candidate['date1'].strftime('%Y-%m-%d')} ↔ {candidate['date2'].strftime('%Y-%m-%d')}"
+                                    )
+                                    swaps_made_this_iteration = True
+                                    break
+                        
+                        if swaps_made_this_iteration:
+                            break
+                    
+                    if swaps_made_this_iteration:
+                        break
+                
+                if swaps_made_this_iteration:
+                    break
+            
+            if not swaps_made_this_iteration:
+                logging.info(f"No beneficial weekday swaps found in iteration {iteration + 1}")
+                break
+            else:
+                total_swaps_made = True
+                self._synchronize_tracking_data()
+        
+        if total_swaps_made:
+            logging.info("Weekday distribution balancing completed with improvements")
+        else:
+            logging.info("Weekday distribution balancing: no changes needed")
+        
+        return total_swaps_made
+    
+    def _get_worker_assignments_for_weekday(self, worker_id, target_weekday):
+        """
+        Obtiene todas las asignaciones de un trabajador para un día específico de la semana.
+        
+        Args:
+            worker_id: ID del trabajador
+            target_weekday: Día de la semana (0=Monday, 6=Sunday)
+            
+        Returns:
+            List[Dict]: Lista de asignaciones con fecha, post_idx
+        """
+        assignments = []
+        
+        for date_str, posts in self.schedule.items():
+            try:
+                # Manejar tanto datetime como string
+                if isinstance(date_str, datetime):
+                    date_obj = date_str
+                    date_str_formatted = date_obj.strftime('%Y-%m-%d')
+                else:
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                    date_str_formatted = date_str
+                    
+                if date_obj.weekday() == target_weekday:
+                    for post_idx, assigned_worker in posts.items():
+                        if str(assigned_worker) == str(worker_id):
+                            assignments.append({
+                                'date': date_obj,
+                                'date_str': date_str_formatted,
+                                'post_idx': post_idx
+                            })
+            except (ValueError, TypeError):
+                continue
+        
+        return assignments
+    
+    def _find_weekday_swap_candidates(self, worker_id, over_weekday, under_weekday, over_assignments):
+        """
+        Encuentra candidatos para intercambio entre días de la semana.
+        
+        Args:
+            worker_id: Trabajador que necesita reequilibrio
+            over_weekday: Día sobrecargado
+            under_weekday: Día subcargado  
+            over_assignments: Asignaciones en el día sobrecargado
+            
+        Returns:
+            List[Dict]: Lista de candidatos para intercambio
+        """
+        candidates = []
+        
+        for assignment in over_assignments:
+            date1 = assignment['date']
+            date1_str = assignment['date_str']
+            post1 = assignment['post_idx']
+            
+            # Buscar fechas del día subcargado donde podamos hacer intercambio
+            for date_str, posts in self.schedule.items():
+                try:
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                    if date_obj.weekday() == under_weekday:
+                        
+                        # Buscar trabajadores en esa fecha que puedan intercambiar
+                        for post_idx, partner_worker_id in posts.items():
+                            if (partner_worker_id and 
+                                str(partner_worker_id) != str(worker_id) and 
+                                str(partner_worker_id) != "None"):
+                                
+                                # Verificar si el intercambio sería válido
+                                if self._can_worker_swap(
+                                    worker_id, date1, post1,
+                                    partner_worker_id, date_obj, post_idx
+                                ):
+                                    candidates.append({
+                                        'worker_id': worker_id,
+                                        'partner_worker_id': str(partner_worker_id),
+                                        'date1': date1,
+                                        'date1_str': date1_str,
+                                        'post1': post1,
+                                        'date2': date_obj,
+                                        'date2_str': date_str,
+                                        'post2': post_idx
+                                    })
+                except ValueError:
+                    continue
+        
+        return candidates
+    
+    def _perform_weekday_swap(self, swap_info):
+        """
+        Realiza un intercambio de turnos entre días de la semana.
+        
+        Args:
+            swap_info: Información del intercambio a realizar
+            
+        Returns:
+            bool: True si el intercambio fue exitoso
+        """
+        try:
+            date1_str = swap_info['date1_str']
+            date2_str = swap_info['date2_str']
+            post1 = swap_info['post1']
+            post2 = swap_info['post2']
+            worker1 = swap_info['worker_id']
+            worker2 = swap_info['partner_worker_id']
+            
+            # Verificar que las asignaciones actuales coincidan
+            if (self.schedule[date1_str][post1] != worker1 or 
+                self.schedule[date2_str][post2] != worker2):
+                return False
+            
+            # Realizar el intercambio
+            self.schedule[date1_str][post1] = worker2
+            self.schedule[date2_str][post2] = worker1
+            
+            return True
+            
+        except (KeyError, TypeError) as e:
+            logging.error(f"Error performing weekday swap: {e}")
+            return False
         
     # ========================================
     # 9. SWAP OPERATIONS
@@ -3669,7 +3954,16 @@ class ScheduleBuilder:
                 logging.info("Schedule potentially improved through iterative last post adjustments.")
                 made_change_in_main_iteration = True
 
-            # 5. Final verification of incompatibilities and attempt to fix them
+            # 5. Balance weekday distribution (new feature)
+            if self._balance_weekday_distribution(
+                tolerance=self.adaptive_config.get('weekday_balance_tolerance', 2),
+                max_iterations=self.adaptive_config.get('weekday_balance_max_iterations', 5)
+            ):
+                logging.info("Schedule improved through weekday distribution balancing.")
+                made_change_in_main_iteration = True
+                self._synchronize_tracking_data()
+
+            # 6. Final verification of incompatibilities and attempt to fix them
             if self._detect_and_fix_incompatibility_violations():
                 logging.info("Fixed incompatibility violations during optimization.")
                 made_change_in_main_iteration = True

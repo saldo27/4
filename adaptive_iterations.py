@@ -136,6 +136,8 @@ class AdaptiveIterationManager:
             'max_time_minutes': self.max_time_minutes,
             'early_stop_score': 95.0,
             'last_post_balance_tolerance': 1.0,
+            'weekday_balance_tolerance': 2,
+            'weekday_balance_max_iterations': 5,
             'improvement_threshold': 0.1  # Minimum improvement to count as progress
         })
         
