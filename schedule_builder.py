@@ -2919,7 +2919,7 @@ class ScheduleBuilder:
     def _adjust_last_post_distribution(self, balance_tolerance=1.0, max_iterations=10): # balance_tolerance of 1 means +/-1
         """
         Adjusts the distribution of last-post slots among workers for days NOT in variable_shifts periods.
-        The goal is to have the total count of last posts per worker be within +/- balance_tolerance of each other.
+        Uses improved formula: turnos por trabajador = (turnos asignados al trabajador / turnos al día) ± 1
         Swaps are only performed intra-day between workers already assigned on that day.
 
         Args:
@@ -2930,34 +2930,62 @@ class ScheduleBuilder:
         Returns:
             bool: True if any swap was made across all iterations, False otherwise.
         """
+        return self._adjust_last_post_distribution_improved(balance_tolerance, max_iterations)
+    
+    def _adjust_last_post_distribution_improved(self, balance_tolerance=1.0, max_iterations=10):
+        """
+        Improved last post distribution using formula:
+        Turnos por trabajador = (turnos asignados al trabajador / turnos al día) ± 1
+        
+        This ensures each worker gets a fair distribution of last posts based on their
+        total shift assignments relative to the daily shift count.
+        """
         overall_swaps_made_across_iterations = False
-        logging.info(f"Starting iterative last post distribution adjustment (max_iterations={max_iterations}, tolerance={balance_tolerance}).")
+        logging.info(f"Starting IMPROVED last post distribution adjustment (max_iterations={max_iterations}, tolerance={balance_tolerance}).")
+        logging.info("Using formula: last_posts_per_worker = (total_shifts_per_worker / shifts_per_day) ± 1")
         logging.info("This will only apply to days NOT within a variable shift period.")
 
+        # Calculate shifts per day (this should be consistent)
+        shifts_per_day = len(self.workers_data) if hasattr(self, 'num_shifts') else self.num_shifts if hasattr(self, 'num_shifts') else 2
+        
+        # If we can get it from the scheduler
+        if hasattr(self, 'scheduler') and hasattr(self.scheduler, 'num_shifts'):
+            shifts_per_day = self.scheduler.num_shifts
+        
+        logging.info(f"Using shifts_per_day = {shifts_per_day} for calculations")
+
         for iteration in range(max_iterations):
-            logging.info(f"--- Last Post Adjustment Iteration: {iteration + 1}/{max_iterations} ---")
+            logging.info(f"--- IMPROVED Last Post Adjustment Iteration: {iteration + 1}/{max_iterations} ---")
             made_swap_in_this_iteration = False
             
             # Ensure all tracking data is perfectly up-to-date before counting
             self._synchronize_tracking_data()
 
-            # 1. Count actual last-post assignments for each worker ON NON-VARIABLE SHIFT DAYS
-            last_post_counts_total = {str(w['id']): 0 for w in self.workers_data} # Use string IDs
+            # 1. Count total shifts assigned to each worker (non-variable periods only)
+            worker_total_shifts = {str(w['id']): 0 for w in self.workers_data}
+            worker_last_posts = {str(w['id']): 0 for w in self.workers_data}
             total_last_slots_in_non_variable_periods = 0
             
             # Store (date, index_of_last_assigned_post, worker_in_that_post) for swappable days
             swappable_days_with_last_post_info = []
 
+            # First pass: count total shifts and last posts per worker
             for date_val, shifts_on_day in self.schedule.items():
                 if not shifts_on_day or not any(s is not None for s in shifts_on_day):
                     continue
 
-                # Crucial Check: Skip this day if it's in a variable shift period
+                # Skip variable shift periods
                 if self._is_date_in_variable_shift_period(date_val):
-                    logging.debug(f"Skipping date {date_val.strftime('%Y-%m-%d')} for last post balancing as it's in a variable shift period.")
+                    logging.debug(f"Skipping date {date_val.strftime('%Y-%m-%d')} for last post balancing (variable shift period)")
                     continue
 
-                # Find the actual last *assigned* post index for the day
+                # Count total shifts for each worker on this day
+                for shift_idx, worker_id in enumerate(shifts_on_day):
+                    if worker_id is not None:
+                        worker_id_str = str(worker_id)
+                        worker_total_shifts[worker_id_str] += 1
+
+                # Find the actual last assigned post index for the day
                 actual_last_assigned_idx = -1
                 for i in range(len(shifts_on_day) - 1, -1, -1):
                     if shifts_on_day[i] is not None:
@@ -2966,138 +2994,164 @@ class ScheduleBuilder:
                 
                 if actual_last_assigned_idx != -1:
                     total_last_slots_in_non_variable_periods += 1
-                    worker_in_last_actual_post = str(shifts_on_day[actual_last_assigned_idx]) # Ensure string ID
+                    worker_in_last_actual_post = str(shifts_on_day[actual_last_assigned_idx])
                     
-                    last_post_counts_total[worker_in_last_actual_post] = last_post_counts_total.get(worker_in_last_actual_post, 0) + 1
+                    worker_last_posts[worker_in_last_actual_post] += 1
                     swappable_days_with_last_post_info.append((date_val, actual_last_assigned_idx, worker_in_last_actual_post))
 
-            if total_last_slots_in_non_variable_periods == 0:
-                logging.info(f"[AdjustLastPost Iter {iteration+1}] No last posts assigned in non-variable shift periods. Nothing to balance.")
-                break 
-
-            num_eligible_workers = len(self.workers_data)
-            avg_last_posts_per_worker = total_last_slots_in_non_variable_periods / num_eligible_workers if num_eligible_workers > 0 else 0
+            # 2. Calculate expected last posts per worker using improved formula
+            worker_expected_last_posts = {}
+            worker_deviation = {}
             
-            logging.debug(f"[AdjustLastPost Iter {iteration+1}] Total Last Post Counts (Non-Variable Periods): {last_post_counts_total}")
-            logging.debug(f"  Total Last Slots (Non-Variable): {total_last_slots_in_non_variable_periods}, Avg Last Posts/Worker: {avg_last_posts_per_worker:.2f}")
+            for worker_id_str, total_shifts in worker_total_shifts.items():
+                if total_shifts > 0:
+                    # Formula: expected_last_posts = (total_shifts / shifts_per_day) ± tolerance
+                    expected_last_posts = total_shifts / shifts_per_day
+                    worker_expected_last_posts[worker_id_str] = expected_last_posts
+                    
+                    actual_last_posts = worker_last_posts[worker_id_str]
+                    deviation = actual_last_posts - expected_last_posts
+                    worker_deviation[worker_id_str] = deviation
+                    
+                    logging.debug(f"Worker {worker_id_str}: {total_shifts} shifts → expected {expected_last_posts:.2f} last posts, "
+                                f"actual {actual_last_posts}, deviation {deviation:.2f}")
+                else:
+                    worker_expected_last_posts[worker_id_str] = 0
+                    worker_deviation[worker_id_str] = 0
 
-            # Sort workers by how many last posts they have (most to least)
-            sorted_workers_by_last_posts = sorted(
-                last_post_counts_total.items(),
-                key=lambda item: item[1],
-                reverse=True
-            )
+            if total_last_slots_in_non_variable_periods == 0:
+                logging.info(f"[IMPROVED AdjustLastPost Iter {iteration+1}] No last posts assigned in non-variable shift periods.")
+                break
 
-            # Shuffle the days to attempt swaps on to avoid bias
+            # 3. Find workers who need rebalancing
+            # Workers with positive deviation (too many last posts) should give some away
+            # Workers with negative deviation (too few last posts) should receive more
+            
+            overloaded_workers = [(worker_id, dev) for worker_id, dev in worker_deviation.items() 
+                                if dev > balance_tolerance]
+            underloaded_workers = [(worker_id, dev) for worker_id, dev in worker_deviation.items() 
+                                 if dev < -balance_tolerance]
+            
+            logging.info(f"[IMPROVED Iter {iteration+1}] Found {len(overloaded_workers)} overloaded, {len(underloaded_workers)} underloaded workers")
+            
+            if not overloaded_workers:
+                logging.info(f"[IMPROVED AdjustLastPost Iter {iteration+1}] No overloaded workers found. Distribution balanced.")
+                break
+
+            # Shuffle days to avoid bias
             random.shuffle(swappable_days_with_last_post_info)
 
+            # 4. Attempt swaps to rebalance
             for date_to_adjust, last_post_idx_on_day, worker_currently_in_last_post_id in swappable_days_with_last_post_info:
-                worker_A_id = str(worker_currently_in_last_post_id) # The one currently having the last post
-                worker_A_last_post_count = last_post_counts_total.get(worker_A_id, 0)
+                worker_A_id = str(worker_currently_in_last_post_id)
+                worker_A_deviation = worker_deviation.get(worker_A_id, 0)
 
-                # Check if worker_A is "overloaded" with last posts
-                if worker_A_last_post_count > avg_last_posts_per_worker + balance_tolerance:
-                    logging.debug(f"  Attempting to rebalance: Worker {worker_A_id} (LPs: {worker_A_last_post_count}) has > avg ({avg_last_posts_per_worker:.2f}) + tolerance on {date_to_adjust.strftime('%Y-%m-%d')}")
+                # Only try to swap if this worker is overloaded
+                if worker_A_deviation > balance_tolerance:
+                    logging.debug(f"Attempting to rebalance: Worker {worker_A_id} (deviation: {worker_A_deviation:.2f}) on {date_to_adjust.strftime('%Y-%m-%d')}")
 
-                    # Find another worker (worker_B) on the SAME DAY in an EARLIER post
-                    # who is "underloaded" or less loaded with last posts than worker_A
-                    
-                    shifts_on_this_specific_day = self.schedule[date_to_adjust]
-                    potential_swap_partners_on_day = [] # List of (worker_B_id, worker_B_original_post_idx, worker_B_last_post_count)
+                    # Find potential swap partners on the same day
+                    shifts_on_this_day = self.schedule[date_to_adjust]
+                    potential_swap_partners = []
 
-                    for earlier_post_idx in range(last_post_idx_on_day): # Iterate posts *before* the current last_post_idx_on_day
-                        worker_B_id_str = str(shifts_on_this_specific_day[earlier_post_idx])
+                    for earlier_post_idx in range(last_post_idx_on_day):
+                        worker_B_id_str = str(shifts_on_this_day[earlier_post_idx])
                         
-                        if worker_B_id_str != "None" and worker_B_id_str != worker_A_id :
-                            worker_B_last_post_count = last_post_counts_total.get(worker_B_id_str, 0)
+                        if worker_B_id_str != "None" and worker_B_id_str != worker_A_id:
+                            worker_B_deviation = worker_deviation.get(worker_B_id_str, 0)
                             
-                            # Worker B is a candidate if they have fewer last posts than A,
-                            # AND ideally are "underloaded" or just less loaded than A.
-                            # The primary condition is that swapping improves balance for A.
-                            if worker_B_last_post_count < worker_A_last_post_count:
-                                potential_swap_partners_on_day.append((worker_B_id_str, earlier_post_idx, worker_B_last_post_count))
+                            # Good swap candidate: B has negative deviation (needs more last posts)
+                            # and swapping would improve balance for both
+                            if worker_B_deviation < worker_A_deviation:
+                                potential_swap_partners.append((worker_B_id_str, earlier_post_idx, worker_B_deviation))
                     
-                    if not potential_swap_partners_on_day:
-                        logging.debug(f"    No suitable intra-day swap partners found for {worker_A_id} on {date_to_adjust.strftime('%Y-%m-%d')}.")
+                    if not potential_swap_partners:
                         continue
 
-                    # Sort candidates: prioritize those with the fewest last posts
-                    potential_swap_partners_on_day.sort(key=lambda x: x[2]) 
+                    # Sort by deviation (most negative first - those who need last posts most)
+                    potential_swap_partners.sort(key=lambda x: x[2])
 
-                    for worker_B_id, worker_B_original_post_idx, _ in potential_swap_partners_on_day:
-                        # Simulate the intra-day swap:
-                        # Worker A (overloaded with LPs) moves to worker_B_original_post_idx
-                        # Worker B (less loaded with LPs) moves to last_post_idx_on_day
+                    for worker_B_id, worker_B_original_post_idx, worker_B_deviation in potential_swap_partners:
+                        # Check if this swap would improve overall balance
+                        new_A_deviation = worker_A_deviation - 1  # A loses a last post
+                        new_B_deviation = worker_B_deviation + 1  # B gains a last post
                         
-                        # Check for new incompatibilities created by this intra-day swap
-                        #   - A in B's old slot vs others on day (excluding B's old slot)
-                        #   - B in A's old slot vs others on day (excluding A's old slot)
-                        #   - A vs B (should not be incompatible if they are already working on the same day,
-                        #            but good to have a general check if _are_workers_incompatible is robust)
-
-                        temp_schedule_for_day = list(shifts_on_this_specific_day)
-                        temp_schedule_for_day[last_post_idx_on_day] = worker_B_id
-                        temp_schedule_for_day[worker_B_original_post_idx] = worker_A_id
+                        # Swap is beneficial if it reduces overall imbalance
+                        current_imbalance = abs(worker_A_deviation) + abs(worker_B_deviation)
+                        new_imbalance = abs(new_A_deviation) + abs(new_B_deviation)
                         
-                        valid_swap_incompatibility_check = True
-                        # Check A in B's old slot
-                        others_at_B_slot = [str(w) for i, w in enumerate(temp_schedule_for_day) if i != worker_B_original_post_idx and w is not None]
-                        if not self._check_incompatibility_with_list(worker_A_id, others_at_B_slot): # from schedule_builder
-                            valid_swap_incompatibility_check = False
-                        
-                        if valid_swap_incompatibility_check:
-                            # Check B in A's old slot
-                            others_at_A_slot = [str(w) for i, w in enumerate(temp_schedule_for_day) if i != last_post_idx_on_day and w is not None]
-                            if not self._check_incompatibility_with_list(worker_B_id, others_at_A_slot): # from schedule_builder
-                                valid_swap_incompatibility_check = False
-                        
-                        # Explicitly check if A and B are incompatible (should be rare if they work same day, but good check)
-                        # This uses schedule_builder's _are_workers_incompatible
-                        if valid_swap_incompatibility_check and self._are_workers_incompatible(worker_A_id, worker_B_id):
-                             valid_swap_incompatibility_check = False
-                        
-                        if valid_swap_incompatibility_check:
-                            # Perform the actual swap in self.schedule
-                            logging.info(f"  [AdjustLastPost Iter {iteration+1}] Swapping on {date_to_adjust.strftime('%Y-%m-%d')}: "
-                                         f"Worker {worker_A_id} (P{last_post_idx_on_day} -> P{worker_B_original_post_idx}) with "
-                                         f"Worker {worker_B_id} (P{worker_B_original_post_idx} -> P{last_post_idx_on_day})")
+                        if new_imbalance < current_imbalance:
+                            # Validate the swap doesn't create incompatibilities
+                            temp_schedule_for_day = list(shifts_on_this_day)
+                            temp_schedule_for_day[last_post_idx_on_day] = worker_B_id
+                            temp_schedule_for_day[worker_B_original_post_idx] = worker_A_id
                             
-                            self.schedule[date_to_adjust][last_post_idx_on_day] = worker_B_id
-                            self.schedule[date_to_adjust][worker_B_original_post_idx] = worker_A_id
+                            valid_swap = True
                             
-                            # Update local last_post_counts for this iteration's subsequent checks
-                            last_post_counts_total[worker_A_id] -= 1
-                            last_post_counts_total[worker_B_id] = last_post_counts_total.get(worker_B_id, 0) + 1
+                            # Check A in B's old slot
+                            others_at_B_slot = [str(w) for i, w in enumerate(temp_schedule_for_day) 
+                                              if i != worker_B_original_post_idx and w is not None]
+                            if not self._check_incompatibility_with_list(worker_A_id, others_at_B_slot):
+                                valid_swap = False
                             
-                            # Worker assignments (dates) don't change, only their posts on this day.
-                            # Full _update_tracking_data for posts will be handled by _synchronize_tracking_data
-                            # at the start of the next iteration or after all adjustments.
+                            if valid_swap:
+                                # Check B in A's old slot
+                                others_at_A_slot = [str(w) for i, w in enumerate(temp_schedule_for_day) 
+                                                  if i != last_post_idx_on_day and w is not None]
+                                if not self._check_incompatibility_with_list(worker_B_id, others_at_A_slot):
+                                    valid_swap = False
                             
-                            made_swap_in_this_iteration = True
-                            overall_swaps_made_across_iterations = True
+                            # Check direct incompatibility
+                            if valid_swap and self._are_workers_incompatible(worker_A_id, worker_B_id):
+                                valid_swap = False
                             
-                            # Break from iterating swap partners for this day, as a swap was made.
-                            # Then, the outer loop will continue to the next day in swappable_days_with_last_post_info.
-                            break 
+                            if valid_swap:
+                                # Perform the swap
+                                logging.info(f"[IMPROVED Iter {iteration+1}] Beneficial swap on {date_to_adjust.strftime('%Y-%m-%d')}: "
+                                           f"Worker {worker_A_id} (dev {worker_A_deviation:.2f}→{new_A_deviation:.2f}, P{last_post_idx_on_day}→P{worker_B_original_post_idx}) "
+                                           f"with Worker {worker_B_id} (dev {worker_B_deviation:.2f}→{new_B_deviation:.2f}, P{worker_B_original_post_idx}→P{last_post_idx_on_day})")
+                                
+                                self.schedule[date_to_adjust][last_post_idx_on_day] = worker_B_id
+                                self.schedule[date_to_adjust][worker_B_original_post_idx] = worker_A_id
+                                
+                                # Update tracking for this iteration
+                                worker_last_posts[worker_A_id] -= 1
+                                worker_last_posts[worker_B_id] += 1
+                                worker_deviation[worker_A_id] = new_A_deviation
+                                worker_deviation[worker_B_id] = new_B_deviation
+                                
+                                made_swap_in_this_iteration = True
+                                overall_swaps_made_across_iterations = True
+                                break
                 
-                # If a swap was made, the average and counts changed, so it might be beneficial to
-                # re-evaluate from the start of the worker list for the current iteration.
-                # For simplicity in this iterative version, we continue with the current sorted list of days,
-                # and the next full iteration (outer loop) will re-calculate averages and counts.
-            
-            if not made_swap_in_this_iteration:
-                logging.info(f"[AdjustLastPost Iter {iteration+1}/{max_iterations}] No beneficial last post swaps found in this full pass over days.")
-                break # Break the outer loop (iterations) if no swaps were made in a full pass
+                if made_swap_in_this_iteration:
+                    break  # Re-evaluate in next iteration
 
+            if not made_swap_in_this_iteration:
+                logging.info(f"[IMPROVED AdjustLastPost Iter {iteration+1}/{max_iterations}] No beneficial swaps found.")
+                break
+
+        # Final synchronization and statistics
         if overall_swaps_made_across_iterations:
-            self._synchronize_tracking_data() # Ensure worker_posts and other scheduler tracking is up-to-date
-            self._save_current_as_best() 
-            logging.info(f"Finished last post adjustments. Total iterations run: {iteration + 1}. Overall swaps made: {overall_swaps_made_across_iterations}.")
+            self._synchronize_tracking_data()
+            self._save_current_as_best()
+            
+            # Log final distribution
+            logging.info("=== FINAL IMPROVED LAST POST DISTRIBUTION ===")
+            for worker_id_str in worker_total_shifts.keys():
+                if worker_total_shifts[worker_id_str] > 0:
+                    expected = worker_expected_last_posts[worker_id_str]
+                    actual = worker_last_posts[worker_id_str]
+                    deviation = actual - expected
+                    logging.info(f"Worker {worker_id_str}: {worker_total_shifts[worker_id_str]} total shifts, "
+                               f"expected {expected:.2f} last posts, actual {actual}, deviation {deviation:.2f}")
+            
+            logging.info(f"Finished IMPROVED last post adjustments. Total iterations: {iteration + 1}. Swaps made: {overall_swaps_made_across_iterations}")
         else:
-            logging.info(f"No last post adjustments made after {iteration + 1} iteration(s).")
+            logging.info(f"No IMPROVED last post adjustments made after {iteration + 1} iteration(s).")
             
         return overall_swaps_made_across_iterations
-        
+
     def _is_date_in_variable_shift_period(self, date_to_check):
         """
         Checks if a given date falls into any defined variable shift period.
