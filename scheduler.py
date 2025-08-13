@@ -47,6 +47,8 @@ class Scheduler:
             self.variable_shifts = config.get('variable_shifts', [])
             self.workers_data = config['workers_data']
             self.holidays = config.get('holidays', [])
+            self.enable_proportional_weekends = config.get('enable_proportional_weekends', True)
+            self.weekend_tolerance = config.get('weekend_tolerance', 1)  # +/- 1 as specified
 
             # --- START: Build incompatibility lists ---
             incompatible_worker_ids = {
