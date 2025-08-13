@@ -1,0 +1,140 @@
+============================================================
+HORARIO GENERADO
+============================================================
+Fecha de generación: 13/08/2025 11:00:33
+Período: 01/01/2025 - 31/01/2025
+Trabajadores: 4
+Turnos por día: 2
+
+Miércoles 01/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Jueves 02/01/2025
+  Turno 1: Trabajador 50% (worker_50)
+  Turno 2: Trabajador 25% (worker_25)
+
+Viernes 03/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Sábado 04/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Domingo 05/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Lunes 06/01/2025
+  Turno 1: Trabajador 50% (worker_50)
+  Turno 2: Trabajador 25% (worker_25)
+
+Martes 07/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Miércoles 08/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Jueves 09/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Viernes 10/01/2025
+  Turno 1: Trabajador 50% (worker_50)
+  Turno 2: Trabajador 25% (worker_25)
+
+Sábado 11/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Domingo 12/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Lunes 13/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Martes 14/01/2025
+  Turno 1: Trabajador 50% (worker_50)
+  Turno 2: Trabajador 25% (worker_25)
+
+Miércoles 15/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Jueves 16/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Viernes 17/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Sábado 18/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Domingo 19/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Lunes 20/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Martes 21/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Miércoles 22/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Jueves 23/01/2025
+  Turno 1: Trabajador 50% (worker_50)
+  Turno 2: Trabajador 25% (worker_25)
+
+Viernes 24/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Sábado 25/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Domingo 26/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Lunes 27/01/2025
+  Turno 1: Trabajador 50% (worker_50)
+  Turno 2: Trabajador 25% (worker_25)
+
+Martes 28/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Miércoles 29/01/2025
+  Turno 1: [VACANTE]
+  Turno 2: [VACANTE]
+
+Jueves 30/01/2025
+  Turno 1: Trabajador Tiempo Completo (worker_100)
+  Turno 2: Trabajador 75% (worker_75)
+
+Viernes 31/01/2025
+  Turno 1: Trabajador 50% (worker_50)
+  Turno 2: Trabajador 25% (worker_25)
+
+
+============================================================
+RESUMEN
+============================================================
+Trabajador Tiempo Completo (worker_100): 14 turnos, 7 fines de semana
+Trabajador 75% (worker_75): 14 turnos, 7 fines de semana
+Trabajador 50% (worker_50): 7 turnos, 2 fines de semana
+Trabajador 25% (worker_25): 7 turnos, 2 fines de semana

@@ -1991,9 +1991,40 @@ class Scheduler:
         
         if format == 'txt':
             with open(filename, 'w', encoding='utf-8') as f:
-                f.write(self._generate_schedule_header())
-                f.write(self._generate_schedule_body())
-                f.write(self._generate_schedule_summary())
+                # Write header
+                f.write("="*60 + "\n")
+                f.write("HORARIO GENERADO\n")
+                f.write("="*60 + "\n")
+                f.write(f"Fecha de generación: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
+                f.write(f"Período: {self.start_date.strftime('%d/%m/%Y')} - {self.end_date.strftime('%d/%m/%Y')}\n")
+                f.write(f"Trabajadores: {len(self.workers_data)}\n")
+                f.write(f"Turnos por día: {self.num_shifts}\n\n")
+                
+                # Write schedule body
+                current_date = self.start_date
+                while current_date <= self.end_date:
+                    if current_date in self.schedule:
+                        day_name = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'][current_date.weekday()]
+                        f.write(f"{day_name} {current_date.strftime('%d/%m/%Y')}\n")
+                        
+                        for post_idx, worker_id in enumerate(self.schedule[current_date]):
+                            if worker_id:
+                                worker_name = next((w['name'] for w in self.workers_data if w['id'] == worker_id), worker_id)
+                                f.write(f"  Turno {post_idx + 1}: {worker_name} ({worker_id})\n")
+                            else:
+                                f.write(f"  Turno {post_idx + 1}: [VACANTE]\n")
+                        f.write("\n")
+                    current_date += timedelta(days=1)
+                
+                # Write summary
+                f.write("\n" + "="*60 + "\n")
+                f.write("RESUMEN\n")
+                f.write("="*60 + "\n")
+                for worker in self.workers_data:
+                    worker_id = worker['id']
+                    shift_count = len(self.worker_assignments.get(worker_id, []))
+                    weekend_count = len([d for d in self.worker_assignments.get(worker_id, []) if d.weekday() >= 4])
+                    f.write(f"{worker['name']} ({worker_id}): {shift_count} turnos, {weekend_count} fines de semana\n")
         
         logging.info(f"Schedule exported to {filename}")
         return filename

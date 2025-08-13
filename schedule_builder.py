@@ -2085,6 +2085,474 @@ class ScheduleBuilder:
     
         return self._distribute_special_days_proportionally(special_days)
 
+    def distribute_holiday_shifts_proportionally(self):
+        """
+        Función pública para distribución proporcional de días especiales
+        """
+        # Obtener todos los días especiales
+        special_days = set()
+        
+        # Obtener todas las fechas del horario para encontrar fines de semana
+        all_dates = list(self.schedule.keys())
+        
+        # Agregar fines de semana (viernes y sábados)
+        for date in all_dates:
+            # Asegurar que date es un objeto datetime
+            if hasattr(date, 'weekday'):
+                if self._is_weekend_day(date):  # Pasar el objeto date completo, no solo weekday()
+                    special_days.add(date)
+        
+        # Agregar festivos (considerados como domingos)
+        for holiday_date in self.holidays:
+            # Asegurar que holiday_date es un objeto datetime
+            if hasattr(holiday_date, 'weekday') and holiday_date in all_dates:
+                special_days.add(holiday_date)
+        
+        # Agregar pre-festivos (considerados como viernes)
+        pre_holidays = getattr(self, 'pre_holidays', [])  # Usar getattr con default vacío
+        for pre_holiday_date in pre_holidays:
+            # Asegurar que pre_holiday_date es un objeto datetime
+            if hasattr(pre_holiday_date, 'weekday') and pre_holiday_date in all_dates:
+                special_days.add(pre_holiday_date)
+        
+        if not special_days:
+            logging.info("No special days found for proportional distribution")
+            return False
+        
+        logging.info(f"Found {len(special_days)} special days for proportional distribution")
+        return self._distribute_special_days_proportionally(special_days)
+
+    def _distribute_special_days_proportionally(self, special_days):
+        """
+        Distribute special days (weekends, holidays, pre-holidays) proportionally
+        based on each worker's work percentage, with strict tolerance of +/-1
+        """
+        logging.info("Starting proportional distribution of special days...")
+        
+        # Calculate total shifts on special days
+        total_special_shifts = 0
+        special_day_shifts = {}
+        
+        for date in special_days:
+            if date in self.schedule:
+                shifts_count = len([w for w in self.schedule[date] if w is not None])
+                total_special_shifts += shifts_count
+                special_day_shifts[date] = shifts_count
+        
+        if total_special_shifts == 0:
+            logging.info("No special day shifts to distribute")
+            return False
+        
+        # Calculate current assignments on special days for each worker
+        current_special_assignments = {}
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            count = 0
+            for date in special_days:
+                if date in self.worker_assignments.get(worker_id, set()):
+                    count += 1
+            current_special_assignments[worker_id] = count
+        
+        # Calculate proportional targets based on EFFECTIVE work percentage (considering absences)
+        # Use the period covered by special_days to calculate effective percentages
+        period_start = min(special_days) if special_days else self.start_date
+        period_end = max(special_days) if special_days else self.end_date
+        
+        effective_work_percentages = {}
+        total_effective_percentage = 0
+        
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            effective_percentage = self._calculate_effective_work_percentage(
+                worker_id, period_start, period_end
+            )
+            effective_work_percentages[worker_id] = effective_percentage
+            total_effective_percentage += effective_percentage
+        
+        if total_effective_percentage == 0:
+            logging.warning("Total effective work percentage is zero (all workers unavailable)")
+            return False
+        
+        logging.info(f"Using effective work percentages (adjusted for absences): "
+                    f"total={total_effective_percentage:.1f}%")
+        
+        # Calculate exact proportional targets using effective percentages
+        exact_targets = {}
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            effective_percentage = effective_work_percentages[worker_id]
+            proportion = effective_percentage / total_effective_percentage
+            exact_target = proportion * total_special_shifts
+            exact_targets[worker_id] = exact_target
+        
+        # Apply largest remainder method for integer distribution with strict tolerance
+        integer_targets = {}
+        remainders = []
+        total_assigned = 0
+        
+        for worker_id, exact_target in exact_targets.items():
+            integer_part = int(exact_target)
+            remainder = exact_target - integer_part
+            integer_targets[worker_id] = integer_part
+            remainders.append((worker_id, remainder))
+            total_assigned += integer_part
+        
+        # Distribute remaining shifts using largest remainder method
+        remaining_shifts = total_special_shifts - total_assigned
+        remainders.sort(key=lambda x: x[1], reverse=True)
+        
+        for i in range(int(remaining_shifts)):
+            if i < len(remainders):
+                worker_id = remainders[i][0]
+                integer_targets[worker_id] += 1
+        
+        # Apply strict +/-1 tolerance while preserving proportionality as much as possible
+        tolerance = 1  # Enforce strict +/-1 tolerance
+        
+        # Sort workers by their original proportional targets to maintain fairness
+        sorted_workers = sorted(integer_targets.items(), key=lambda x: x[1], reverse=True)
+        
+        # Enforce +/-1 tolerance: max difference between any two workers should be 1
+        min_target = min(integer_targets.values()) if integer_targets else 0
+        max_target = max(integer_targets.values()) if integer_targets else 0
+        
+        # If the difference is already within tolerance, keep the original allocation
+        if max_target - min_target <= tolerance:
+            adjusted_targets = integer_targets.copy()
+            logging.info(f"Original proportional distribution already meets tolerance: min={min_target}, max={max_target}")
+        else:
+            # Need to adjust to enforce tolerance while preserving as much proportionality as possible
+            logging.info(f"Adjusting proportional distribution from min={min_target}, max={max_target} to meet +/-{tolerance} tolerance")
+            
+            # Enhanced strategy: gradually compress the range while preserving relative proportions
+            adjusted_targets = integer_targets.copy()
+            
+            # Iteratively reduce the range by moving shifts from extreme workers
+            max_iterations = 20
+            iteration = 0
+            
+            while max_target - min_target > tolerance and iteration < max_iterations:
+                iteration += 1
+                
+                # Find workers at the extremes
+                min_workers = [w for w in adjusted_targets if adjusted_targets[w] == min_target]
+                max_workers = [w for w in adjusted_targets if adjusted_targets[w] == max_target]
+                
+                # Calculate how much we need to reduce the range
+                excess_range = (max_target - min_target) - tolerance
+                shifts_to_move = min(1, excess_range)
+                
+                # Select best candidates for redistribution
+                # Max worker: choose one with lowest effective work percentage (least impact on proportionality)
+                # Min worker: choose one with highest effective work percentage (most deserving)
+                if min_workers and max_workers and shifts_to_move > 0:
+                    max_worker = min(max_workers, 
+                                   key=lambda w: (exact_targets[w], effective_work_percentages[w]))
+                    min_worker = max(min_workers, 
+                                   key=lambda w: (exact_targets[w], effective_work_percentages[w]))
+                    
+                    # Only move if it actually reduces the range
+                    if adjusted_targets[max_worker] > adjusted_targets[min_worker] + tolerance:
+                        adjusted_targets[max_worker] -= 1
+                        adjusted_targets[min_worker] += 1
+                        
+                        # Update min/max for next iteration
+                        min_target = min(adjusted_targets.values())
+                        max_target = max(adjusted_targets.values())
+                    else:
+                        break  # Can't improve further
+                else:
+                    break  # No more moves possible
+            
+            # If we still can't meet tolerance, use a more aggressive approach
+            if max_target - min_target > tolerance:
+                logging.warning(f"Could not meet tolerance with gradual adjustment, using allocation approach")
+                
+                # Sort workers by their proportional priority (exact target, then effective work percentage)
+                workers_by_priority = sorted(
+                    adjusted_targets.keys(),
+                    key=lambda w: (exact_targets[w], effective_work_percentages[w]),
+                    reverse=True
+                )
+                
+                # Calculate the best base value that preserves most proportionality
+                avg_target = total_special_shifts / len(self.workers_data)
+                base_target = int(avg_target)
+                remainder = total_special_shifts % len(self.workers_data)
+                
+                # Test base and base+1 to see which preserves more proportionality
+                test_targets_base = {}
+                test_targets_base_plus = {}
+                
+                # Option 1: Use base as minimum
+                for i, worker_id in enumerate(workers_by_priority):
+                    if i < remainder:
+                        test_targets_base[worker_id] = base_target + 1
+                    else:
+                        test_targets_base[worker_id] = base_target
+                
+                # Option 2: Use base+1 as minimum (if possible)
+                if (base_target + 1) * len(self.workers_data) <= total_special_shifts + len(self.workers_data):
+                    remaining_after_base_plus = total_special_shifts - (base_target + 1) * len(self.workers_data)
+                    for i, worker_id in enumerate(workers_by_priority):
+                        if i < len(self.workers_data) + remaining_after_base_plus:
+                            test_targets_base_plus[worker_id] = base_target + 2
+                        else:
+                            test_targets_base_plus[worker_id] = base_target + 1
+                
+                # Choose the option with lower deviation from exact targets
+                deviation_base = sum(abs(test_targets_base[w] - exact_targets[w]) for w in test_targets_base)
+                deviation_base_plus = float('inf')
+                if test_targets_base_plus:
+                    deviation_base_plus = sum(abs(test_targets_base_plus[w] - exact_targets[w]) for w in test_targets_base_plus)
+                
+                if deviation_base <= deviation_base_plus:
+                    adjusted_targets = test_targets_base
+                else:
+                    adjusted_targets = test_targets_base_plus
+        
+        # Verify tolerance is met and total is correct
+        final_min = min(adjusted_targets.values())
+        final_max = max(adjusted_targets.values())
+        final_total = sum(adjusted_targets.values())
+        
+        logging.info(f"Final adjusted targets - min={final_min}, max={final_max}, difference={final_max - final_min}, total={final_total}")
+        
+        if final_max - final_min > tolerance:
+            logging.warning(f"Tolerance still violated after adjustment! This should not happen.")
+        
+        if final_total != total_special_shifts:
+            logging.warning(f"Total mismatch: expected {total_special_shifts}, got {final_total}")
+        
+        # Log the adjusted distribution with proportionality comparison
+        for worker_id in sorted(adjusted_targets.keys()):
+            work_pct = self._get_work_percentage(worker_id)
+            exact_target = exact_targets[worker_id]
+            adjusted_target = adjusted_targets[worker_id]
+            deviation = adjusted_target - exact_target
+            logging.info(f"Worker {worker_id} (work {work_pct}%): ideal={exact_target:.2f}, target={adjusted_target}, deviation={deviation:+.2f}")
+        
+        # Perform redistribution to meet adjusted targets using improved algorithm
+        changes_made = 0
+        max_iterations = 50
+        iteration = 0
+        
+        while iteration < max_iterations:
+            iteration += 1
+            progress_made = False
+            
+            # Calculate current special day assignments
+            current_assignments = {}
+            for worker_id in adjusted_targets:
+                current_assignments[worker_id] = len([d for d in self.worker_assignments.get(worker_id, set()) if d in special_days])
+            
+            # Find workers most in need of rebalancing
+            priority_swaps = []
+            
+            for over_worker in adjusted_targets:
+                over_current = current_assignments[over_worker]
+                over_target = adjusted_targets[over_worker]
+                over_excess = over_current - over_target
+                
+                if over_excess <= 0:
+                    continue
+                
+                for under_worker in adjusted_targets:
+                    under_current = current_assignments[under_worker]
+                    under_target = adjusted_targets[under_worker]
+                    under_deficit = under_target - under_current
+                    
+                    if under_deficit <= 0:
+                        continue
+                    
+                    # Calculate swap benefit (how much it improves balance)
+                    benefit = min(over_excess, under_deficit)
+                    priority_swaps.append((benefit, over_worker, under_worker))
+            
+            # Sort by benefit (highest first)
+            priority_swaps.sort(key=lambda x: x[0], reverse=True)
+            
+            # Execute highest priority swaps first
+            for benefit, over_worker, under_worker in priority_swaps:
+                if benefit <= 0:
+                    break
+                
+                swap_made = self._attempt_special_day_swap(special_days, over_worker, under_worker)
+                if swap_made:
+                    changes_made += 1
+                    progress_made = True
+                    logging.info(f"Special day swap: {over_worker} -> {under_worker} (benefit: {benefit})")
+                    break
+            
+            if not progress_made:
+                break
+        
+        logging.info(f"Special days proportional distribution completed: {changes_made} changes made in {iteration} iterations")
+        
+        # Synchronize tracking data if changes were made
+        if changes_made > 0:
+            self._synchronize_tracking_data()
+            self._save_current_as_best()
+        
+        return changes_made > 0
+
+    def _attempt_special_day_swap(self, special_days, over_worker, under_worker):
+        """
+        Intenta intercambiar un turno de día especial entre trabajadores
+        """
+        # Buscar días especiales donde over_worker esté asignado
+        over_worker_special_days = []
+        for date in special_days:
+            if (date in self.schedule and 
+                date in self.worker_assignments.get(over_worker, set())):
+                over_worker_special_days.append(date)
+        
+        if not over_worker_special_days:
+            return False
+        
+        # Buscar días especiales donde under_worker NO esté asignado
+        under_worker_available_days = []
+        for date in special_days:
+            if (date in self.schedule and 
+                date not in self.worker_assignments.get(under_worker, set())):
+                under_worker_available_days.append(date)
+        
+        if not under_worker_available_days:
+            return False
+        
+        # Intentar intercambio directo
+        for over_date in over_worker_special_days:
+            if over_date in under_worker_available_days:
+                # Buscar posición del over_worker en este día
+                for post_idx, assigned_worker in enumerate(self.schedule[over_date]):
+                    if assigned_worker == over_worker:
+                        # Verificar si under_worker puede tomar esta posición
+                        if self._can_assign_worker(under_worker, over_date, post_idx):
+                            # Realizar el intercambio
+                            self.schedule[over_date][post_idx] = under_worker
+                            
+                            # Actualizar seguimiento
+                            self.worker_assignments[over_worker].remove(over_date)
+                            self.worker_assignments.setdefault(under_worker, set()).add(over_date)
+                            
+                            # Actualizar tracking del scheduler
+                            self.scheduler._update_tracking_data(over_worker, over_date, post_idx, removing=True)
+                            self.scheduler._update_tracking_data(under_worker, over_date, post_idx)
+                            
+                            return True
+        
+        # Intentar intercambio con días no especiales
+        for over_date in over_worker_special_days:
+            for over_post_idx, assigned_worker in enumerate(self.schedule[over_date]):
+                if assigned_worker == over_worker:
+                    # Buscar un día no especial donde under_worker esté asignado
+                    for date in self.schedule.keys():  # Usar las fechas del schedule en lugar de self.periods
+                        if (date not in special_days and 
+                            date in self.worker_assignments.get(under_worker, set())):
+                            for under_post_idx, under_assigned in enumerate(self.schedule.get(date, [])):
+                                if under_assigned == under_worker:
+                                    # Verificar si el intercambio es válido
+                                    if (self._can_assign_worker(under_worker, over_date, over_post_idx) and
+                                        self._can_assign_worker(over_worker, date, under_post_idx)):
+                                        
+                                        # Realizar intercambio completo
+                                        self.schedule[over_date][over_post_idx] = under_worker
+                                        self.schedule[date][under_post_idx] = over_worker
+                                        
+                                        # Actualizar seguimiento
+                                        self.worker_assignments[over_worker].remove(over_date)
+                                        self.worker_assignments[over_worker].add(date)
+                                        self.worker_assignments[under_worker].remove(date)
+                                        self.worker_assignments[under_worker].add(over_date)
+                                        
+                                        # Actualizar tracking del scheduler
+                                        self.scheduler._update_tracking_data(over_worker, over_date, over_post_idx, removing=True)
+                                        self.scheduler._update_tracking_data(under_worker, over_date, over_post_idx)
+                                        self.scheduler._update_tracking_data(under_worker, date, under_post_idx, removing=True)
+                                        self.scheduler._update_tracking_data(over_worker, date, under_post_idx)
+                                        
+                                        return True
+        
+        return False
+
+    def _get_work_percentage(self, worker_id):
+        """Get work percentage for a worker"""
+        for worker in self.workers_data:
+            if worker['id'] == worker_id:
+                return worker.get('work_percentage', 100)
+        return 100
+
+    def _calculate_effective_work_percentage(self, worker_id, period_start, period_end):
+        """
+        Calculate effective work percentage considering absence periods
+        
+        Args:
+            worker_id: ID of the worker
+            period_start: Start date of the period to analyze
+            period_end: End date of the period to analyze
+            
+        Returns:
+            float: Effective work percentage (0-100) adjusted for absences
+        """
+        worker_data = next((w for w in self.workers_data if w['id'] == worker_id), None)
+        if not worker_data:
+            return 0
+        
+        base_work_percentage = worker_data.get('work_percentage', 100)
+        
+        # If no absence periods to consider, return base percentage
+        days_off_str = worker_data.get('days_off', '')
+        work_periods_str = worker_data.get('work_periods', '')
+        
+        # Calculate total days in the period
+        total_days = (period_end - period_start).days + 1
+        
+        # Calculate working days (excluding absences)
+        working_days = 0
+        current_date = period_start
+        
+        while current_date <= period_end:
+            is_available = True
+            
+            # Check if within work periods (if defined)
+            if work_periods_str:
+                try:
+                    work_ranges = self.date_utils.parse_date_ranges(work_periods_str)
+                    if not any(start <= current_date <= end for start, end in work_ranges):
+                        is_available = False
+                except Exception as e:
+                    logging.warning(f"Error parsing work_periods for {worker_id}: {e}")
+                    is_available = False
+            
+            # Check if in days off (absence periods)
+            if is_available and days_off_str:
+                try:
+                    off_ranges = self.date_utils.parse_date_ranges(days_off_str)
+                    if any(start <= current_date <= end for start, end in off_ranges):
+                        is_available = False
+                except Exception as e:
+                    logging.warning(f"Error parsing days_off for {worker_id}: {e}")
+            
+            if is_available:
+                working_days += 1
+            
+            current_date += timedelta(days=1)
+        
+        # Calculate availability factor (percentage of time actually available)
+        if total_days == 0:
+            availability_factor = 0
+        else:
+            availability_factor = working_days / total_days
+        
+        # Effective work percentage = base percentage × availability factor
+        effective_percentage = base_work_percentage * availability_factor
+        
+        logging.debug(f"Worker {worker_id}: base={base_work_percentage}%, "
+                     f"available_days={working_days}/{total_days}, "
+                     f"effective={effective_percentage:.1f}%")
+        
+        return effective_percentage
+
     def rebalance_weekend_distribution(self):
         """
         Rebalance weekend shifts to ensure fair distribution within tolerance
@@ -2116,6 +2584,153 @@ class ScheduleBuilder:
     
         # Perform rebalancing
         return self._perform_shift_rebalancing(over_assigned, under_assigned)
+
+    def _is_weekend_day(self, date):
+        """Check if a date is a weekend day (Friday, Saturday, Sunday)"""
+        return date.weekday() >= 4
+
+    def _calculate_ideal_weekend_distribution(self):
+        """Calculate ideal weekend shift distribution based on work percentages"""
+        ideal_distribution = {}
+        
+        # Calculate total weekend capacity
+        total_weekend_capacity = 0
+        worker_capacities = {}
+        
+        for worker in self.workers_data:
+            worker_id = worker['id']
+            work_percentage = worker.get('work_percentage', 100) / 100.0
+            
+            # Count available weekend days for this worker
+            available_weekends = 0
+            current_date = self.start_date
+            while current_date <= self.end_date:
+                if (self._is_weekend_day(current_date) and 
+                    not self._is_worker_unavailable(worker_id, current_date)):
+                    available_weekends += 1
+                current_date += timedelta(days=1)
+            
+            capacity = available_weekends * work_percentage
+            worker_capacities[worker_id] = capacity
+            total_weekend_capacity += capacity
+        
+        # Calculate total weekend shifts available
+        total_weekend_shifts = 0
+        current_date = self.start_date
+        while current_date <= self.end_date:
+            if self._is_weekend_day(current_date) and current_date in self.schedule:
+                total_weekend_shifts += len([w for w in self.schedule[current_date] if w is not None])
+            current_date += timedelta(days=1)
+        
+        # Calculate proportional targets with tolerance
+        tolerance = getattr(self.scheduler, 'weekend_tolerance', 1)
+        
+        for worker_id, capacity in worker_capacities.items():
+            if total_weekend_capacity > 0:
+                proportion = capacity / total_weekend_capacity
+                target = proportion * total_weekend_shifts
+                
+                min_target = max(0, int(target - tolerance))
+                max_target = int(target + tolerance)
+                
+                ideal_distribution[worker_id] = {
+                    'target': target,
+                    'min': min_target,
+                    'max': max_target
+                }
+            else:
+                ideal_distribution[worker_id] = {
+                    'target': 0,
+                    'min': 0,
+                    'max': tolerance
+                }
+        
+        return ideal_distribution
+
+    def _perform_shift_rebalancing(self, over_assigned, under_assigned):
+        """Perform actual shift rebalancing between over and under assigned workers"""
+        changes_made = 0
+        max_iterations = 50
+        
+        for iteration in range(max_iterations):
+            if not over_assigned or not under_assigned:
+                break
+            
+            progress_made = False
+            
+            # Sort by priority (largest imbalances first)
+            over_assigned.sort(key=lambda x: x[1], reverse=True)
+            under_assigned.sort(key=lambda x: x[1], reverse=True)
+            
+            for i, (over_worker_id, over_excess) in enumerate(over_assigned):
+                if over_excess <= 0:
+                    continue
+                
+                # Find weekend shifts that can be moved
+                moveable_weekend_shifts = []
+                for date in self.worker_assignments.get(over_worker_id, set()):
+                    if (self._is_weekend_day(date) and 
+                        date in self.schedule and
+                        over_worker_id in self.schedule[date] and
+                        not self._is_mandatory(over_worker_id, date)):
+                        post = self.schedule[date].index(over_worker_id)
+                        moveable_weekend_shifts.append((date, post))
+                
+                if not moveable_weekend_shifts:
+                    continue
+                
+                # Try to assign to under-assigned workers
+                for j, (under_worker_id, under_deficit) in enumerate(under_assigned):
+                    if under_deficit <= 0:
+                        continue
+                    
+                    for date, post in moveable_weekend_shifts:
+                        # Check if under-assigned worker is already assigned on this date
+                        if (date in self.schedule and 
+                            under_worker_id in self.schedule.get(date, [])):
+                            continue
+                        
+                        # Check if assignment is valid
+                        if self._can_assign_worker(under_worker_id, date, post):
+                            # Perform the reassignment
+                            self.schedule[date][post] = under_worker_id
+                            
+                            # Update assignments tracking
+                            self.worker_assignments[over_worker_id].remove(date)
+                            self.worker_assignments.setdefault(under_worker_id, set()).add(date)
+                            
+                            # Update scheduler tracking
+                            self.scheduler._update_tracking_data(over_worker_id, date, post, removing=True)
+                            self.scheduler._update_tracking_data(under_worker_id, date, post)
+                            
+                            changes_made += 1
+                            progress_made = True
+                            
+                            logging.info(f"Rebalanced weekend shift: {date.strftime('%Y-%m-%d')} "
+                                       f"from {over_worker_id} to {under_worker_id}")
+                            
+                            # Update tracking
+                            over_assigned[i] = (over_worker_id, over_excess - 1)
+                            under_assigned[j] = (under_worker_id, under_deficit - 1)
+                            
+                            break
+                    
+                    if progress_made:
+                        break
+                
+                if progress_made:
+                    break
+            
+            if not progress_made:
+                break
+        
+        # Synchronize tracking data if changes were made
+        if changes_made > 0:
+            self._synchronize_tracking_data()
+            self._save_current_as_best()
+        
+        logging.info(f"Weekend rebalancing completed: {changes_made} changes made")
+        return changes_made > 0
         
     def _balance_target_shifts_aggressively(self):
         """Balance workers to meet their exact target_shifts, focusing on largest deviations first"""

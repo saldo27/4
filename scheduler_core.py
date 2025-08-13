@@ -165,6 +165,8 @@ class SchedulerCore:
                     ("fill_empty_shifts", self.scheduler.schedule_builder._try_fill_empty_shifts),
                     ("balance_workloads", self.scheduler.schedule_builder._balance_workloads),
                     ("improve_weekend_distribution_1", self.scheduler.schedule_builder._improve_weekend_distribution),
+                    ("distribute_holiday_shifts_proportionally", self.scheduler.schedule_builder.distribute_holiday_shifts_proportionally),
+                    ("rebalance_weekend_distribution", self.scheduler.schedule_builder.rebalance_weekend_distribution),
                     ("synchronize_tracking_data", self.scheduler.schedule_builder._synchronize_tracking_data),
                     ("improve_weekend_distribution_2", self.scheduler.schedule_builder._improve_weekend_distribution),
                     ("adjust_last_post_distribution", self.scheduler.schedule_builder._adjust_last_post_distribution),
