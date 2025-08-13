@@ -2072,6 +2072,65 @@ class ScheduleBuilder:
             self._synchronize_tracking_data() 
             self._save_current_as_best() 
         return changes_made > 0
+
+    def distribute_holiday_shifts_proportionally(self):
+        """
+        Distribute holiday and pre-holiday shifts more fairly
+        """
+        # Separate holidays and pre-holidays
+        holidays = self.holidays
+        pre_holidays = [date - timedelta(days=1) for date in holidays 
+                       if (date - timedelta(days=1)) not in holidays]
+    
+        # Combine with regular weekends for fair distribution
+        special_days = set()
+    
+        # Add all Fridays, Saturdays, Sundays
+        current = self.start_date
+        while current <= self.end_date:
+            if current.weekday() >= 4:  # Friday, Saturday, Sunday
+                special_days.add(current)
+            current += timedelta(days=1)
+    
+        # Add holidays (treated as Sundays)
+        special_days.update(holidays)
+    
+        # Add pre-holidays (treated as Fridays) 
+        special_days.update(pre_holidays)
+    
+        return self._distribute_special_days_proportionally(special_days)
+
+    def rebalance_weekend_distribution(self):
+        """
+        Rebalance weekend shifts to ensure fair distribution within tolerance
+        """
+        weekend_assignments = {}
+        total_weekend_shifts = 0
+    
+        # Count current weekend assignments
+        for worker_id in self.worker_assignments:
+            weekend_count = len([d for d in self.worker_assignments[worker_id] 
+                               if self._is_weekend_day(d)])
+            weekend_assignments[worker_id] = weekend_count
+            total_weekend_shifts += weekend_count
+    
+        # Calculate ideal distribution
+        ideal_distribution = self._calculate_ideal_weekend_distribution()
+    
+        # Identify workers who are over/under assigned
+        over_assigned = []
+        under_assigned = []
+    
+        for worker_id, current_count in weekend_assignments.items():
+            target_range = ideal_distribution[worker_id]
+        
+            if current_count > target_range['max']:
+                over_assigned.append((worker_id, current_count - target_range['max']))
+            elif current_count < target_range['min']:
+                under_assigned.append((worker_id, target_range['min'] - current_count))
+    
+        # Perform rebalancing
+        return self._perform_shift_rebalancing(over_assigned, under_assigned)
         
     def _balance_target_shifts_aggressively(self):
         """Balance workers to meet their exact target_shifts, focusing on largest deviations first"""
