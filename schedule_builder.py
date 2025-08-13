@@ -357,21 +357,6 @@ class ScheduleBuilder:
     
         return worker2_id in incompatible_with_1 or worker1_id in incompatible_with_2 
 
-    def _would_exceed_weekend_limit(self, worker_id, date):
-        """
-        Check if adding this date would exceed the worker's weekend limit.
-        Use the constraint_checker's logic for consistency.
-
-        Args:
-            worker_id: ID of the worker to check
-            date: Date to potentially add
-    
-        Returns:
-            bool: True if weekend limit would be exceeded, False otherwise
-        """
-        # Use the constraint_checker's method for consistency
-        return self.constraint_checker._would_exceed_weekend_limit(worker_id, date)
-    
     def _can_assign_worker(self, worker_id, date, post):
         try:
             # Skip if already assigned to this date
@@ -420,7 +405,7 @@ class ScheduleBuilder:
                             return False
 
             # Check weekend limits
-            if self._would_exceed_weekend_limit(worker_id, date):
+            if self.constraint_checker._would_exceed_weekend_limit(worker_id, date):
                 return False
 
             # Part-time workers need more days between shifts
