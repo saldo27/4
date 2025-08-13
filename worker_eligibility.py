@@ -275,6 +275,65 @@ class WorkerEligibilityTracker:
             date + timedelta(days=1) in self.holidays
         )
 
+    def calculate_proportional_weekend_target(self, worker_id, work_percentage, work_periods):
+        """
+        Calculate target weekend shifts based on work percentage and time worked
+        with better proportional distribution
+        """
+        # Get all weekend days in schedule period
+        all_days = self._get_date_range(self.start_date, self.end_date)
+        total_weekend_days = sum(1 for d in all_days if self._is_weekend_day(d))
+    
+        # Calculate worker's available weekend days
+        if work_periods:
+            worker_weekend_days = 0
+            for start, end in work_periods:
+                period_days = self._get_date_range(start, end)
+                worker_weekend_days += sum(1 for d in period_days if self._is_weekend_day(d))
+        else:
+            worker_weekend_days = total_weekend_days
+    
+        # Improved proportional calculation
+        base_proportion = worker_weekend_days / total_weekend_days if total_weekend_days > 0 else 0
+        work_factor = work_percentage / 100
+    
+        # Target with tolerance range (+/- 1 as specified)
+        raw_target = total_weekend_days * base_proportion * work_factor
+        target_weekend_count = round(raw_target)
+    
+        # Apply tolerance (+/- 1)
+        min_target = max(0, target_weekend_count - 1)
+        max_target = target_weekend_count + 1
+    
+        return min_target, target_weekend_count, max_target
+
+    def validate_weekend_assignment_with_tolerance(self, worker_id, date, force_assign=False):
+        """
+        Validate weekend assignment with improved tolerance and proportional checking
+        """
+        # Check consecutive weekend limit
+        if self._would_exceed_consecutive_weekend_limit(worker_id, date):
+            if not force_assign:
+                return False, "Would exceed consecutive weekend limit"
+    
+        # Check proportional limit with tolerance
+        current_weekend_count = len([d for d in self.worker_assignments.get(worker_id, set()) 
+                                    if self._is_weekend_day(d)])
+    
+        min_target, target, max_target = self.calculate_proportional_weekend_target(
+            worker_id, 
+            self._get_worker_percentage(worker_id),
+            self._get_worker_periods(worker_id)
+        )
+    
+        # Allow assignment if within tolerance range
+        if current_weekend_count < max_target:
+            return True, "Assignment within proportional limits"
+        elif force_assign:
+            return True, "Forced assignment despite exceeding limits"
+        else:
+            return False, f"Would exceed proportional limit ({current_weekend_count+1} > {max_target})"
+
     def _update_tracking_data(self, worker_id, date, post):
         """
         Update all tracking data structures after assignment
